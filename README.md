@@ -9,7 +9,6 @@ I have a [document here](./docs/naming-scheme.md) where I detail the naming sche
 * `add_independent_to_matches.py`
 * `add_matches_to_collection.py`
 * `add_short_duration_vids_to_collection.py`
-* `add_star_tag.py`
 * `add_startswith_matches_to_collection.py`
 * `add_studio_to_matches.py`
 * `add_writer_to_collection.py`
@@ -18,8 +17,6 @@ I have a [document here](./docs/naming-scheme.md) where I detail the naming sche
 * `bulk_set_independent_for_writers.py`
 * `copy_collection_to_collection.py`
 * `copy_studio_to_collection.py`
-* `create_smart_collections_for_studios.py`
-* `create_smart_collections_for_writers.py`
 * `create_smart_collections_unified.py`
 * `list_collection_vids.py`
 * `list_collection_writers.py`
