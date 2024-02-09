@@ -2,8 +2,9 @@
 #
 # import modules
 #
-import configparser
 import os
+import sys
+import configparser
 from pprint import pprint
 from plexapi.server import PlexServer
 #
@@ -24,14 +25,19 @@ plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-totalCount = 0
-badCount = 0
 plexSection = plex.library.section(plexSectionName)
 for video in plexSection.all():
-    totalCount += 1
-    if " " not in video.title:
-        print(f"Title: {video.title}")
-        badCount += 1
+    matchFound = False
+    if len(video.locations) > 1:
+        print(f"{video.title} has multiple locations!")
+        for location in video.locations:
+            print(location)
+        print('')
+    else:
+        for location in video.locations:
+            if video.title in location:
+                matchFound = True
 
-print('')
-print(f"{badCount} bad names of {totalCount} total names.")
+    if matchFound is False:
+        oldLocation = video.locations[0].replace('/data/NSFW Scenes/', '')
+        print(f"mv \"{oldLocation}\" \"{video.title}.mp4\"")

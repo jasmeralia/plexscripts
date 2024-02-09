@@ -2,10 +2,10 @@
 #
 # import modules
 #
-from pprint import pprint
-from plexapi.server import PlexServer
 import sys
 import os
+from pprint import pprint
+from plexapi.server import PlexServer
 #
 # set default variables
 #

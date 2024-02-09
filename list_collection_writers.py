@@ -13,8 +13,8 @@ from plexapi.server import PlexServer
 if len(sys.argv) != 2:
     print(f"Usage: {os.path.basename(__file__)} <collection name>")
     sys.exit(1)
-collection_name = sys.argv[1]
-# print(f"Collection: {collection_name}")
+collectionName = sys.argv[1]
+# print(f"Collection: {collectionName}")
 #
 # Color support
 #
@@ -33,36 +33,36 @@ class bcolors:
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plex_host = config['default']['plex_host']
-plex_port = config['default']['plex_port']
-plex_section = config['default']['plex_section']
-plex_token = config['default']['plex_token']
-plex_section_name = config['default']['plex_section_name']
-baseurl = f"http://{plex_host}:{plex_port}"
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
+baseurl = f"http://{plexHost}:{plexPort}"
 #
 # Connect to server
 #
-plex = PlexServer(baseurl, plex_token)
+plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-plex_section = plex.library.section(plex_section_name)
-this_collection = plex_section.collection(collection_name)
-writer_global_set = set()
-if not (str(this_collection.title).lower() == collection_name.lower()):
-#     print(f"{bcolors.OKGREEN}Collection '{this_collection.title}' found.{bcolors.ENDC}")
-#     print("")
+plexSection = plex.library.section(plexSectionName)
+thisCollection = plexSection.collection(collectionName)
+writerGlobalSet = set()
+if not str(thisCollection.title).lower() == collectionName.lower():
+#     print(f"{bcolors.OKGREEN}Collection '{thisCollection.title}' found.{bcolors.ENDC}")
+#     print('')
 # else:
-    print(f"{bcolors.FAIL}Collection '{collection_name}' not found!{bcolors.ENDC}")
+    print(f"{bcolors.FAIL}Collection '{collectionName}' not found!{bcolors.ENDC}")
     sys.exit(1)
 
-for video in this_collection.items():
-    for this_writer in video.writers:
-        writer_global_set.add(f"{this_writer}")
+for video in thisCollection.items():
+    for thisWriter in video.writers:
+        writerGlobalSet.add(f"{thisWriter}")
 
-if len(writer_global_set) == 0:
+if len(writerGlobalSet) == 0:
     print(f"{bcolors.FAIL}No writers found!{bcolors.ENDC}")
 else:
-    # print(f"{bcolors.OKGREEN}{len(writer_global_set)} writers found.{bcolors.ENDC}")
-    for writerName in sorted(writer_global_set):
+    # print(f"{bcolors.OKGREEN}{len(writerGlobalSet)} writers found.{bcolors.ENDC}")
+    for writerName in sorted(writerGlobalSet):
         print(writerName)

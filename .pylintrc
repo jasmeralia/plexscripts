@@ -1,0 +1,9 @@
+[DESIGN]
+max-locals=25
+max-line-length=200
+max-branches=30
+max-statements=80
+max-nested-blocks=10
+
+[MESSAGES CONTROL]
+disable=import-error,broad-except,invalid-name,missing-module-docstring,missing-class-docstring,missing-function-docstring,lost-exception,duplicate-code,unused-import,too-few-public-methods,consider-using-f-string

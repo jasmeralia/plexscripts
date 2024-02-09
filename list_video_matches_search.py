@@ -2,10 +2,20 @@
 #
 # import modules
 #
-import configparser
 import os
+import sys
+import configparser
 from pprint import pprint
 from plexapi.server import PlexServer
+#
+# Check CLI arguments
+#
+if len(sys.argv) != 2:
+    print(f"Usage: {sys.argv[0]} <pattern>")
+    sys.exit(1)
+
+searchPattern = sys.argv[1]
+print(f"Search pattern: {searchPattern}")
 #
 # set default variables
 #
@@ -24,14 +34,14 @@ plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-totalCount = 0
-badCount = 0
 plexSection = plex.library.section(plexSectionName)
-for video in plexSection.all():
-    totalCount += 1
-    if " " not in video.title:
-        print(f"Title: {video.title}")
-        badCount += 1
-
-print('')
-print(f"{badCount} bad names of {totalCount} total names.")
+searchFilters = {
+    'title': searchPattern
+}
+results = plexSection.search(filters=searchFilters, sort="titleSort")
+for video in results:
+    # ensure data is up to date
+    if video.isPartialObject():
+        video.reload()
+    print(f"Title: {video.title}")
+    print(f"Locations: {video.locations}")

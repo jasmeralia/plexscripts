@@ -8,33 +8,50 @@ import configparser
 from pprint import pprint
 from plexapi.server import PlexServer
 #
+# Color support
+#
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+#
 # Check CLI arguments
 #
 if len(sys.argv) != 2:
     print(f"Usage: {sys.argv[0]} <pattern>")
     sys.exit(1)
 
-search_pattern = sys.argv[1]
-print(f"Search pattern: {search_pattern}")
+searchPattern = sys.argv[1]
+print(f"Search pattern: {searchPattern}")
 #
 # set default variables
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plex_host = config['default']['plex_host']
-plex_port = config['default']['plex_port']
-plex_section = config['default']['plex_section']
-plex_token = config['default']['plex_token']
-plex_section_name = config['default']['plex_section_name']
-baseurl = f"http://{plex_host}:{plex_port}"
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
+baseurl = f"http://{plexHost}:{plexPort}"
 #
 # Connect to server
 #
-plex = PlexServer(baseurl, plex_token)
+plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-plex_section = plex.library.section(plex_section_name)
-for video in plex_section.all():
-    if search_pattern.lower() in video.title.lower():
+plexSection = plex.library.section(plexSectionName)
+for video in plexSection.all():
+    if searchPattern.lower() in video.title.lower():
+        # ensure data is up to date
+        if video.isPartialObject():
+            video.reload()
         print(f"Title: {video.title}")
+        # print(f"Locations: {video.locations}")

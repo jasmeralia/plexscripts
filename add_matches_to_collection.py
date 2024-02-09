@@ -15,18 +15,11 @@ if len(sys.argv) != 3:
     print(f"Usage: {os.path.basename(__file__)} <collection name> <pattern match>")
     sys.exit(1)
 pattern = sys.argv[2]
-collection_name = sys.argv[1]
-if collection_name == "02: Independent Content":
-    indie_content = True
-else:
-    indie_content = False
-if collection_name == '01: Category: Solo':
-    solo_content = True
-else:
-    solo_content = False
-
+collectionName = sys.argv[1]
+indieContent = bool(collectionName == "02: Independent Content")
+soloContent = bool(collectionName == '01: Category: Solo')
 print(f"Pattern: '{pattern}'")
-#print(f"Collection: {collection_name}")
+#print(f"Collection: {collectionName}")
 #
 # Color support
 #
@@ -45,65 +38,65 @@ class bcolors:
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plex_host = config['default']['plex_host']
-plex_port = config['default']['plex_port']
-plex_section = config['default']['plex_section']
-plex_token = config['default']['plex_token']
-plex_section_name = config['default']['plex_section_name']
-baseurl = f"http://{plex_host}:{plex_port}"
-sleep_interval = 10
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
+baseurl = f"http://{plexHost}:{plexPort}"
+sleepInterval = 10
 #
 # Connect to server
 #
-plex = PlexServer(baseurl, plex_token)
+plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-plex_section = plex.library.section(plex_section_name)
-this_collection = plex_section.collection(collection_name)
-if (str(this_collection.title).lower() == collection_name.lower()):
-    print(f"{bcolors.OKGREEN}Collection '{this_collection.title}' found.{bcolors.ENDC}")
-    print("")
+plexSection = plex.library.section(plexSectionName)
+thisCollection = plexSection.collection(collectionName)
+if str(thisCollection.title).lower() == collectionName.lower():
+    print(f"{bcolors.OKGREEN}Collection '{thisCollection.title}' found.{bcolors.ENDC}")
+    print('')
 else:
-    print(f"{bcolors.FAIL}Collection '{collection_name}' not found!{bcolors.ENDC}")
+    print(f"{bcolors.FAIL}Collection '{collectionName}' not found!{bcolors.ENDC}")
     sys.exit(1)
- 
-matches_found = 0
-collections_added = 0
-for video in plex_section.all():
+
+matchesFound = 0
+collectionsAdded = 0
+for video in plexSection.all():
     #print(f"Checking video '{video.title}' for pattern '{pattern}'...")
-    skip_scene_content = False
-    if (indie_content or solo_content) and " (Scene #" in video.title and pattern.lower() in video.title.lower():
-        skip_scene_content = True
+    skipSceneContent = False
+    if (indieContent or soloContent) and " (Scene #" in video.title and pattern.lower() in video.title.lower():
+        skipSceneContent = True
         print(f"{bcolors.OKCYAN}Skipping scene content match '{video.title}'{bcolors.ENDC}")
-    if not skip_scene_content and pattern.lower() in video.title.lower():
+    if not skipSceneContent and pattern.lower() in video.title.lower():
         # ensure data is up to date
         video.reload()
-        matches_found += 1
-        found_collection = False
-        skip_solo_content = False
+        matchesFound += 1
+        foundCollection = False
+        skipSoloContent = False
         if video.collections:
             for collection in video.collections:
-                if str(collection).lower() == collection_name.lower():
-                    found_collection = True
-                elif solo_content and str(collection) == '01: Category: Non-Sexual'.lower():
-                    skip_solo_content = True
-        if skip_solo_content:
+                if str(collection).lower() == collectionName.lower():
+                    foundCollection = True
+                elif soloContent and str(collection) == '01: Category: Non-Sexual'.lower():
+                    skipSoloContent = True
+        if skipSoloContent:
             print(f"{bcolors.WARNING}Skipping non-sexual solo content '{video.title}'{bcolors.ENDC}")
-        elif not found_collection:
-            print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{this_collection.title}'{bcolors.ENDC}")
-            this_collection.addItems(video)
-            collections_added += 1
-            print(f"{bcolors.OKGREEN}'{video.title}' has been added to {this_collection.title}{bcolors.ENDC}")
-            # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {this_collection.title} (sleeping for {sleep_interval}s...){bcolors.ENDC}")
-            # time.sleep(sleep_interval) # introduce a delay to avoid hammering the server
+        elif not foundCollection:
+            print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
+            thisCollection.addItems(video)
+            collectionsAdded += 1
+            print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
+            # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title} (sleeping for {sleepInterval}s...){bcolors.ENDC}")
+            # time.sleep(sleepInterval) # introduce a delay to avoid hammering the server
         else:
-            print(f"{bcolors.OKCYAN}'{video.title}' is already part of '{this_collection.title}'{bcolors.ENDC}")
-if matches_found == 0:
-    print("")
+            print(f"{bcolors.OKCYAN}'{video.title}' is already part of '{thisCollection.title}'{bcolors.ENDC}")
+if matchesFound == 0:
+    print('')
     print(f"{bcolors.FAIL}No matches found for pattern '{pattern}'!{bcolors.ENDC}")
-    print("")
+    print('')
 else:
-    print("")
-    print(f"{bcolors.OKCYAN}{matches_found} matches found, {collections_added} collections added.{bcolors.ENDC}")
-    print("")
+    print('')
+    print(f"{bcolors.OKCYAN}{matchesFound} matches found, {collectionsAdded} collections added.{bcolors.ENDC}")
+    print('')

@@ -14,9 +14,9 @@ from plexapi.server import PlexServer
 if len(sys.argv) != 3:
     print(f"Usage: {os.path.basename(__file__)} <source collection name> <target collection name>")
     sys.exit(1)
-source_collection_name = sys.argv[1]
-target_collection_name = sys.argv[2]
-#print(f"Collection: {collection_name}")
+sourceCollectionName = sys.argv[1]
+targetCollectionName = sys.argv[2]
+#print(f"Collection: {collectionName}")
 #
 # Color support
 #
@@ -35,62 +35,69 @@ class bcolors:
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plex_host = config['default']['plex_host']
-plex_port = config['default']['plex_port']
-plex_section = config['default']['plex_section']
-plex_token = config['default']['plex_token']
-plex_section_name = config['default']['plex_section_name']
-baseurl = f"http://{plex_host}:{plex_port}"
-sleep_interval = 10
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
+baseurl = f"http://{plexHost}:{plexPort}"
+sleepInterval = 10
 #
 # Connect to server
 #
-plex = PlexServer(baseurl, plex_token)
+plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-plex_section = plex.library.section(plex_section_name)
-source_collection = plex_section.collection(source_collection_name)
-if (str(source_collection.title).lower() == source_collection_name.lower()):
-    print(f"{bcolors.OKGREEN}Source collection '{source_collection.title}' found.{bcolors.ENDC}")
-    print("")
+plexSection = plex.library.section(plexSectionName)
+sourceCollection = plexSection.collection(sourceCollectionName)
+if str(sourceCollection.title).lower() == sourceCollectionName.lower():
+    print(f"{bcolors.OKGREEN}Source collection '{sourceCollection.title}' found.{bcolors.ENDC}")
 else:
-    print(f"{bcolors.FAIL}Source collection '{source_collection_name}' not found!{bcolors.ENDC}")
+    print(f"{bcolors.FAIL}Source collection '{sourceCollectionName}' not found!{bcolors.ENDC}")
     sys.exit(1)
-target_collection = plex_section.collection(target_collection_name)
-if (str(target_collection.title).lower() == target_collection_name.lower()):
-    print(f"{bcolors.OKGREEN}Target collection '{target_collection.title}' found.{bcolors.ENDC}")
-    print("")
+targetCollection = plexSection.collection(targetCollectionName)
+if str(targetCollection.title).lower() == targetCollectionName.lower():
+    print(f"{bcolors.OKGREEN}Target collection '{targetCollection.title}' found.{bcolors.ENDC}")
 else:
-    print(f"{bcolors.FAIL}Target collection '{target_collection_name}' not found!{bcolors.ENDC}")
+    print(f"{bcolors.FAIL}Target collection '{targetCollectionName}' not found!{bcolors.ENDC}")
     sys.exit(1)
 
-matches_found = 0
-collections_added = 0
-for video in source_collection.items():
+print('')
+searchFilters = {
+    'and': [
+        {'collection': sourceCollection.title},
+        {'collection!': targetCollection.title}
+    ]
+}
+results = plexSection.search(filters=searchFilters, sort="titleSort")
+matchesFound = len(results)
+collectionsAdded = 0
+matchCount = 0
+for video in results:
     #print(f"Checking video '{video.title}'...")
     # ensure data is up to date
-    video.reload()
-    matches_found += 1
-    found_collection = False
+    if video.isPartialObject():
+        video.reload()
+    foundCollection = False
+    matchCount += 1
+    progressStr = f"[{matchCount}/{matchesFound}] "
     if video.collections:
         for collection in video.collections:
-            if str(collection) == target_collection.title:
-                found_collection = True
-    if not found_collection:
-        print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{target_collection.title}'{bcolors.ENDC}")
-        target_collection.addItems(video)
-        collections_added += 1
-        print(f"{bcolors.OKGREEN}'{video.title}' has been added to {target_collection.title}{bcolors.ENDC}")
-        # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {this_collection.title} (sleeping for {sleep_interval}s...){bcolors.ENDC}")
-        # time.sleep(sleep_interval) # introduce a delay to avoid hammering the server
-    else:
-        print(f"{bcolors.OKCYAN}'{video.title}' is already part of '{target_collection.title}'{bcolors.ENDC}")
-if matches_found == 0:
-    print("")
-    print(f"{bcolors.FAIL}No items found in collection '{source_collection.title}'!{bcolors.ENDC}")
-    print("")
+            if str(collection) == targetCollection.title:
+                foundCollection = True
+    if not foundCollection:
+        print(f"{bcolors.WARNING}{progressStr}'{video.title}' needs to be added to '{targetCollection.title}'{bcolors.ENDC}")
+        targetCollection.addItems(video)
+        collectionsAdded += 1
+        print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been added to {targetCollection.title}{bcolors.ENDC}")
+    # else:
+    #     print(f"{bcolors.OKCYAN}{progressStr}'{video.title}' is already part of '{targetCollection.title}'{bcolors.ENDC}")
+if matchesFound == 0:
+    print('')
+    print(f"{bcolors.FAIL}No items found in collection '{sourceCollection.title}' that are not already in '{targetCollection.title}'!{bcolors.ENDC}")
+    print('')
 else:
-    print("")
-    print(f"{bcolors.OKCYAN}{matches_found} matches found, {collections_added} collections added.{bcolors.ENDC}")
-    print("")
+    print('')
+    print(f"{bcolors.OKCYAN}{matchesFound} matches found, {collectionsAdded} collections added.{bcolors.ENDC}")
+    print('')

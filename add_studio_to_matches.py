@@ -17,7 +17,7 @@ if len(sys.argv) != 3:
 pattern = sys.argv[2]
 studioName = sys.argv[1]
 print(f"Pattern: '{pattern}'")
-#print(f"Studio: {studio_name}")
+#print(f"Studio: {studioName}")
 #
 # Color support
 #
@@ -36,13 +36,13 @@ class bcolors:
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plexHost = config['default']['plex_host']
-plexPort = config['default']['plex_port']
-plexSection = config['default']['plex_section']
-plexToken = config['default']['plex_token']
-plexSectionName = config['default']['plex_section_name']
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
 baseurl = f"http://{plexHost}:{plexPort}"
-sleep_interval = 10
+sleepInterval = 10
 #
 # Connect to server
 #
@@ -51,23 +51,27 @@ plex = PlexServer(baseurl, plexToken)
 # Select section
 #
 plexSection = plex.library.section(plexSectionName)
- 
+
 matchesFound = 0
 studiosAdded = 0
 studioFound = False
 
 #
-# Check if the studio has been used previously.
+# Check if the studio has been used previously by looking at the smart collections for studios
+# (this is much faster than other methods).
 #
-for video in plexSection.all():
-    if video.studio == studioName:
+for collection in plexSection.collections():
+    if collection.title == f"02: Studio: {studioName}":
         studioFound = True
 #
-# No pr3vious matches, abort!
+# No previous matches, abort!
 #
 if not studioFound:
     print(f"{bcolors.FAIL}Could not find match for existing studio '{studioName}', aborting!{bcolors.ENDC}")
     sys.exit(1)
+else:
+    print(f"{bcolors.OKGREEN}Studio '{studioName}' has been located, proceeding.{bcolors.ENDC}")
+    print('')
 #
 # Previous use of studio name, proceed.
 #
@@ -77,21 +81,21 @@ for video in plexSection.all():
         # ensure data is up to date
         video.reload()
         matchesFound += 1
-        if video.studio == None:
-            print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{studioName}'{bcolors.ENDC}")
+        if video.studio is None:
+            print(f"{bcolors.WARNING}'{video.title}' needs to be set to '{studioName}'{bcolors.ENDC}")
             video.edit(**{"studio.value": studioName, 'label.locked': 1})
             studiosAdded += 1
-            print(f"{bcolors.OKGREEN}'{video.title}' has been added to '{studioName}'{bcolors.ENDC}")
+            print(f"{bcolors.OKGREEN}'{video.title}' has been set to '{studioName}'{bcolors.ENDC}")
         elif video.studio == studioName:
-            print(f"{bcolors.OKCYAN}'{video.title}' is already part of '{studioName}'{bcolors.ENDC}")
+            print(f"{bcolors.OKCYAN}'{video.title}' already belongs to '{studioName}'{bcolors.ENDC}")
         else:
-            print(f"{bcolors.WARNING}'{video.title}' already belongs in studio '{studioName}', skipping!{bcolors.ENDC}")
+            print(f"{bcolors.WARNING}'{video.title}' already belongs in studio '{video.studio}', skipping!{bcolors.ENDC}")
 
 if matchesFound == 0:
-    print("")
+    print('')
     print(f"{bcolors.FAIL}No matches found for pattern '{pattern}'!{bcolors.ENDC}")
-    print("")
+    print('')
 else:
-    print("")
-    print(f"{bcolors.OKCYAN}{matchesFound} matches found, {studiosAdded} collections added.{bcolors.ENDC}")
-    print("")
+    print('')
+    print(f"{bcolors.OKCYAN}{matchesFound} matches found, {studiosAdded} studios added.{bcolors.ENDC}")
+    print('')

@@ -26,66 +26,70 @@ class bcolors:
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plex_host = config['default']['plex_host']
-plex_port = config['default']['plex_port']
-plex_section = config['default']['plex_section']
-plex_token = config['default']['plex_token']
-plex_section_name = config['default']['plex_section_name']
-baseurl = f"http://{plex_host}:{plex_port}"
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
+baseurl = f"http://{plexHost}:{plexPort}"
 #
 # Connect to server
 #
-plex = PlexServer(baseurl, plex_token)
+plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-writer_global_set = set()
-plex_section = plex.library.section(plex_section_name)
-title_count = 0
-writer_appearance_count = 0
-writer_missing_count = 0
-writer_already_set_count = 0
-for video in plex_section.all():
-    title_count += 1
+writerGlobalSet = set()
+plexSection = plex.library.section(plexSectionName)
+titleCount = 0
+writerAppearanceCount = 0
+writerMissingCount = 0
+writerAlreadySetCount = 0
+results = plexSection.all()
+totalVideoCount = len(results)
+for video in results:
+    titleCount += 1
     # ensure data is up to date
-    video.reload()
+    if video.isPartialObject():
+        video.reload()
+    progressString = f"[{titleCount}/{totalVideoCount}] "
     # replace nbsp; with space and emdash with hyphen... fuck utf8!
-    this_title = video.title.replace(" – ", " - ").replace("\xa0", " ")
-    writer_names = this_title.split(' - ', 1)[0]
-    writers_list = writer_names.split(',')
-    stripped_set = set()
-    some_writers_missing = False
-    for writer_name in writers_list:
-        stripped_name = writer_name.strip()
-        stripped_set.add(stripped_name)
-        # print(f"Found writer: {writer_name}")
-        writer_global_set.add(stripped_name)
-        writer_appearance_count += 1
-        writer_already_set = False
+    thisTitle = video.title.replace(" – ", " - ").replace("\xa0", " ")
+    writerNames = thisTitle.split(' - ', 1)[0]
+    writersList = writerNames.split(',')
+    strippedSet = set()
+    someWritersMissing = False
+    for writerName in writersList:
+        strippedName = writerName.strip()
+        strippedSet.add(strippedName)
+        # print(f"Found writer: {writerName}")
+        writerGlobalSet.add(strippedName)
+        writerAppearanceCount += 1
+        writerAlreadySet = False
         for thiswriter in video.writers:
-            if f"{thiswriter}".lower() == stripped_name.lower():
-                writer_already_set = True
-        if writer_already_set:
-            # print(f"{bcolors.OKGREEN}Writer '{stripped_name}' already set on this title.{bcolors.ENDC}")
-            writer_already_set_count += 1
+            if f"{thiswriter}".lower() == strippedName.lower():
+                writerAlreadySet = True
+        if writerAlreadySet:
+            # print(f"{bcolors.OKGREEN}Writer '{strippedName}' already set on this title.{bcolors.ENDC}")
+            writerAlreadySetCount += 1
         else:
-            print(f"{bcolors.WARNING}Writer '{stripped_name}' not yet set on {video.title}, need to add it!{bcolors.ENDC}")
-            writer_missing_count += 1
-            some_writers_missing = True
-    if some_writers_missing:
-        print(f"{bcolors.WARNING}List extracted from title: ", end="")
-        pprint(sorted(stripped_set))
-        print(f"{bcolors.OKCYAN}Current list in Plex: ", end="")
+            print(f"{bcolors.WARNING}{progressString}Writer '{strippedName}' not yet set on {video.title}, need to add it!{bcolors.ENDC}")
+            writerMissingCount += 1
+            someWritersMissing = True
+    if someWritersMissing:
+        print(f"{bcolors.WARNING}{progressString}List extracted from title: ", end="")
+        pprint(sorted(strippedSet))
+        print(f"{bcolors.OKCYAN}{progressString}Current list in Plex: ", end="")
         pprint(video.writers)
-        print(f"{bcolors.WARNING}Updating list...{bcolors.ENDC}")
-        video.addWriter(sorted(stripped_set), True)
-        print(f"{bcolors.OKGREEN}Writers list updated!{bcolors.ENDC}")
-        print("")
+        print(f"{bcolors.WARNING}{progressString}Updating list...{bcolors.ENDC}")
+        video.addWriter(sorted(strippedSet), True)
+        print(f"{bcolors.OKGREEN}{progressString}Writers list updated!{bcolors.ENDC}")
+        print('')
 
-writer_global_count = len(writer_global_set)
-print(f"Total titles: {title_count}")
-print(f"Total appearances: {writer_appearance_count}")
-print(f"Total individual writers: {writer_global_count}")
-print(f"{bcolors.OKGREEN}Instances of writers already set: {writer_already_set_count}{bcolors.ENDC}")
-print(f"{bcolors.WARNING}Instances of writers not yet set: {writer_missing_count}{bcolors.ENDC}")
-print("")
+writerGlobalCount = len(writerGlobalSet)
+print(f"Total titles: {titleCount}")
+print(f"Total appearances: {writerAppearanceCount}")
+print(f"Total individual writers: {writerGlobalCount}")
+print(f"{bcolors.OKGREEN}Instances of writers already set: {writerAlreadySetCount}{bcolors.ENDC}")
+print(f"{bcolors.WARNING}Instances of writers not yet set: {writerMissingCount}{bcolors.ENDC}")
+print('')

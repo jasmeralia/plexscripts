@@ -3,6 +3,7 @@
 # import modules
 #
 import configparser
+import os
 #from pprint import pprint
 from plexapi.server import PlexServer
 #
@@ -23,40 +24,40 @@ class bcolors:
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plex_host = config['default']['plex_host']
-plex_port = config['default']['plex_port']
-plex_section = config['default']['plex_section']
-plex_token = config['default']['plex_token']
-plex_section_name = config['default']['plex_section_name']
-baseurl = f"http://{plex_host}:{plex_port}"
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
+baseurl = f"http://{plexHost}:{plexPort}"
 #
 # Connect to server
 #
-plex = PlexServer(baseurl, plex_token)
+plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-plex_section = plex.library.section(plex_section_name)
-writer_global_set = set()
-writer_bad_count = 0
-writer_good_count = 0
-for video in plex_section.all():
+plexSection = plex.library.section(plexSectionName)
+writerGlobalSet = set()
+writerBadCount = 0
+writerGoodCount = 0
+for video in plexSection.all():
     if not video.writers:
-        writer_count = 0
+        writerCount = 0
     else:
-        writer_count = len(video.writers)
-    # print(f"Title: {video.title} has {writer_count} writers.")
+        writerCount = len(video.writers)
+    # print(f"Title: {video.title} has {writerCount} writers.")
     if video.writers:
         for writer in video.writers:
             if "," in f"{writer}":
                 print(f"{bcolors.FAIL}Title: {video.title} - Writer: {writer} has a comma in it!{bcolors.ENDC}")
-                writer_bad_count += 1
+                writerBadCount += 1
             else:
                 # print(f"{bcolors.OKGREEN}Writer: {writer}{bcolors.ENDC}")
-                writer_good_count += 1
-                writer_global_set.add(f"{writer}")
+                writerGoodCount += 1
+                writerGlobalSet.add(f"{writer}")
 
-writer_count = len(writer_global_set)
+writerCount = len(writerGlobalSet)
 print(" ")
-print(f"{bcolors.OKGREEN}Total number of good writers: {writer_good_count}{bcolors.ENDC}")
-print(f"{bcolors.FAIL}Total number of bad writers: {writer_bad_count}{bcolors.ENDC}")
+print(f"{bcolors.OKGREEN}Total number of good writers: {writerGoodCount}{bcolors.ENDC}")
+print(f"{bcolors.FAIL}Total number of bad writers: {writerBadCount}{bcolors.ENDC}")

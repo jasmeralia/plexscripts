@@ -13,30 +13,30 @@ from plexapi.server import PlexServer
 if len(sys.argv) != 2:
     print(f"Usage: {os.path.basename(__file__)} <collection name>")
     sys.exit(1)
-collection_name = sys.argv[1]
-print(f"Collection: {collection_name}")
+collectionName = sys.argv[1]
+print(f"Collection: {collectionName}")
 #
 # set default variables
 #
 config = configparser.ConfigParser()
 config.read(os.getenv('HOME')+'/.plexconfig.ini')
-plex_host = config['default']['plex_host']
-plex_port = config['default']['plex_port']
-plex_section = config['default']['plex_section']
-plex_token = config['default']['plex_token']
-plex_section_name = config['default']['plex_section_name']
-baseurl = f"http://{plex_host}:{plex_port}"
+plexHost = config['default']['plexHost']
+plexPort = config['default']['plexPort']
+plexSection = config['default']['plexSection']
+plexToken = config['default']['plexToken']
+plexSectionName = config['default']['plexSectionName']
+baseurl = f"http://{plexHost}:{plexPort}"
 #
 # Connect to server
 #
-plex = PlexServer(baseurl, plex_token)
+plex = PlexServer(baseurl, plexToken)
 #
 # Select section
 #
-plex_section = plex.library.section(plex_section_name)
-this_collection = plex_section.collection(collection_name)
-if (str(this_collection.title).lower() == collection_name.lower()):
-    for video in this_collection.items():
+plexSection = plex.library.section(plexSectionName)
+thisCollection = plexSection.collection(collectionName)
+if str(thisCollection.title).lower() == collectionName.lower():
+    for video in thisCollection.items():
         print(f"Title: {video.title}")
 else:
     print("Collection not found.")
