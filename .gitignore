@@ -3,7 +3,4 @@
 !docs/*.md
 *.txt
 *.ini
-*.sh
-!mass_process.sh
-!top_*.sh
 *.log

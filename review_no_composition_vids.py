@@ -21,24 +21,6 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 #
-# Check CLI arguments
-#
-# if len(sys.argv) != 2:
-#     print(f"Usage: {sys.argv[0]} <filename of writers>")
-#     sys.exit(1)
-
-# fileName = sys.argv[1]
-# if not os.path.isfile(fileName):
-#     print(f"Error: {fileName} is not readable!")
-#     sys.exit(1)
-# print(f"Filename: '{fileName}'")
-# fileHandle = open(fileName, 'r', encoding="utf-8")
-# fileData = fileHandle.read()
-# writerList = fileData.split("\n")
-# writerCount = len(writerList)
-# print(f"Imported {writerCount} writers to add to the collection.")
-# print('')
-#
 # set default variables
 #
 config = configparser.ConfigParser()
@@ -59,12 +41,18 @@ plex = PlexServer(baseurl, plexToken)
 plexSection = plex.library.section(plexSectionName)
 searchFilters = {
     'and': [
-        {'collection!': '01: Category: Blonde Hair'},
-        {'collection!': '01: Category: Blue Hair'},
-        {'collection!': '01: Category: Brunette Hair'},
-        {'collection!': '01: Category: Pink Hair'},
-        {'collection!': '01: Category: Purple Hair'},
-        {'collection!': '01: Category: Red Hair'}
+        {'collection!': '01: Category: FFF+'},
+        {'collection!': '01: Category: FFFM'},
+        {'collection!': '01: Category: FFM'},
+        {'collection!': '01: Category: FFT'},
+        {'collection!': '01: Category: Gangbang'},
+        {'collection!': '01: Category: MF Only'},
+        {'collection!': '01: Category: MMF'},
+        {'collection!': '01: Category: Non-Sexual'},
+        {'collection!': '01: Category: Orgy'},
+        {'collection!': '01: Category: Reverse Gangbang'},
+        {'collection!': '01: Category: Solo'},
+        {'collection!': '01: Category: Trans MTF'},
     ]
 }
 print(f"{bcolors.OKCYAN}Search filters: {bcolors.OKGREEN}{searchFilters}\n{bcolors.ENDC}")

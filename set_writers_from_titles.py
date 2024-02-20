@@ -6,6 +6,7 @@
 import configparser
 import sys
 import os
+from datetime import datetime
 from pprint import pprint
 from plexapi.server import PlexServer
 #
@@ -41,6 +42,12 @@ plex = PlexServer(baseurl, plexToken)
 #
 writerGlobalSet = set()
 plexSection = plex.library.section(plexSectionName)
+#
+# Start processing
+#
+currentTime = datetime.now().strftime("%H:%M:%S")
+startTime = datetime.now()
+print(f"{bcolors.OKGREEN}[{currentTime}] Setting writers based on title and collecting list of studios and writers...{bcolors.ENDC}")
 titleCount = 0
 writerAppearanceCount = 0
 writerMissingCount = 0
