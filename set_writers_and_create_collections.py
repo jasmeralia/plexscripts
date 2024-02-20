@@ -156,7 +156,7 @@ for studioName in sorted(studioSet):
             collectionFound = True
     if collectionFound:
         collectionsAlreadyCreated += 1
-        print(f"{bcolors.OKCYAN}Collection '{studioTitle}' already exists, skipping.{bcolors.ENDC}")
+        # print(f"{bcolors.OKCYAN}Collection '{studioTitle}' already exists, skipping.{bcolors.ENDC}")
     else:
         currentTime = datetime.now().strftime("%H:%M:%S")
         print(f"{bcolors.WARNING}[{currentTime}] Creating smart collection '{studioTitle}'{bcolors.ENDC}")
@@ -182,7 +182,7 @@ for writerName in sorted(writerGlobalSet):
             collectionFound = True
     if collectionFound:
         collectionsAlreadyCreated += 1
-        print(f"{bcolors.OKCYAN}Collection {writerTitle} already exists, skipping.{bcolors.ENDC}")
+        # print(f"{bcolors.OKCYAN}Collection {writerTitle} already exists, skipping.{bcolors.ENDC}")
     else:
         currentTime = datetime.now().strftime("%H:%M:%S")
         print(f"{bcolors.WARNING}[{currentTime}] Creating smart collection '{writerTitle}'{bcolors.ENDC}")

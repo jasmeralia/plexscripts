@@ -75,9 +75,9 @@ for video in results:
     # not all pattern matches will actually match one of the writers, but this eliminates the overhead of doing reload() on every single video...
     foundWriterMatch = False
     for writerName in writerList:
-        if writerName.lower() in video.title.lower():
+        if writerName.lower() in video.title.lower() and writerName != '':
             foundWriterMatch = True
-    #print(f"Checking video '{video.title}' for pattern '{pattern}'...")
+            print(f"Found match on video '{video.title}' for writer '{writerName}'...")
     if foundWriterMatch:
         # ensure data is up to date
         if video.isPartialObject():

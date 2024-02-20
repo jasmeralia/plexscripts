@@ -4,21 +4,18 @@
 date; time python3 -u set_writers_and_create_collections.py
 
 # Add certain writer-specific collections
-date; time set_asians.sh
-date; time set_indies.sh
-date; time set_pierced.sh
-date; time set_porcelain.sh
-
-# Add known hair color collections
-date; time set_hair.sh
-
-# Copy certain collections and studios to other collections
-date; time copy_collections.sh
+date; time set_tags_based_on_writers.sh
 
 # Set certain tags based on the title
 date; time set_tags_based_on_title.sh
 
+# Copy certain collections and studios to other collections
+date; time copy_collections.sh
+
 # Update the contents of the unrated collection
 date; time python3 -u update_unrated_collection.py '001: Unrated'
+
+# Add short videos to a special collection
+date; time python3 -u add_short_duration_vids_to_collection.py '01: Category: Short Videos'
 
 date

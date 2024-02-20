@@ -11,10 +11,10 @@ from plexapi.server import PlexServer
 # Sanity check CLI arguments and assign them to readable variable names
 #
 if len(sys.argv) != 2:
-    print(f"Usage: {os.path.basename(__file__)} <collection name>")
+    print(f"Usage: {os.path.basename(__file__)} <studio name>")
     sys.exit(1)
-collectionName = sys.argv[1]
-# print(f"Collection: {collectionName}")
+studioName = sys.argv[1]
+# print(f"Studio: {studioName}")
 #
 # Color support
 #
@@ -47,13 +47,10 @@ plex = PlexServer(baseurl, plexToken)
 # Select section
 #
 plexSection = plex.library.section(plexSectionName)
-thisCollection = plexSection.collection(collectionName)
 writerGlobalSet = set()
-if not str(thisCollection.title).lower() == collectionName.lower():
-    print(f"{bcolors.FAIL}Collection '{collectionName}' not found!{bcolors.ENDC}")
-    sys.exit(1)
+results = plexSection.search(studio__exact=studioName, sort="titleSort")
 
-for video in thisCollection.items():
+for video in results:
     for thisWriter in video.writers:
         writerGlobalSet.add(f"{thisWriter}")
 

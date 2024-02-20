@@ -46,7 +46,8 @@ class bcolors:
 def writerListToSearchFilter(writerList):
     searchList = []
     for writerName in writerList:
-        searchList.append({'writer': writerName})
+        if writerName != '':
+            searchList.append({'writer': writerName})
     return {'or': searchList}
 #
 # Generate a search filter based on the writers, excluding
