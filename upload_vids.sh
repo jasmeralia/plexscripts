@@ -19,7 +19,7 @@ do
     # shellcheck disable=SC2029
     if ssh "${REMOTE_HOST}" mv "'${remote_file_path}.tmp'" "'${remote_file_path}'"; then
       echo "${filename} uploaded and renamed successfully, deleting..."
-      /bin/rm "${filename}"
+      /bin/rm -f "${filename}"
     else
       echo "Unable to rename from '${remote_file_path}.tmp' to '${remote_file_path}'!"
     fi
