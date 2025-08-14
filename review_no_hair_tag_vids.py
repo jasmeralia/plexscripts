@@ -59,13 +59,13 @@ plex = PlexServer(baseurl, plexToken)
 plexSection = plex.library.section(plexSectionName)
 searchFilters = {
     'and': [
-        {'collection!': '01: Category: Blonde Hair'},
-        {'collection!': '01: Category: Blue Hair'},
-        {'collection!': '01: Category: Brunette Hair'},
-        {'collection!': '01: Category: Pink Hair'},
-        {'collection!': '01: Category: Purple Hair'},
-        {'collection!': '01: Category: Red Hair'},
-        {'collection!': '01: Category: Silver Hair'}
+        {'collection!': '01: Hair: Blonde'},
+        {'collection!': '01: Hair: Blue'},
+        {'collection!': '01: Hair: Brunette'},
+        {'collection!': '01: Hair: Pink'},
+        {'collection!': '01: Hair: Purple'},
+        {'collection!': '01: Hair: Red'},
+        {'collection!': '01: Hair: Silver'}
     ]
 }
 print(f"{bcolors.OKCYAN}Search filters: {bcolors.OKGREEN}{searchFilters}\n{bcolors.ENDC}")

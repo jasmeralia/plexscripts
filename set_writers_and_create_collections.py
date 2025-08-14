@@ -3,11 +3,16 @@
 # import modules
 #
 import configparser
+import math
 import sys
 import os
 from datetime import datetime
 from pprint import pprint
 from plexapi.server import PlexServer
+
+def count_digits(number):
+    return int(math.log10(abs(number))) + 1 if number else 1
+
 #
 # Check CLI arguments
 #
@@ -47,7 +52,10 @@ plex = PlexServer(baseurl, plexToken)
 # Select section
 #
 plexSection = plex.library.section(plexSectionName)
+checkpointInterval = 200
 studioEmptyCount = 0
+studioEmptyList = []
+studioSetList = []
 studioCount = 0
 studioSet = set()
 writerGlobalSet = set()
@@ -60,18 +68,28 @@ collectionsAlreadyCreated = 0
 collectionsNewlyCreated = 0
 results = plexSection.all()
 totalVideoCount = len(results)
+totalVideoDigits = count_digits(totalVideoCount)
 #
 # Scan all videos and build lists of studios and writers
 #
 currentTime = datetime.now().strftime("%H:%M:%S")
 startTime = datetime.now()
+print(f"{bcolors.OKGREEN}[{currentTime}] Finding collection '00A: NO STUDIO2'...{bcolors.ENDC}")
+noStudioCollection = plexSection.collection("00A: NO STUDIO2")
 print(f"{bcolors.OKGREEN}[{currentTime}] Collecting list of studios and writers...{bcolors.ENDC}")
 for video in results:
     titleCount += 1
+    percentProgress = titleCount / totalVideoCount
+    percentString = f"{percentProgress:7.2%}"
     # ensure data is up to date
     if video.isPartialObject():
         video.reload()
-    progressString = f"[{titleCount}/{totalVideoCount}] "
+    progressDigits = count_digits(titleCount)
+    progressPadding = ' ' * (totalVideoDigits - progressDigits )
+    progressString = f"[{percentString} {progressPadding}{titleCount}/{totalVideoCount}] "
+    if titleCount % checkpointInterval == 0:
+        currentTime = datetime.now().strftime("%H:%M:%S")
+        print(f"{bcolors.OKGREEN}[{currentTime}] {progressString}checkpoint.{bcolors.ENDC}")
     # replace nbsp; with space and emdash with hyphen... fuck utf8!
     thisTitle = video.title.replace(" – ", " - ").replace("\xa0", " ")
     writerNames = thisTitle.split(' - ', 1)[0]
@@ -92,22 +110,35 @@ for video in results:
             # print(f"{bcolors.OKGREEN}Writer '{strippedName}' already set on this title.{bcolors.ENDC}")
             writerAlreadySetCount += 1
         else:
-            print(f"{bcolors.WARNING}{progressString}Writer '{strippedName}' not yet set on {video.title}, need to add it!{bcolors.ENDC}")
+            currentTime = datetime.now().strftime("%H:%M:%S")
+            print(f"{bcolors.WARNING}[{currentTime}] {progressString}Writer '{strippedName}' not yet set on {video.title}, need to add it!{bcolors.ENDC}")
             writerMissingCount += 1
             someWritersMissing = True
     if someWritersMissing:
-        print(f"{bcolors.WARNING}{progressString}List extracted from title: ", end="")
+        # print(f"{bcolors.WARNING}{progressString}List extracted from title: ", end="")
         pprint(sorted(strippedSet))
-        print(f"{bcolors.OKCYAN}{progressString}Current list in Plex: ", end="")
+        # print(f"{bcolors.OKCYAN}{progressString}Current list in Plex: ", end="")
         pprint(video.writers)
-        print(f"{bcolors.WARNING}{progressString}Updating list...{bcolors.ENDC}")
+        # print(f"{bcolors.WARNING}{progressString}Updating list...{bcolors.ENDC}")
         video.addWriter(sorted(strippedSet), True)
-        print(f"{bcolors.OKGREEN}{progressString}Writers list updated!{bcolors.ENDC}")
+        currentTime = datetime.now().strftime("%H:%M:%S")
+        print(f"{bcolors.OKGREEN}[{currentTime}] {progressString}Writers list updated!{bcolors.ENDC}")
         print('')
     if video.studio is None or video.studio == '':
         studioEmptyCount += 1
+        studioEmptyList.append(video)
     else:
         studioSet.add(video.studio)
+        studioSetList.append(video)
+#
+# Add studio empty videos to collection
+#
+currentTime = datetime.now().strftime("%H:%M:%S")
+# print(f"{bcolors.OKGREEN}[{currentTime}] {studioEmptyCount} videos without studios need to be tracked!{bcolors.ENDC}")
+# noStudioCollection.addItems(studioEmptyList)
+# currentTime = datetime.now().strftime("%H:%M:%S")
+# print(f"{bcolors.OKGREEN}[{currentTime}] {studioEmptyCount} videos with studios need to be untracked!{bcolors.ENDC}")
+# noStudioCollection.removeItems(studioSetList)
 #
 # Output scan statistics
 #
@@ -123,6 +154,7 @@ print(f"[{currentTime}] Total individual writers: {writerGlobalCount}")
 print(f"[{currentTime}] Total appearances: {writerAppearanceCount}")
 print(f"{bcolors.OKGREEN}[{currentTime}] Instances of writers already set: {writerAlreadySetCount}{bcolors.ENDC}")
 print(f"{bcolors.WARNING}[{currentTime}] Instances of writers not yet set: {writerMissingCount}{bcolors.ENDC}")
+
 print('')
 #
 # Scan collections in section

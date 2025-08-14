@@ -59,6 +59,7 @@ def generateFilters(writerList, collectionName):
     filterList = {
         'and': [
             {'collection!': collectionName},
+            {'collection!': '99: LOCKED'},
             writersFilter
         ]
     }
@@ -115,9 +116,9 @@ for video in results:
                 foundCollection = True
     if not foundCollection:
         print(f"{bcolors.WARNING}{progressStr}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
-        thisCollection.addItems(video)
+        # thisCollection.addItems(video)
         collectionsAddedCount += 1
-        print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
+        # print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
         # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title} (sleeping for {sleepInterval}s...){bcolors.ENDC}")
         # time.sleep(sleepInterval) # introduce a delay to avoid hammering the server
         foundCollection = True
@@ -131,6 +132,7 @@ if matchesFoundCount == 0:
     print(f"{bcolors.FAIL}No matches found!{bcolors.ENDC}")
     print('')
 else:
+    thisCollection.addItems(results)
     print('')
     print(f"{bcolors.HEADER}{matchesFoundCount} matches found.{bcolors.ENDC}")
     # print(f"{bcolors.OKGREEN}{collectionsAlreadySetCount} collections already set.{bcolors.ENDC}")

@@ -17,6 +17,7 @@ pattern = sys.argv[2]
 collectionName = sys.argv[1]
 indieContent = bool(collectionName == "02: Independent Content")
 print(f"Pattern: '{pattern}'")
+matchedVideos = []
 #print(f"Collection: {collectionName}")
 #
 # set default variables
@@ -60,7 +61,12 @@ for video in plexSection.all():
                     foundCollection = True
         if foundCollection:
             print(f"'{video.title}' needs to be removed from '{thisCollection.title}'")
-            thisCollection.removeItems(video)
-            print(f"'{video.title}' has been removed from {thisCollection.title}")
+            matchedVideos.append(video)
+            # thisCollection.removeItems(video)
+            # print(f"'{video.title}' has been removed from {thisCollection.title}")
 if not matchesFound:
     print(f"No matches found for pattern '{pattern}'")
+else:
+    print(f"{len(matchedVideos)} matches need to be removed from {thisCollection.title}")
+    thisCollection.removeItems(matchedVideos)
+    print(f"{len(matchedVideos)} matches have been removed from {thisCollection.title}")

@@ -62,6 +62,7 @@ else:
 matchesFoundCount = 0
 collectionsAddedCount = 0
 collectionsAlreadySetCount = 0
+matchResults = []
 for video in plexSection.all():
     # not all pattern matches will actually match the writer, but this eliminates the overhead of doing reload() on every single video...
     if pattern.lower() in video.title.lower():
@@ -79,9 +80,10 @@ for video in plexSection.all():
                             foundCollection = True
                 if not foundCollection:
                     print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
-                    thisCollection.addItems(video)
+                    # thisCollection.addItems(video)
+                    matchResults.append(video)
                     collectionsAddedCount += 1
-                    print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
+                    # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
                     # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title} (sleeping for {sleepInterval}s...){bcolors.ENDC}")
                     # time.sleep(sleepInterval) # introduce a delay to avoid hammering the server
                 else:
@@ -93,6 +95,7 @@ if matchesFoundCount == 0:
     print(f"{bcolors.FAIL}No writer matches found for pattern '{pattern}'!{bcolors.ENDC}")
     print('')
 else:
+    thisCollection.addItems(matchResults)
     print('')
     print(f"{bcolors.HEADER}{matchesFoundCount} writer matches found.{bcolors.ENDC}")
     print(f"{bcolors.OKGREEN}{collectionsAlreadySetCount} collections already set.{bcolors.ENDC}")

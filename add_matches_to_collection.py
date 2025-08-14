@@ -63,6 +63,7 @@ else:
 
 matchesFound = 0
 collectionsAdded = 0
+matchResults = []
 for video in plexSection.all():
     #print(f"Checking video '{video.title}' for pattern '{pattern}'...")
     skipSceneContent = False
@@ -85,9 +86,10 @@ for video in plexSection.all():
             print(f"{bcolors.WARNING}Skipping non-sexual solo content '{video.title}'{bcolors.ENDC}")
         elif not foundCollection:
             print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
-            thisCollection.addItems(video)
+            matchResults.append(video)
+            # thisCollection.addItems(video)
             collectionsAdded += 1
-            print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
+            # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
             # print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title} (sleeping for {sleepInterval}s...){bcolors.ENDC}")
             # time.sleep(sleepInterval) # introduce a delay to avoid hammering the server
         else:
@@ -97,6 +99,7 @@ if matchesFound == 0:
     print(f"{bcolors.FAIL}No matches found for pattern '{pattern}'!{bcolors.ENDC}")
     print('')
 else:
+    thisCollection.addItems(matchResults)
     print('')
     print(f"{bcolors.OKCYAN}{matchesFound} matches found, {collectionsAdded} collections added.{bcolors.ENDC}")
     print('')

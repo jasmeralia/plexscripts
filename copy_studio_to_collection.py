@@ -84,9 +84,9 @@ for video in results:
                 foundCollection = True
     if not foundCollection:
         print(f"{bcolors.WARNING}{progressStr}'{video.title}' needs to be added to '{targetCollection.title}'{bcolors.ENDC}")
-        targetCollection.addItems(video)
+        # targetCollection.addItems(video)
         collectionsAdded += 1
-        print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been added to {targetCollection.title}{bcolors.ENDC}")
+        # print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been added to {targetCollection.title}{bcolors.ENDC}")
     else:
         print(f"{bcolors.OKCYAN}{progressStr}'{video.title}' is already part of '{targetCollection.title}'{bcolors.ENDC}")
 
@@ -95,6 +95,7 @@ if matchesFound == 0:
     print(f"{bcolors.FAIL}No items found for studio '{sourceStudioName}' that are not already in '{targetCollection.title}'!{bcolors.ENDC}")
     print('')
 else:
+    targetCollection.addItems(results)
     print('')
     print(f"{bcolors.OKCYAN}{matchesFound} matches found, {collectionsAdded} collections added.{bcolors.ENDC}")
     print('')

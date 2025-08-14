@@ -42,6 +42,7 @@ else:
     sys.exit(1)
 
 matchesFound = False
+matchResults = []
 for video in plexSection.all():
     #print(f"Checking video '{video.title}' for pattern '{pattern}'...")
     skipNonIndie = False
@@ -57,7 +58,15 @@ for video in plexSection.all():
                     foundCollection = True
         if not foundCollection:
             print(f"'{video.title}' needs to be added to '{thisCollection.title}'")
-            thisCollection.addItems(video)
-            print(f"'{video.title}' has been added to {thisCollection.title}")
+            matchResults.append(video)
+            # thisCollection.addItems(video)
+            # print(f"'{video.title}' has been added to {thisCollection.title}")
+
 if not matchesFound:
-    print(f"No matches found for pattern '{pattern}'")
+    print('')
+    print(f"{bcolors.OKCYAN}No matches found for pattern '{pattern}'{bcolors.ENDC}")
+else:
+    thisCollection.addItems(matchResults)
+    print('')
+    print(f"{bcolors.OKCYAN}{matchesFound} matches found, {collectionsAdded} collections added.{bcolors.ENDC}")
+    print('')

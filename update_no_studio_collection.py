@@ -23,13 +23,13 @@ class bcolors:
 #
 # format summary info
 #
-def getSummaryString(collectionsUnchanged, collectionsAdded, collectionsRemoved):
-    return f"({collectionsUnchanged} unchanged, {collectionsAdded} added, {collectionsRemoved} removed)"
+def getSummaryString(collectionsAdded, collectionsRemoved):
+    return f"({collectionsAdded} added, {collectionsRemoved} removed)"
 #
 # Sanity check CLI arguments and assign them to readable variable names
 #
 if len(sys.argv) != 2:
-    print(f"Usage: {os.path.basename(__file__)} <unrated collection name>")
+    print(f"Usage: {os.path.basename(__file__)} <no studio collection name>")
     sys.exit(1)
 collectionName = sys.argv[1]
 print(f"Collection: {collectionName}")
@@ -60,58 +60,64 @@ collectionsUnchanged = 0
 videosRated = 0
 videosUnrated = 0
 videoCount = 0
-print(f"Checking for unrated videos not in collection '{thisCollection.title}'...")
+print(f"Checking for videos without studios not in collection '{thisCollection.title}'...")
 print('')
 searchFilters = {
     'and': [
-        {'userRating': -1},
+        {'studio__exact=': ''},
         {'collection!': thisCollection.title}
     ]
 }
-results = plexSection.search(filters=searchFilters, sort="titleSort")
+results = plexSection.search(studio__exact='', sort="titleSort")
 resultsCount = len(results)
-print(f"{bcolors.OKCYAN}Found {resultsCount} unrated videos not in collection '{thisCollection.title}':{bcolors.ENDC}")
+print(f"{bcolors.OKCYAN}Found {resultsCount} videos without studios '{thisCollection.title}':{bcolors.ENDC}")
 matchCount = 0
+matchResults = []
 for video in results:
     # ensure data is up to date
     if video.isPartialObject():
         video.reload()
-    matchCount += 1
-    collectionsAdded += 1
-    progressStr = f"[{matchCount}/{resultsCount}] "
-    print(f"{bcolors.WARNING}{progressStr}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
-    # thisCollection.addItems(video)
-    # print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been added to '{thisCollection.title}'{bcolors.ENDC}")
+    if video.studio == "" or video.studio == None:
+        matchCount += 1
+        collectionsAdded += 1
+        progressStr = f"[{matchCount}/{resultsCount}] "
+        print(f"{bcolors.WARNING}{progressStr}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
+        matchResults.append(video)
+        # thisCollection.addItems(video)
+        print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been added to '{thisCollection.title}'{bcolors.ENDC}")
 
 if matchCount > 0:
-    thisCollection.addItems(results)
+    thisCollection.addItems(matchResults)
     print(f"{bcolors.OKGREEN}{progressStr}videos have been added to '{thisCollection.title}'{bcolors.ENDC}")
 
 print('')
-print(f"Checking for rated videos present in collection '{thisCollection.title}'...")
+print(f"Checking for videos wth studios present in collection '{thisCollection.title}'...")
 searchFilters = {
     'and': [
-        {'userRating>>': 0},
+        {'studio__exact!': ''},
         {'collection=': thisCollection.title}
     ]
 }
 results = plexSection.search(filters=searchFilters, sort="titleSort")
 resultsCount = len(results)
 matchCount = 0
-print(f"{bcolors.OKCYAN}Found {resultsCount} rated videos in collection '{thisCollection.title}':{bcolors.ENDC}")
+matchResults = []
+print(f"{bcolors.OKCYAN}Found {resultsCount} videos with studios in collection '{thisCollection.title}':{bcolors.ENDC}")
 for video in results:
     # ensure data is up to date
     if video.isPartialObject():
         video.reload()
-    matchCount += 1
-    collectionsRemoved += 1
-    progressStr = f"[{matchCount}/{resultsCount}] "
-    print(f"{bcolors.WARNING}{progressStr}'{video.title}' needs to be removed from collection '{thisCollection.title}'!{bcolors.ENDC}")
+    if video.studio != "" and video.studio != None:
+        matchCount += 1
+        collectionsRemoved += 1
+        progressStr = f"[{matchCount}/{resultsCount}] "
+        print(f"{bcolors.WARNING}{progressStr}'{video.title}' needs to be removed from collection '{thisCollection.title}'!{bcolors.ENDC}")
+        matchResults.append(video)
     # thisCollection.removeItems(video)
     # print(f"{bcolors.OKGREEN}{progressStr}'{video.title}' has been removed from {thisCollection.title}{bcolors.ENDC}")
 
 if matchCount > 0:
-    thisCollection.removeItems(results)
+    thisCollection.removeItems(matchResults)
     print(f"{bcolors.OKGREEN}{progressStr}videos have been removed from '{thisCollection.title}'{bcolors.ENDC}")
 
 print('')

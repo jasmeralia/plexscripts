@@ -50,33 +50,28 @@ plexSection = plex.library.section(plexSectionName)
 thisCollection = plexSection.collection(collectionName)
 collectionsAdded = 0
 matchesFound = 0
-if str(thisCollection.title).lower() == collectionName.lower():
-    results = plexSection.search(filters={"duration<<": 90000}, sort="titleSort")
-    for video in results:
-        foundCollection = False
-        matchesFound += 1
-        if video.collections:
-            # ensure data is up to date
-            video.reload()
-            for collection in video.collections:
-                # print(f"Checking collection '{collection}' vs '{collectionName}'...")
-                if str(collection).lower() == collectionName.lower():
-                    # print(f"Collection {collection} matches {collectionName}!")
-                    foundCollection = True
-        if foundCollection:
-            print(f"{bcolors.OKCYAN}'{video.title}' is already part of '{thisCollection.title}'{bcolors.ENDC}")
-        else:
-            print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
-            thisCollection.addItems(video)
-            collectionsAdded += 1
-            print(f"{bcolors.OKGREEN}'{video.title}' has been added to {thisCollection.title}{bcolors.ENDC}")
-    if matchesFound == 0:
-        print('')
-        print(f"{bcolors.FAIL}No matches found!{bcolors.ENDC}")
-        print('')
-    else:
-        print('')
-        print(f"{bcolors.OKCYAN}{matchesFound} matches found, {collectionsAdded} collections added.{bcolors.ENDC}")
-        print('')
-else:
+if str(thisCollection.title).lower() != collectionName.lower():
     print("Collection not found.")
+    sys.exit(1)
+
+filters = {
+    "and": [
+        "collection!": thisCollection.title,
+        "duration<<": 90000
+    ]
+}
+results = plexSection.search(filters=filters, sort="titleSort")
+for video in results:
+    matchesFound += 1
+    print(f"{bcolors.WARNING}'{video.title}' needs to be added to '{thisCollection.title}'{bcolors.ENDC}")
+    collectionsAdded += 1
+
+if matchesFound == 0:
+    print('')
+    print(f"{bcolors.FAIL}No matches found!{bcolors.ENDC}")
+    print('')
+else:
+    thisCollection.addItems(results)
+    print('')
+    print(f"{bcolors.OKCYAN}{matchesFound} matches found, {collectionsAdded} collections added.{bcolors.ENDC}")
+    print('')

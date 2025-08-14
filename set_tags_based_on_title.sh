@@ -1,73 +1,74 @@
 #!/bin/bash
-
-python3 -u add_search_results_to_collection.py '01: Category: Anal' 'Anal'
-python3 -u add_search_results_to_collection.py '01: Category: Anal' 'butt fuck'
-python3 -u add_search_results_to_collection.py '01: Category: Blackmail' 'blackmail'
-python3 -u add_search_results_to_collection.py '01: Category: Blonde Hair' 'blond'
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' ' Blow '
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' ' BJ '
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' 'gag'
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' 'facefuck'
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' 'face fuck'
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' 'throat'
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' ' oral '
-python3 -u add_search_results_to_collection.py '01: Category: Blowjob' 'choked'
-python3 -u add_search_results_to_collection.py '01: Category: Brunette Hair' 'brunette'
-python3 -u add_search_results_to_collection.py '01: Category: Butt Plug' ' Plug '
-python3 -u add_search_results_to_collection.py '01: Category: Butt Plug' ' buttplug '
-python3 -u add_search_results_to_collection.py '01: Category: Cheating' 'cheating'
-python3 -u add_search_results_to_collection.py '01: Category: Deepthroat' 'Face fuck'
-python3 -u add_search_results_to_collection.py '01: Category: Deepthroat' 'throat'
-python3 -u add_search_results_to_collection.py '01: Category: Double Anal' 'Double Anal'
-python3 -u add_search_results_to_collection.py '01: Category: Double Penetration' ' DP '
-python3 -u add_search_results_to_collection.py '01: Category: Double Penetration' ' Double Penetration '
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'daddy'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'stepsis'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step-sis'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step sis'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'stepbrother'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step-brother'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step brother'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'stepdaughter'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step-daughter'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step daughter'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'stepdad'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step-dad'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step dad'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'stepmom'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step-mom'
-python3 -u add_search_results_to_collection.py '01: Category: Fauxcest' 'step mom'
-python3 -u add_search_results_to_collection.py '01: Category: Fingering' 'finger'
-python3 -u add_search_results_to_collection.py '01: Category: Fuck Machine' 'fuck machine'
-python3 -u add_search_results_to_collection.py '01: Category: Fuck Machine' 'fuckmachine'
-python3 -u add_search_results_to_collection.py '01: Category: GFE' 'gfe'
-python3 -u add_search_results_to_collection.py '01: Category: GFE' 'girlfriend experience'
-python3 -u add_search_results_to_collection.py '01: Category: Goth' 'goth'
-python3 -u add_search_results_to_collection.py '01: Category: Hot Wax' ' wax '
-python3 -u add_search_results_to_collection.py '01: Category: Interview' ' Interview'
-python3 -u add_search_results_to_collection.py '01: Category: Latex' 'latex'
-python3 -u add_search_results_to_collection.py '01: Category: Lesbian' ' gg '
-python3 -u add_search_results_to_collection.py '01: Category: Lesbian' 'Lesbian'
-python3 -u add_search_results_to_collection.py '01: Category: Live Stream' 'livestream'
-python3 -u add_search_results_to_collection.py '01: Category: Live Stream' 'live stream'
-python3 -u add_search_results_to_collection.py '01: Category: Live Stream' 'public show'
-python3 -u add_search_results_to_collection.py '01: Category: Live Stream' 'club show'
-python3 -u add_search_results_to_collection.py '01: Category: Live Stream' 'cum show'
-python3 -u add_search_results_to_collection.py '01: Category: Live Stream' 'cumshow'
-python3 -u add_search_results_to_collection.py '01: Category: Red Hair' 'Redhead'
-python3 -u add_search_results_to_collection.py '01: Category: Red Hair' 'Red head'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'dildo'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'fuck machine'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'fuckmachine'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'toy'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'Vibrator'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'hitachi'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'bj tease'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'jessky'
-python3 -u add_search_results_to_collection.py '01: Category: Sex Toys' 'strap'
-python3 -u add_search_results_to_collection.py '01: Category: Strap On' 'strap'
-python3 -u add_search_results_to_collection.py '01: Category: Solo' 'herself'
-python3 -u add_search_results_to_collection.py '01: Category: Solo' 'myself'
-python3 -u add_search_results_to_collection.py '01: Category: Orgy' 'Orgy'
-python3 -u add_search_results_to_collection.py '01: Category: Orgy' ' Orgies '
-python3 -u add_search_results_to_collection.py '01: Category: Water' 'shower'
+python3 -u add_search_results_to_collection.py "01: Category: Anal" "Anal"
+python3 -u add_search_results_to_collection.py "01: Category: Anal" "butt fuck"
+python3 -u add_search_results_to_collection.py "01: Category: Blackmail" "blackmail"
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" " BJ "
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" " Blow "
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" " oral "
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" "choked"
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" "face fuck"
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" "facefuck"
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" "gag"
+python3 -u add_search_results_to_collection.py "01: Category: Blowjob" "throat"
+python3 -u add_search_results_to_collection.py "01: Category: Butt Plug" " Plug "
+python3 -u add_search_results_to_collection.py "01: Category: Butt Plug" " buttplug "
+python3 -u add_search_results_to_collection.py "01: Category: Cheating" "cheating"
+python3 -u add_search_results_to_collection.py "01: Category: Deepthroat" "Face fuck"
+python3 -u add_search_results_to_collection.py "01: Category: Deepthroat" "throat"
+python3 -u add_search_results_to_collection.py "01: Category: Double Anal" "Double Anal"
+python3 -u add_search_results_to_collection.py "01: Category: Double Penetration" " DP "
+python3 -u add_search_results_to_collection.py "01: Category: Double Penetration" " Double Penetration "
+python3 -u add_search_results_to_collection.py "01: Category: Facial" "facial"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "daddy"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step brother"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step dad"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step daughter"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step mom"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step sis"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step-brother"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step-dad"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step-daughter"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step-mom"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "step-sis"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "stepbrother"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "stepdad"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "stepdaughter"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "stepmom"
+python3 -u add_search_results_to_collection.py "01: Category: Fauxcest" "stepsis"
+python3 -u add_search_results_to_collection.py "01: Category: Fingering" "finger"
+python3 -u add_search_results_to_collection.py "01: Category: Fuck Machine" "fuck machine"
+python3 -u add_search_results_to_collection.py "01: Category: Fuck Machine" "fuckmachine"
+python3 -u add_search_results_to_collection.py "01: Category: GFE" "gfe"
+python3 -u add_search_results_to_collection.py "01: Category: GFE" "girlfriend experience"
+python3 -u add_search_results_to_collection.py "01: Category: Goth" "goth"
+python3 -u add_search_results_to_collection.py "01: Category: Hot Wax" " wax "
+python3 -u add_search_results_to_collection.py "01: Category: Interview" " Interview"
+python3 -u add_search_results_to_collection.py "01: Category: Latex" "latex"
+python3 -u add_search_results_to_collection.py "01: Category: Lesbian" " gg "
+python3 -u add_search_results_to_collection.py "01: Category: Lesbian" "Lesbian"
+python3 -u add_search_results_to_collection.py "01: Category: Live Stream" "club show"
+python3 -u add_search_results_to_collection.py "01: Category: Live Stream" "cum show"
+python3 -u add_search_results_to_collection.py "01: Category: Live Stream" "cumshow"
+python3 -u add_search_results_to_collection.py "01: Category: Live Stream" "live stream"
+python3 -u add_search_results_to_collection.py "01: Category: Live Stream" "livestream"
+python3 -u add_search_results_to_collection.py "01: Category: Live Stream" "public show"
+python3 -u add_search_results_to_collection.py "01: Category: Orgy" " Orgies "
+python3 -u add_search_results_to_collection.py "01: Category: Orgy" "Orgy"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "Vibrator"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "bj tease"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "dildo"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "fuck machine"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "fuckmachine"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "hitachi"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "jessky"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "strap"
+python3 -u add_search_results_to_collection.py "01: Category: Sex Toys" "toy"
+python3 -u add_search_results_to_collection.py "01: Category: Solo" "herself"
+python3 -u add_search_results_to_collection.py "01: Category: Solo" "myself"
+python3 -u add_search_results_to_collection.py "01: Category: Strap On" "strap"
+python3 -u add_search_results_to_collection.py "01: Category: Teacher/Tutor" "Teacher"
+python3 -u add_search_results_to_collection.py "01: Category: Water" "shower"
+python3 -u add_search_results_to_collection.py "01: Hair: Blonde" "blond"
+python3 -u add_search_results_to_collection.py "01: Hair: Brunette" "brunette"
+python3 -u add_search_results_to_collection.py "01: Hair: Red" "Red head"
+python3 -u add_search_results_to_collection.py "01: Hair: Red" "Redhead"
