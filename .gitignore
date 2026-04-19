@@ -5,3 +5,4 @@
 *.ini
 *.log
 new_script_template.sh
+.venv/

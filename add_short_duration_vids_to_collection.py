@@ -56,8 +56,8 @@ if str(thisCollection.title).lower() != collectionName.lower():
 
 filters = {
     "and": [
-        "collection!": thisCollection.title,
-        "duration<<": 90000
+        {"collection!": thisCollection.title},
+        {"duration<<": 90000}
     ]
 }
 results = plexSection.search(filters=filters, sort="titleSort")

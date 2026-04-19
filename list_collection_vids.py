@@ -37,6 +37,17 @@ plexSection = plex.library.section(plexSectionName)
 thisCollection = plexSection.collection(collectionName)
 if str(thisCollection.title).lower() == collectionName.lower():
     for video in thisCollection.items():
-        print(f"Title: {video.title}")
+        # ensure the data is up to date if needed
+        if video.isPartialObject():
+            video.reload()
+        duration_ms = getattr(video, "duration", None)
+        if duration_ms:
+            total_seconds = duration_ms // 1000
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            duration_str = f"{minutes}:{seconds:02d}"
+            print(f"Title: {video.title} ({duration_str})")
+        else:
+            print(f"Title: {video.title}")
 else:
     print("Collection not found.")
