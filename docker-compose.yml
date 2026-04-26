@@ -1,8 +1,8 @@
 services:
   plexadm:
-    build: .
+    image: ghcr.io/jasmeralia/plexscripts:sha-0a0a10d
     restart: "no"
     volumes:
-      - ~/.plexconfig.ini:/root/.plexconfig.ini:ro
-      - ./reference:/app/reference:rw
+      - /mnt/myzmirror/plexscripts/.plexconfig.ini:/root/.plexconfig.ini:ro
+      - /mnt/myzmirror/plexscripts/reference:/app/reference:rw
     command: ["bash", "scripts/mass_process.sh"]
