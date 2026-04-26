@@ -1,0 +1,8 @@
+services:
+  plexadm:
+    build: .
+    restart: "no"
+    volumes:
+      - ~/.plexconfig.ini:/root/.plexconfig.ini:ro
+      - ./reference:/app/reference:rw
+    command: ["bash", "scripts/mass_process.sh"]
