@@ -1,0 +1,27 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    ".venv",
+    "OLD",
+    "reference",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+exclude = [
+    "^OLD/",
+    "^reference/",
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov=plexadm --cov-report=term-missing --cov-report=xml:coverage.xml"
+testpaths = ["tests"]
+pythonpath = ["."]

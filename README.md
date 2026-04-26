@@ -1,51 +1,575 @@
-# Purpose
+# plexscripts
 
-# Naming Scheme
+`plexscripts` is a collection of Plex library administration tools consolidated around the `plexadm` CLI. The tool reads Plex connection details from `~/.plexconfig.ini`, connects with `plexapi`, and performs listing, tagging, collection maintenance, studio updates, writer updates, and batch processing for one Plex library.
 
-I have a [document here](./docs/naming-scheme.md) where I detail the naming scheme that I have for collections and video files.
+Most commands mutate Plex immediately. There is no global dry-run mode yet.
 
-# General breakdown of Python scripts
+## Configuration
 
-* `add_independent_to_matches.py`
-* `add_matches_to_collection.py`
-* `add_short_duration_vids_to_collection.py`
-* `add_startswith_matches_to_collection.py`
-* `add_studio_to_matches.py`
-* `add_writer_to_collection.py`
-* `add_writer_to_independent.py`
-* `bulk_add_writers_to_collection.py`
-* `bulk_set_independent_for_writers.py`
-* `copy_collection_to_collection.py`
-* `copy_studio_to_collection.py`
-* `create_smart_collections_unified.py`
-* `list_collection_vids.py`
-* `list_collection_writers.py`
-* `list_collections.py`
-* `list_multi_f_vids_without_category.py`
-* `list_multipart_items.py`
-* `list_no_hair_tag_videos.py`
-* `list_no_studio_vids.py`
-* `list_no_title_spaces.py`
-* `list_potential_untagged_indie_vids.py`
-* `list_studios.py`
-* `list_uncategorized_vids.py`
-* `list_uncollected.py`
-* `list_video_matches*.py`
+Create `~/.plexconfig.ini` with a `[default]` section:
 
-I will likely consolidate these in the future, as they all perform the same function, but use different methods of filtering to find video matches.
-* `list_writer_videos_bulk.py`
-* `list_writers.py`
-* `remove_matches_from_collection.py`
-* `set_writers_from_titles.py`
-* `update_unrated_collection.py`
+```ini
+[default]
+plexHost = 192.168.1.10
+plexPort = 32400
+plexToken = your-token
+plexSectionName = Your Library Name
+plexSection = optional-section-id
+```
 
-# Shell scripts
+You can use another config file with `--config PATH` on Plex-backed subcommands.
 
-* `copy_collections.sh`
-* `list_empty_collections.sh`
-* `mass_process.sh`
-* `new_script_template.sh`
-* `remove_fps_title.sh`
-* `set_*.sh`
-* `top_categories.sh`
-* `top_*.sh`
+## Install
+
+Install local development dependencies into `.venv/`:
+
+```bash
+make install
+```
+
+Run the CLI from the repository:
+
+```bash
+./bin/plexadm --help
+```
+
+Install the command, shell helpers, and reference data under `/usr/local`:
+
+```bash
+sudo make install-system
+```
+
+That installs:
+
+- `/usr/local/bin/plexadm`
+- `/usr/local/bin/plexadm-scripts/*.sh`
+- `/usr/local/share/plexadm/reference`
+
+## Docker
+
+Build and run the default mass process:
+
+```bash
+docker compose up --build
+```
+
+The compose file mounts:
+
+- `~/.plexconfig.ini:/root/.plexconfig.ini:ro`
+- `./reference:/app/reference:rw`
+
+Override the default command with a shell:
+
+```bash
+docker compose run --rm plexadm bash
+```
+
+Run one command directly:
+
+```bash
+docker compose run --rm plexadm plexadm list collections
+docker compose run --rm plexadm bash scripts/set_tags_based_on_title.sh
+```
+
+`restart` is set to `"no"`.
+
+## Development
+
+Normal validation flow:
+
+```bash
+make lintfix && make lint && make test
+```
+
+Targets:
+
+- `make install`: create `.venv/` and install `requirements-dev.txt`
+- `make lintfix`: run `ruff format` and `ruff check --fix`
+- `make lint`: run ruff, mypy, shell syntax checks, shellcheck if installed, and hadolint. If hadolint is not installed, it runs via Docker.
+- `make test`: run pytest with coverage and write `coverage.xml` for Codecov
+- `make install-system`: install command and scripts to `/usr/local`
+
+The GitHub Actions Docker workflow builds on pull requests and pushes to GHCR on `main`, version tags, and manual dispatch.
+
+## Command Overview
+
+Top-level command groups:
+
+```bash
+plexadm list ...
+plexadm collection ...
+plexadm studio ...
+plexadm writers ...
+plexadm smart-collections ...
+plexadm tools ...
+plexadm top ...
+```
+
+All Plex-backed subcommands support:
+
+```bash
+--config PATH
+```
+
+## Listing Commands
+
+### Videos
+
+List all videos:
+
+```bash
+plexadm list videos
+```
+
+Filter videos by title text, prefix, or regex:
+
+```bash
+plexadm list videos --title "pattern"
+plexadm list videos --startswith "Alice"
+plexadm list videos --regex "Scene #[0-9]+"
+```
+
+Use Plex search by title:
+
+```bash
+plexadm list videos --search-title "pattern"
+```
+
+List videos by collection, studio, writer, or missing studio:
+
+```bash
+plexadm list videos --collection "00C: Unrated"
+plexadm list videos --studio "Studio Name"
+plexadm list videos --writer "Writer Name"
+plexadm list videos --no-studio
+```
+
+Find titles that do not contain the expected ` - ` separator:
+
+```bash
+plexadm list videos --no-title-spaces
+```
+
+Force reload while listing all videos:
+
+```bash
+plexadm list videos --reload
+```
+
+### Collections
+
+List collections with item counts:
+
+```bash
+plexadm list collections
+```
+
+Filter collection titles:
+
+```bash
+plexadm list collections "01: Category:"
+plexadm list collections "03: Star:"
+```
+
+### Studios
+
+List studios with counts:
+
+```bash
+plexadm list studios
+```
+
+Filter studios:
+
+```bash
+plexadm list studios "Tushy"
+```
+
+### Writers
+
+List writers with counts across the library:
+
+```bash
+plexadm list writers
+```
+
+List writers appearing in a collection:
+
+```bash
+plexadm list writers --collection "01: Category: Solo"
+```
+
+List writers appearing under a studio:
+
+```bash
+plexadm list studio-writers "Studio Name"
+```
+
+### Special Lists
+
+Special list kinds:
+
+- `uncategorized`
+- `uncollected`
+- `multipart`
+- `merged`
+- `potential-indie`
+- `multi-f-without-category`
+- `no-composition`
+- `no-hair`
+- `no-moneyshot`
+
+Examples:
+
+```bash
+plexadm list special uncategorized
+plexadm list special no-hair
+plexadm list special uncollected
+plexadm list special multipart
+```
+
+## Collection Commands
+
+These commands add or remove collection membership immediately.
+
+### Add By Title Scan
+
+Scan every title locally and add matching videos to a collection:
+
+```bash
+plexadm collection add-title "01: Category: Anal" "Anal"
+```
+
+Match title prefix instead of substring:
+
+```bash
+plexadm collection add-title "02: Independent Content" "Alice" --startswith
+```
+
+Skip scene-style titles:
+
+```bash
+plexadm collection add-title "02: Independent Content" "Alice" --skip-scenes
+```
+
+### Add By Plex Search
+
+Use Plex search filters to add title matches not already in the collection:
+
+```bash
+plexadm collection add-search "01: Category: Anal" "Anal"
+```
+
+This is what `scripts/set_tags_based_on_title.sh` uses.
+
+### Add By Writer
+
+Scan titles for a writer pattern, confirm the Plex writer exactly matches, then add to a collection:
+
+```bash
+plexadm collection add-writer "01: Category: Solo" "Writer Name"
+```
+
+Add all videos matching any writer in a file:
+
+```bash
+plexadm collection add-writers "01: Category: Solo" reference/writers_solo.txt
+```
+
+Writer files are newline-delimited.
+
+### Copy Between Collections
+
+Copy membership from one collection to another:
+
+```bash
+plexadm collection copy "01: Category: Deepthroat" "01: Category: Blowjob"
+```
+
+Only videos not already in the target collection are added.
+
+### Copy Studio To Collection
+
+Add all videos from a studio to a collection:
+
+```bash
+plexadm collection copy-studio "Tushy" "01: Category: Anal"
+```
+
+### Remove By Title
+
+Remove matching videos from a collection:
+
+```bash
+plexadm collection remove-title "01: Category: Example" "pattern"
+```
+
+### Add Short Videos
+
+Add videos shorter than 90 seconds by default:
+
+```bash
+plexadm collection add-short "01: Category: Short Videos"
+```
+
+Set a different duration threshold in milliseconds:
+
+```bash
+plexadm collection add-short "01: Category: Short Videos" --max-duration-ms 120000
+```
+
+### Add Vertical Videos
+
+Add videos where media height is greater than width:
+
+```bash
+plexadm collection add-vertical "01: Category: Vertical"
+```
+
+### Sync Unrated Collection
+
+Add unrated videos and remove rated videos:
+
+```bash
+plexadm collection sync-unrated "00C: Unrated"
+```
+
+The default collection is `00C: Unrated`:
+
+```bash
+plexadm collection sync-unrated
+```
+
+### Sync No-Studio Collection
+
+Add videos with empty studio and remove videos that now have a studio:
+
+```bash
+plexadm collection sync-no-studio "00A: NO STUDIO2"
+```
+
+The default collection is `00A: NO STUDIO2`:
+
+```bash
+plexadm collection sync-no-studio
+```
+
+## Studio Commands
+
+These commands update Plex studio fields immediately.
+
+### Set Studio By Title Pattern
+
+Set a studio on title matches that do not already have a studio:
+
+```bash
+plexadm studio set-title "Studio Name" "pattern"
+```
+
+Require the pattern to match an exact Plex writer too:
+
+```bash
+plexadm studio set-title "Independent Content" "Writer Name" --require-writer
+```
+
+Skip scene-style titles:
+
+```bash
+plexadm studio set-title "Independent Content" "Writer Name" --skip-scenes
+```
+
+### Set Independent Studio
+
+Shortcut for independent content. It requires exact writer match and skips scenes:
+
+```bash
+plexadm studio set-independent "Writer Name"
+```
+
+### Bulk Set Independent
+
+Use a newline-delimited writer file:
+
+```bash
+plexadm studio bulk-independent reference/writers_indie.txt
+```
+
+### Rename Studio
+
+Rename studio values across matching videos:
+
+```bash
+plexadm studio rename "Old Studio" "New Studio"
+```
+
+## Writer Commands
+
+### Set Writers From Titles
+
+Parse writer names from the title prefix before the first ` - ` and add missing Plex writers:
+
+```bash
+plexadm writers set-from-titles
+```
+
+Example title format:
+
+```text
+Alice, Bob - Example Title
+```
+
+### Set Writers And Sync Smart Collections
+
+Set missing writers from titles, then create missing smart collections for studios and writers:
+
+```bash
+plexadm writers set-and-sync
+```
+
+This is the first step in `scripts/mass_process.sh`.
+
+## Smart Collection Commands
+
+### Sync Smart Collections
+
+Create missing smart collections for all discovered studios and writers:
+
+```bash
+plexadm smart-collections sync
+```
+
+Studio smart collections are named:
+
+```text
+02: Studio: Studio Name
+```
+
+Writer smart collections are named:
+
+```text
+03: Star: Writer Name
+```
+
+`Independent Content` is named:
+
+```text
+02: Independent Content
+```
+
+### Rename Collections
+
+Rename collections using a Python regular expression replacement:
+
+```bash
+plexadm smart-collections rename "^Old Prefix: " "New Prefix: "
+```
+
+## Top Reports
+
+Show top category collections:
+
+```bash
+plexadm top categories
+plexadm top categories --limit 25
+```
+
+Show top studios:
+
+```bash
+plexadm top studios
+```
+
+Show top writers or scenes missing studios:
+
+```bash
+plexadm top writers-without-studios
+plexadm top scenes-without-studios
+```
+
+Show unrated writer or scene counts:
+
+```bash
+plexadm top unrated-writers
+plexadm top unrated-scenes
+```
+
+Override the collection used by top reports where applicable:
+
+```bash
+plexadm top unrated-writers --collection "00C: Unrated"
+```
+
+## Tools
+
+Find which Plex item references a file path:
+
+```bash
+plexadm tools find-missing-file "/path/to/file.mp4"
+```
+
+Generate a download scene name:
+
+```bash
+plexadm tools fix-dl-scene-name "original.mp4"
+plexadm tools fix-dl-scene-name "original.mp4" --prefix "Alice"
+```
+
+Generate an UltraFilms-style filename:
+
+```bash
+plexadm tools fix-ultrafilms-name "some_file_name.mp4"
+```
+
+Print OFDL name mappings from JSON:
+
+```bash
+plexadm tools ofdl-gen-names --map-file reference/indie_usernames_to_map.json
+```
+
+Run rsync:
+
+```bash
+plexadm tools ofdl-rsync SOURCE DESTINATION
+```
+
+Remove `_23fps`, `_24fps`, `_25fps`, `_30fps`, `_50fps`, or `_60fps` style title suffixes:
+
+```bash
+plexadm tools remove-fps-title "Video_60fps.mp4"
+```
+
+Upload local `*.mp4` files to a remote host:
+
+```bash
+plexadm tools upload-vids
+plexadm tools upload-vids --remote-host truenas --upload-path "/mnt/myzmirror/plexdata/NSFW Scenes"
+```
+
+## Shell Scripts
+
+The `scripts/` directory contains batch wrappers around `plexadm`.
+
+Important scripts:
+
+- `scripts/mass_process.sh`: full batch process
+- `scripts/set_tags_based_on_title.sh`: title-search category tagging
+- `scripts/set_tags_based_on_writers.sh`: writer-file tagging and independent content updates
+- `scripts/copy_collections.sh`: collection and studio propagation rules
+- `scripts/set_unrated.sh`: unrated collection sync with log output
+- `scripts/top_*.sh`: convenience reports
+
+Run the full batch:
+
+```bash
+bash scripts/mass_process.sh
+```
+
+## Reference Data
+
+`reference/` is for local runtime data, writer lists, logs, and notes. Files such as `reference/*.txt`, `reference/*.log`, `reference/*.md`, and `reference/*.json` are ignored by git.
+
+`reference/legacy-python/` contains the archived pre-refactor Python scripts for comparison.
+
+## Naming Scheme
+
+See [docs/naming-scheme.md](./docs/naming-scheme.md).
