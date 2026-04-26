@@ -26,8 +26,6 @@ plex = PlexServer(baseurl, plexToken)
 #
 plexSection = plex.library.section(plexSectionName)
 for video in plexSection.all():
-    if "00 Rin" in video.title:
-        print(f"          Video Title: {video.title}")
     for mediaItem in video.media:
         # print(f"     Media Item Parts: {len(mediaItem.parts)}")
         if len(mediaItem.parts) > 1:

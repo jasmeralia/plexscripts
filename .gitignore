@@ -1,10 +1,6 @@
-*.md
-!README.md
-!AGENTS.md
-!docs/*.md
-*.txt
 *.ini
 *.log
+OLD/
 new_script_template.sh
 .venv/
 __pycache__/
