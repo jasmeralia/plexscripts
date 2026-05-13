@@ -41,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.resolve.outputs.tag_name || steps.bump.outputs.new_tag }}
+      version: ${{ steps.resolve.outputs.version || steps.bump.outputs.version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -50,7 +51,9 @@ jobs:
       - name: Resolve existing tag
         id: resolve
         if: startsWith(github.ref, 'refs/tags/')
-        run: echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Bump patch tag
         id: bump
@@ -68,6 +71,7 @@ jobs:
             echo "Attempt ${attempt}: tagging ${new_tag} (previous: ${latest})"
             if git tag -a "${new_tag}" -m "Release ${new_tag}" && git push origin "refs/tags/${new_tag}"; then
               echo "new_tag=${new_tag}" >> "$GITHUB_OUTPUT"
+              echo "version=${new_tag#v}" >> "$GITHUB_OUTPUT"
               break
             fi
             echo "Push failed (tag may already exist); retrying after refetch"
@@ -104,7 +108,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-            type=raw,value=${{ needs.prepare-tag.outputs.tag_name }}
+            type=raw,value=${{ needs.prepare-tag.outputs.version }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
