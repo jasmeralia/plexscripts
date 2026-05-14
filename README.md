@@ -573,3 +573,22 @@ bash scripts/mass_process.sh
 ## Naming Scheme
 
 See [docs/naming-scheme.md](./docs/naming-scheme.md).
+
+## Using a .env file
+
+Rather than embedding credentials in your `docker-compose.yml`, you can store them in a `.env` file and bind-mount it into the container:
+
+```bash
+cp .env.example .env
+# edit .env with your values
+```
+
+```yaml
+services:
+  app:
+    image: ghcr.io/jasmeralia/plexscripts:latest
+    volumes:
+      - /path/to/your/.env:/app/.env:ro
+```
+
+The app loads `/app/.env` automatically on startup. Any value in `.env` can still be overridden by an explicit `environment:` entry in your Compose file.
