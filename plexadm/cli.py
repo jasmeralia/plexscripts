@@ -526,6 +526,7 @@ def list_renames(args: argparse.Namespace) -> int:
             or "PPV" in filename
             or " PPV " in locations[0]
             or "?" in video.title
+            or not video.title.isascii()
         ):
             match_found = True
 
