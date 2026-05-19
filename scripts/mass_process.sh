@@ -22,7 +22,7 @@ date; time "$PLEXADM" collection add-short '01: Category: Short Videos'
 # Update the contents of the unrated collection
 date; time "${SCRIPT_DIR}/set_unrated.sh"
 
-date; time "$PLEXADM" collection sync-no-studio "00A: NO STUDIO2"
+date; time "$PLEXADM" collection sync-no-studio "00A: NO STUDIO"
 
 END_DATE=$(date)
 echo "Start date: ${START_DATE}"

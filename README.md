@@ -369,10 +369,10 @@ plexadm collection sync-unrated
 Add videos with empty studio and remove videos that now have a studio:
 
 ```bash
-plexadm collection sync-no-studio "00A: NO STUDIO2"
+plexadm collection sync-no-studio "00A: NO STUDIO"
 ```
 
-The default collection is `00A: NO STUDIO2`:
+The default collection is `00A: NO STUDIO`:
 
 ```bash
 plexadm collection sync-no-studio
