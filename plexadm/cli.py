@@ -16,7 +16,7 @@ from plexadm.plex import PlexContext, add_items, collection_titles, has_collecti
 from plexadm.progress import progress_prefix
 from plexadm.writers import missing_title_writers, read_writer_file, writers_from_title
 
-NO_STUDIO_COLLECTION = "00A: NO STUDIO2"
+NO_STUDIO_COLLECTION = "00A: NO STUDIO"
 UNRATED_COLLECTION = "00C: Unrated"
 INDEPENDENT_STUDIO = "Independent Content"
 LOCKED_COLLECTION = "99: LOCKED"
