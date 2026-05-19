@@ -514,6 +514,9 @@ def list_renames(args: argparse.Namespace) -> int:
             if not any(filter_text in entry for entry in haystack):
                 continue
 
+        if args.script and len(locations) > 1:
+            continue
+
         filename = Path(locations[0]).name
         match_found = any(video.title in location for location in locations)
 
