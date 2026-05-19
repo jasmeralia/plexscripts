@@ -228,6 +228,30 @@ plexadm list special uncollected
 plexadm list special multipart
 ```
 
+### Renames
+
+List videos whose filename does not match their Plex title:
+
+```bash
+plexadm list renames
+plexadm list renames "TUSHY"
+```
+
+Output shell `mv` commands instead of a human-readable diff:
+
+```bash
+plexadm list renames --script
+plexadm list renames --script "TUSHY"
+```
+
+Override the base directory prefix stripped from file paths (default: `/data/NSFW Scenes/`):
+
+```bash
+plexadm list renames --base-dir "/other/path/"
+```
+
+Message, Post, PPV, and titles containing `?` are excluded automatically.
+
 ## Collection Commands
 
 These commands add or remove collection membership immediately.

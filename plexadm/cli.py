@@ -497,6 +497,56 @@ def rename_collections(args: argparse.Namespace) -> int:
     return 0
 
 
+SCENE_BASE_DIR = "/data/NSFW Scenes/"
+
+
+def list_renames(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    filter_text = args.filter_text
+
+    for video in ctx.all_videos():
+        locations = getattr(video, "locations", []) or []
+        if not locations:
+            continue
+
+        if filter_text:
+            haystack = [video.title] + locations
+            if not any(filter_text in entry for entry in haystack):
+                continue
+
+        filename = Path(locations[0]).name
+        match_found = any(video.title in location for location in locations)
+
+        if (
+            " - Message " in filename
+            or " - Post " in filename
+            or "PPV" in filename
+            or " PPV " in locations[0]
+            or "?" in video.title
+        ):
+            match_found = True
+
+        has_location_mismatch = any(video.title not in location for location in locations)
+        needs_review = not args.script and len(locations) > 1 and has_location_mismatch
+
+        if not match_found or needs_review:
+            old_location = locations[0].replace(args.base_dir, "")
+            new_fname = f"{video.title}.mp4"
+            first_writer = new_fname.split(" - ", 1)[0].split(",")[0]
+            if args.script:
+                print(f'mv "{old_location}" "{first_writer}/{new_fname}"')
+            else:
+                if len(locations) > 1:
+                    print(f"WARNING: {video.title} has multiple locations!")
+                    for location in locations:
+                        print(f"  {location}")
+                    print("")
+                else:
+                    print(f"{old_location} -> {first_writer}/{new_fname}")
+
+    return 0
+
+
 def find_missing_file(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     target = Path(args.path)
@@ -649,6 +699,13 @@ def build_parser() -> argparse.ArgumentParser:
     studio_writers = list_sub.add_parser("studio-writers")
     studio_writers.add_argument("studio")
     set_func(studio_writers, list_studio_writers)
+    renames = list_sub.add_parser("renames")
+    renames.add_argument(
+        "filter_text", nargs="?", help="Only include videos where title or file path contains this text."
+    )
+    renames.add_argument("--script", action="store_true", help="Output mv commands instead of human-readable diff.")
+    renames.add_argument("--base-dir", default=SCENE_BASE_DIR, help="Base directory prefix to strip from file paths.")
+    set_func(renames, list_renames)
     special = list_sub.add_parser("special")
     special.add_argument(
         "kind",
