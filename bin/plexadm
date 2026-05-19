@@ -3,6 +3,11 @@ import sys
 from pathlib import Path
 
 repo_root = Path(__file__).resolve().parents[1]
+
+venv_site = next(iter((repo_root / ".venv" / "lib").glob("python*/site-packages")), None) if (repo_root / ".venv").exists() else None
+if venv_site and str(venv_site) not in sys.path:
+    sys.path.insert(0, str(venv_site))
+
 sys.path.insert(0, str(repo_root))
 
 installed_lib = Path("/usr/local/lib/plexadm")
