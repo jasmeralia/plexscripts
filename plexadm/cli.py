@@ -663,8 +663,19 @@ def print_top(args: argparse.Namespace) -> int:
     return 0
 
 
+FORMATTER = argparse.RawDescriptionHelpFormatter
+
+
 def add_common_parser(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--config", help="Path to Plex config file")
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help=(
+            "Path to the Plex config file. "
+            "If omitted, plexadm searches the default locations "
+            "(~/.config/plexadm/config.yaml, /etc/plexadm/config.yaml)."
+        ),
+    )
 
 
 def set_func(parser: argparse.ArgumentParser, func: Any) -> None:
@@ -672,188 +683,842 @@ def set_func(parser: argparse.ArgumentParser, func: Any) -> None:
     parser.set_defaults(func=func)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="plexadm")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    sub = parser.add_subparsers(dest="command", required=True)
+def _make_sub(
+    sub: Any,
+    name: str,
+    *,
+    help: str,
+    description: str | None = None,
+    epilog: str | None = None,
+) -> argparse.ArgumentParser:
+    """Add a subparser with consistent formatting and required descriptions.
 
-    list_parser = sub.add_parser("list")
-    list_sub = list_parser.add_subparsers(dest="list_command", required=True)
-    videos = list_sub.add_parser("videos")
-    videos.add_argument("--title")
-    videos.add_argument("--startswith")
-    videos.add_argument("--regex")
-    videos.add_argument("--search-title")
-    videos.add_argument("--collection")
-    videos.add_argument("--studio")
-    videos.add_argument("--writer")
-    videos.add_argument("--no-studio", action="store_true")
-    videos.add_argument("--no-title-spaces", action="store_true")
-    videos.add_argument("--reload", action="store_true")
-    set_func(videos, list_videos)
-    collections = list_sub.add_parser("collections")
-    collections.add_argument("pattern", nargs="?")
-    set_func(collections, list_collections)
-    studios = list_sub.add_parser("studios")
-    studios.add_argument("pattern", nargs="?")
-    set_func(studios, list_studios)
-    writers = list_sub.add_parser("writers")
-    writers.add_argument("--collection")
-    set_func(writers, list_writers)
-    studio_writers = list_sub.add_parser("studio-writers")
-    studio_writers.add_argument("studio")
-    set_func(studio_writers, list_studio_writers)
-    renames = list_sub.add_parser("renames")
-    renames.add_argument(
-        "filter_text", nargs="?", help="Only include videos where title or file path contains this text."
+    ``help`` is the one-line summary shown in the parent command's listing.
+    ``description`` is the longer prose shown when running ``<command> -h``;
+    if omitted, ``help`` is reused so the per-command page still has context.
+    """
+    return sub.add_parser(
+        name,
+        help=help,
+        description=description or help,
+        epilog=epilog,
+        formatter_class=FORMATTER,
     )
-    renames.add_argument("--script", action="store_true", help="Output mv commands instead of human-readable diff.")
-    renames.add_argument("--base-dir", default=SCENE_BASE_DIR, help="Base directory prefix to strip from file paths.")
+
+
+def _add_subparsers(parser: argparse.ArgumentParser, *, dest: str, title: str) -> Any:
+    return parser.add_subparsers(
+        dest=dest,
+        required=True,
+        title=title,
+        metavar="<command>",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="plexadm",
+        formatter_class=FORMATTER,
+        description=(
+            "plexadm administers a Plex video library: listing items, building and\n"
+            "maintaining collections, normalising studios and writers, and running\n"
+            "miscellaneous file-system tools.\n"
+            "\n"
+            "All mutation subcommands apply changes immediately unless the subcommand\n"
+            "documents another mode. Use `plexadm <command> -h` for command-specific\n"
+            "help, or `plexadm <command> <subcommand> -h` to drill down further."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm list videos --collection '01: Category: Solo'\n"
+            "  plexadm collection add-search '01: Category: Oil' 'Oily'\n"
+            "  plexadm studio rename 'Old Studio' 'New Studio'\n"
+            "  plexadm smart-collections sync\n"
+            "  plexadm top categories --limit 25\n"
+            "\n"
+            "Run `plexadm <command> -h` for details on any command."
+        ),
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
+        help="Show the installed plexadm version and exit.",
+    )
+    sub = _add_subparsers(parser, dest="command", title="commands")
+
+    _build_list_commands(sub)
+    _build_collection_commands(sub)
+    _build_studio_commands(sub)
+    _build_writers_commands(sub)
+    _build_smart_collection_commands(sub)
+    _build_tools_commands(sub)
+    _build_top_command(sub)
+
+    return parser
+
+
+def _build_list_commands(sub: Any) -> None:
+    list_parser = _make_sub(
+        sub,
+        "list",
+        help="Read-only inventory commands (videos, collections, studios, writers, renames).",
+        description=(
+            "Read-only commands that report what is currently in the Plex library.\n"
+            "Nothing under `list` mutates Plex state."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm list videos --title 'oil'\n"
+            "  plexadm list collections '01: Category'\n"
+            "  plexadm list studios\n"
+            "  plexadm list writers --collection '01: Category: Solo'\n"
+            "  plexadm list renames --script > rename.sh\n"
+            "  plexadm list special uncategorized"
+        ),
+    )
+    list_sub = _add_subparsers(list_parser, dest="list_command", title="list subcommands")
+
+    videos = _make_sub(
+        list_sub,
+        "videos",
+        help="List videos, optionally filtered by title, collection, studio, or writer.",
+        description=(
+            "Print one line per video that matches the given filters.\n"
+            "\n"
+            "Filters compose: provide one source filter (--collection, --studio,\n"
+            "--writer, --search-title, or --no-studio) and any number of title\n"
+            "filters (--title, --startswith, --regex) to narrow the results.\n"
+            "With no source filter the entire library is scanned."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm list videos --collection '01: Category: Solo'\n"
+            "  plexadm list videos --studio 'Brazzers' --regex '(?i)\\bpov\\b'\n"
+            "  plexadm list videos --writer 'Alice' --no-title-spaces"
+        ),
+    )
+    videos.add_argument(
+        "--title",
+        metavar="SUBSTRING",
+        help="Keep only videos whose title contains this substring (case-insensitive).",
+    )
+    videos.add_argument(
+        "--startswith",
+        metavar="PREFIX",
+        help="Keep only videos whose title starts with PREFIX (case-insensitive).",
+    )
+    videos.add_argument(
+        "--regex",
+        metavar="REGEX",
+        help="Keep only videos whose title matches this Python regex (case-insensitive).",
+    )
+    videos.add_argument(
+        "--search-title",
+        metavar="TEXT",
+        help="Use a Plex server-side title search for TEXT instead of scanning all videos.",
+    )
+    videos.add_argument(
+        "--collection",
+        metavar="NAME",
+        help="List videos that belong to the named collection.",
+    )
+    videos.add_argument(
+        "--studio",
+        metavar="NAME",
+        help="List videos with this exact studio.",
+    )
+    videos.add_argument(
+        "--writer",
+        metavar="NAME",
+        help="List videos with this writer/star.",
+    )
+    videos.add_argument(
+        "--no-studio",
+        action="store_true",
+        help="List videos that have no studio assigned.",
+    )
+    videos.add_argument(
+        "--no-title-spaces",
+        action="store_true",
+        help="Skip videos whose title contains ' - ' (the writer/title separator).",
+    )
+    videos.add_argument(
+        "--reload",
+        action="store_true",
+        help="Force-reload each video's metadata from the Plex server before filtering.",
+    )
+    set_func(videos, list_videos)
+
+    collections = _make_sub(
+        list_sub,
+        "collections",
+        help="List collections in the library, with item counts.",
+        description=(
+            "Print '<count>: <name>' for every collection in the library.\n"
+            "Pass a substring to filter the collection name (case-insensitive)."
+        ),
+        epilog="Example:\n  plexadm list collections '01: Category'",
+    )
+    collections.add_argument(
+        "pattern",
+        nargs="?",
+        metavar="PATTERN",
+        help="Optional case-insensitive substring filter on collection name.",
+    )
+    set_func(collections, list_collections)
+
+    studios = _make_sub(
+        list_sub,
+        "studios",
+        help="List studios in the library with the number of videos for each.",
+        description=(
+            "Print '<count>: <studio>' for every studio that has at least one video.\n"
+            "Pass a substring to filter the studio name (case-insensitive)."
+        ),
+        epilog="Example:\n  plexadm list studios brazzers",
+    )
+    studios.add_argument(
+        "pattern",
+        nargs="?",
+        metavar="PATTERN",
+        help="Optional case-insensitive substring filter on studio name.",
+    )
+    set_func(studios, list_studios)
+
+    writers = _make_sub(
+        list_sub,
+        "writers",
+        help="List writers/stars with their video counts.",
+        description=(
+            "Print '<count>: <writer>' for every distinct writer.\n"
+            "By default this scans the whole library; restrict it to a single\n"
+            "collection with --collection."
+        ),
+        epilog="Example:\n  plexadm list writers --collection '01: Category: Solo'",
+    )
+    writers.add_argument(
+        "--collection",
+        metavar="NAME",
+        help="Restrict the writer count to videos inside this collection.",
+    )
+    set_func(writers, list_writers)
+
+    studio_writers = _make_sub(
+        list_sub,
+        "studio-writers",
+        help="List writers/stars for videos belonging to a given studio.",
+        description="Print '<count>: <writer>' for every writer appearing on videos of the given studio.",
+        epilog="Example:\n  plexadm list studio-writers 'Brazzers'",
+    )
+    studio_writers.add_argument(
+        "studio",
+        metavar="STUDIO",
+        help="Exact studio name to filter on.",
+    )
+    set_func(studio_writers, list_studio_writers)
+
+    renames = _make_sub(
+        list_sub,
+        "renames",
+        help="Report file renames needed so on-disk filenames match Plex titles.",
+        description=(
+            "For each video whose filename does not match its Plex title, print either\n"
+            "a human-readable diff (default) or a `mv` script (--script).\n"
+            "\n"
+            "Videos with multiple file locations are skipped in --script mode and\n"
+            "flagged with a WARNING in human-readable mode."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm list renames\n"
+            "  plexadm list renames 'Brazzers'\n"
+            "  plexadm list renames --script > rename.sh"
+        ),
+    )
+    renames.add_argument(
+        "filter_text",
+        nargs="?",
+        metavar="FILTER",
+        help="Only include videos whose title or file path contains this substring.",
+    )
+    renames.add_argument(
+        "--script",
+        action="store_true",
+        help="Output `mv` commands instead of a human-readable diff.",
+    )
+    renames.add_argument(
+        "--base-dir",
+        default=SCENE_BASE_DIR,
+        metavar="DIR",
+        help=f"Base directory prefix to strip from file paths (default: {SCENE_BASE_DIR}).",
+    )
     set_func(renames, list_renames)
-    special = list_sub.add_parser("special")
+
+    special_help = {
+        "uncategorized": "videos missing all '01: Category:' collections (alias of no-composition)",
+        "uncollected": "videos that are not in any collection at all",
+        "multipart": "videos backed by more than one media file or media part",
+        "merged": "videos with more than one external GUID (likely merged)",
+        "potential-indie": "non-scene videos with no studio whose title contains ' - '",
+        "multi-f-without-category": "videos with multiple title-derived writers but no category collection",
+        "no-composition": "videos missing every composition category (FFM, MMF, ...)",
+        "no-hair": "videos missing every hair-colour collection",
+        "no-moneyshot": "videos missing every money-shot collection (Creampie, Facial, ...)",
+    }
+    special = _make_sub(
+        list_sub,
+        "special",
+        help="Run one of the built-in special-case audits over the library.",
+        description=(
+            "Audit the library for a specific class of metadata gap. Pick one KIND:\n\n"
+            + "\n".join(f"  {kind:<28}{desc}" for kind, desc in special_help.items())
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm list special uncategorized\n"
+            "  plexadm list special no-hair\n"
+            "  plexadm list special multipart"
+        ),
+    )
     special.add_argument(
         "kind",
-        choices=[
-            "uncategorized",
-            "uncollected",
-            "multipart",
-            "merged",
-            "potential-indie",
-            "multi-f-without-category",
-            "no-composition",
-            "no-hair",
-            "no-moneyshot",
-        ],
+        choices=list(special_help),
+        metavar="KIND",
+        help="Which audit to run (see description for the list).",
     )
     set_func(special, list_special)
 
-    collection = sub.add_parser("collection")
-    collection_sub = collection.add_subparsers(dest="collection_command", required=True)
-    add_title = collection_sub.add_parser("add-title")
-    add_title.add_argument("collection")
-    add_title.add_argument("pattern")
-    add_title.add_argument("--startswith", action="store_true")
-    add_title.add_argument("--skip-scenes", action="store_true")
+
+def _build_collection_commands(sub: Any) -> None:
+    collection = _make_sub(
+        sub,
+        "collection",
+        help="Mutate a manual collection (add/remove videos, copy, sync helpers).",
+        description=(
+            "Commands that mutate manual collections. Membership changes are written\nto the Plex server immediately."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm collection add-title '01: Category: Solo' 'masturbation' --skip-scenes\n"
+            "  plexadm collection add-search '01: Category: Oil' 'Oily'\n"
+            "  plexadm collection copy 'Old Name' 'New Name'\n"
+            "  plexadm collection sync-unrated"
+        ),
+    )
+    collection_sub = _add_subparsers(collection, dest="collection_command", title="collection subcommands")
+
+    add_title = _make_sub(
+        collection_sub,
+        "add-title",
+        help="Add videos whose title matches PATTERN to COLLECTION.",
+        description=(
+            "Walk every video and add the ones whose title contains PATTERN\n"
+            "(case-insensitive substring match) to COLLECTION."
+        ),
+        epilog="Example:\n  plexadm collection add-title '01: Category: Oil' 'oily' --skip-scenes",
+    )
+    add_title.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_title.add_argument("pattern", metavar="PATTERN", help="Substring to match in the video title.")
+    add_title.add_argument(
+        "--startswith",
+        action="store_true",
+        help="Require the title to START with PATTERN rather than contain it.",
+    )
+    add_title.add_argument(
+        "--skip-scenes",
+        action="store_true",
+        help="Skip videos whose title contains ' (Scene #' (typically multi-scene rips).",
+    )
     set_func(add_title, add_matching_titles)
-    add_search = collection_sub.add_parser("add-search")
-    add_search.add_argument("collection")
-    add_search.add_argument("pattern")
+
+    add_search = _make_sub(
+        collection_sub,
+        "add-search",
+        help="Add videos to COLLECTION via a Plex server-side title search.",
+        description=(
+            "Use Plex's server-side title search for PATTERN and add any matches that\n"
+            "are not already in COLLECTION. Faster than `add-title` for big libraries\n"
+            "but matches per Plex's search semantics, not a pure substring."
+        ),
+        epilog="Example:\n  plexadm collection add-search '01: Category: Fuck Machine' 'fuckmachine'",
+    )
+    add_search.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_search.add_argument("pattern", metavar="PATTERN", help="Text passed to the Plex title search.")
     set_func(add_search, add_search_results)
-    add_writer = collection_sub.add_parser("add-writer")
-    add_writer.add_argument("collection")
-    add_writer.add_argument("pattern")
+
+    add_writer = _make_sub(
+        collection_sub,
+        "add-writer",
+        help="Add videos with an exact writer match to COLLECTION.",
+        description=(
+            "Walk every video and add the ones whose writer list contains an exact\n"
+            "(case-insensitive) match for PATTERN to COLLECTION."
+        ),
+        epilog="Example:\n  plexadm collection add-writer '01: Category: Extreme Throating' 'Tiptobase69'",
+    )
+    add_writer.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_writer.add_argument("pattern", metavar="WRITER", help="Exact writer name to match (case-insensitive).")
     set_func(add_writer, add_writer_matches)
-    add_writers = collection_sub.add_parser("add-writers")
-    add_writers.add_argument("collection")
-    add_writers.add_argument("file")
+
+    add_writers = _make_sub(
+        collection_sub,
+        "add-writers",
+        help="Add videos for every writer listed in FILE to COLLECTION.",
+        description=(
+            "Read writer names from FILE (one per line) and add every video matching\n"
+            "any of those writers to COLLECTION. Videos already in the LOCKED\n"
+            "collection are skipped."
+        ),
+        epilog="Example:\n  plexadm collection add-writers '01: Hair: Blonde' /usr/local/share/plexadm/reference/writers_blonde.txt",
+    )
+    add_writers.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_writers.add_argument("file", metavar="FILE", help="Path to a writer-list file (one name per line).")
     set_func(add_writers, add_writers_file)
-    copy = collection_sub.add_parser("copy")
-    copy.add_argument("source")
-    copy.add_argument("target")
+
+    copy = _make_sub(
+        collection_sub,
+        "copy",
+        help="Copy all videos from SOURCE collection into TARGET collection.",
+        description="Add every video in SOURCE to TARGET. SOURCE is left unchanged.",
+        epilog="Example:\n  plexadm collection copy 'Old Smart Collection' 'New Manual Collection'",
+    )
+    copy.add_argument("source", metavar="SOURCE", help="Collection to read from.")
+    copy.add_argument("target", metavar="TARGET", help="Collection to write to.")
     set_func(copy, copy_collection)
-    copy_studio_parser = collection_sub.add_parser("copy-studio")
-    copy_studio_parser.add_argument("studio")
-    copy_studio_parser.add_argument("collection")
+
+    copy_studio_parser = _make_sub(
+        collection_sub,
+        "copy-studio",
+        help="Add every video with the given studio to COLLECTION.",
+        description="Find videos whose studio equals STUDIO and add any missing ones to COLLECTION.",
+        epilog="Example:\n  plexadm collection copy-studio 'Brazzers' '02: Studio: Brazzers'",
+    )
+    copy_studio_parser.add_argument("studio", metavar="STUDIO", help="Studio name to filter by.")
+    copy_studio_parser.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     set_func(copy_studio_parser, copy_studio)
-    remove_title = collection_sub.add_parser("remove-title")
-    remove_title.add_argument("collection")
-    remove_title.add_argument("pattern")
+
+    remove_title = _make_sub(
+        collection_sub,
+        "remove-title",
+        help="Remove videos whose title matches PATTERN from COLLECTION.",
+        description="Walk COLLECTION and remove every video whose title contains PATTERN (case-insensitive).",
+        epilog="Example:\n  plexadm collection remove-title '01: Category: Solo' 'duo'",
+    )
+    remove_title.add_argument("collection", metavar="COLLECTION", help="Collection to remove from.")
+    remove_title.add_argument("pattern", metavar="PATTERN", help="Substring to match in the video title.")
     set_func(remove_title, remove_matching_titles)
-    add_short = collection_sub.add_parser("add-short")
-    add_short.add_argument("collection")
-    add_short.add_argument("--max-duration-ms", type=int, default=90_000)
+
+    add_short = _make_sub(
+        collection_sub,
+        "add-short",
+        help="Add every short-duration video to COLLECTION.",
+        description="Add every video whose duration is below --max-duration-ms to COLLECTION.",
+        epilog="Example:\n  plexadm collection add-short '01: Duration: Short' --max-duration-ms 60000",
+    )
+    add_short.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_short.add_argument(
+        "--max-duration-ms",
+        type=int,
+        default=90_000,
+        metavar="MS",
+        help="Maximum video duration in milliseconds (default: 90000, i.e. 90s).",
+    )
     set_func(add_short, add_duration_collection)
-    add_vertical = collection_sub.add_parser("add-vertical")
-    add_vertical.add_argument("collection")
+
+    add_vertical = _make_sub(
+        collection_sub,
+        "add-vertical",
+        help="Add every vertically-oriented video to COLLECTION.",
+        description="Add every video whose first media is taller than it is wide (height > width) to COLLECTION.",
+        epilog="Example:\n  plexadm collection add-vertical '01: Format: Vertical'",
+    )
+    add_vertical.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     set_func(add_vertical, add_vertical_collection)
-    sync_unrated_parser = collection_sub.add_parser("sync-unrated")
-    sync_unrated_parser.add_argument("collection", nargs="?", default=UNRATED_COLLECTION)
+
+    sync_unrated_parser = _make_sub(
+        collection_sub,
+        "sync-unrated",
+        help=f"Keep COLLECTION in sync with the set of unrated videos (default: '{UNRATED_COLLECTION}').",
+        description=(
+            "Add every unrated video that is not already in COLLECTION and remove\n"
+            f"every rated video that is. Defaults to '{UNRATED_COLLECTION}'."
+        ),
+        epilog="Example:\n  plexadm collection sync-unrated",
+    )
+    sync_unrated_parser.add_argument(
+        "collection",
+        nargs="?",
+        default=UNRATED_COLLECTION,
+        metavar="COLLECTION",
+        help=f"Target collection name (default: '{UNRATED_COLLECTION}').",
+    )
     set_func(sync_unrated_parser, sync_unrated)
-    sync_no_studio_parser = collection_sub.add_parser("sync-no-studio")
-    sync_no_studio_parser.add_argument("collection", nargs="?", default=NO_STUDIO_COLLECTION)
+
+    sync_no_studio_parser = _make_sub(
+        collection_sub,
+        "sync-no-studio",
+        help=f"Keep COLLECTION in sync with the set of studio-less videos (default: '{NO_STUDIO_COLLECTION}').",
+        description=(
+            "Add every video with no studio that is missing from COLLECTION and remove\n"
+            f"every video that now has a studio assigned. Defaults to '{NO_STUDIO_COLLECTION}'."
+        ),
+        epilog="Example:\n  plexadm collection sync-no-studio",
+    )
+    sync_no_studio_parser.add_argument(
+        "collection",
+        nargs="?",
+        default=NO_STUDIO_COLLECTION,
+        metavar="COLLECTION",
+        help=f"Target collection name (default: '{NO_STUDIO_COLLECTION}').",
+    )
     set_func(sync_no_studio_parser, sync_no_studio)
 
-    studio = sub.add_parser("studio")
-    studio_sub = studio.add_subparsers(dest="studio_command", required=True)
-    set_title = studio_sub.add_parser("set-title")
-    set_title.add_argument("studio")
-    set_title.add_argument("pattern")
-    set_title.add_argument("--require-writer", action="store_true")
-    set_title.add_argument("--skip-scenes", action="store_true")
+
+def _build_studio_commands(sub: Any) -> None:
+    studio = _make_sub(
+        sub,
+        "studio",
+        help="Mutate the studio field on videos.",
+        description="Commands that set or rename the studio metadata on videos.",
+        epilog=(
+            "Examples:\n"
+            "  plexadm studio set-title 'New Sensations' 'new sensations'\n"
+            "  plexadm studio set-independent 'Alice'\n"
+            "  plexadm studio rename 'Old Studio' 'New Studio'"
+        ),
+    )
+    studio_sub = _add_subparsers(studio, dest="studio_command", title="studio subcommands")
+
+    set_title = _make_sub(
+        studio_sub,
+        "set-title",
+        help="Set the studio on every video whose title matches PATTERN.",
+        description=(
+            "For every video whose title contains PATTERN (case-insensitive), set the\n"
+            "studio to STUDIO unless one is already set. Locks the studio label.\n"
+            "Skips videos with a different studio already assigned."
+        ),
+        epilog="Example:\n  plexadm studio set-title 'New Sensations' 'new sensations' --skip-scenes",
+    )
+    set_title.add_argument("studio", metavar="STUDIO", help="Studio name to assign.")
+    set_title.add_argument("pattern", metavar="PATTERN", help="Title substring to match (case-insensitive).")
+    set_title.add_argument(
+        "--require-writer",
+        action="store_true",
+        help="Additionally require that PATTERN appears as an exact writer on the video.",
+    )
+    set_title.add_argument(
+        "--skip-scenes",
+        action="store_true",
+        help="Skip videos whose title contains ' (Scene #'.",
+    )
     set_func(set_title, set_studio_for_title_matches)
-    set_independent = studio_sub.add_parser("set-independent")
-    set_independent.add_argument("pattern")
+
+    set_independent = _make_sub(
+        studio_sub,
+        "set-independent",
+        help=f"Mark videos as '{INDEPENDENT_STUDIO}' when title matches PATTERN and the writer is exact.",
+        description=(
+            f"Shortcut for `studio set-title '{INDEPENDENT_STUDIO}' PATTERN --require-writer --skip-scenes`.\n"
+            "Used to bulk-tag indie content where the writer name appears in the title."
+        ),
+        epilog="Example:\n  plexadm studio set-independent 'Alice'",
+    )
+    set_independent.add_argument(
+        "pattern",
+        metavar="PATTERN",
+        help="Writer/title substring to match (case-insensitive).",
+    )
     set_independent.set_defaults(studio=INDEPENDENT_STUDIO, require_writer=True, skip_scenes=True)
     set_func(set_independent, set_studio_for_title_matches)
-    bulk_independent = studio_sub.add_parser("bulk-independent")
-    bulk_independent.add_argument("file")
+
+    bulk_independent = _make_sub(
+        studio_sub,
+        "bulk-independent",
+        help="Mark videos as Independent based on a writer-list file.",
+        description=(
+            "Read writer names from FILE (one per line). For every studio-less video\n"
+            f"whose title contains one of those writers AND who is an exact writer on\n"
+            f"the video, set the studio to '{INDEPENDENT_STUDIO}' (skipping scenes)."
+        ),
+        epilog="Example:\n  plexadm studio bulk-independent /usr/local/share/plexadm/reference/independent_writers.txt",
+    )
+    bulk_independent.add_argument("file", metavar="FILE", help="Path to writer-list file (one name per line).")
     set_func(bulk_independent, set_independent_for_writers_file)
-    rename_studio_parser = studio_sub.add_parser("rename")
-    rename_studio_parser.add_argument("old")
-    rename_studio_parser.add_argument("new")
+
+    rename_studio_parser = _make_sub(
+        studio_sub,
+        "rename",
+        help="Rename a studio across every video that has it.",
+        description="Find every video whose studio equals OLD and update it to NEW. Locks the label after editing.",
+        epilog="Example:\n  plexadm studio rename 'Old Studio' 'New Studio'",
+    )
+    rename_studio_parser.add_argument("old", metavar="OLD", help="Existing studio name.")
+    rename_studio_parser.add_argument("new", metavar="NEW", help="Replacement studio name.")
     set_func(rename_studio_parser, rename_studio)
 
-    writers_parser = sub.add_parser("writers")
-    writers_sub = writers_parser.add_subparsers(dest="writers_command", required=True)
-    set_from_titles = writers_sub.add_parser("set-from-titles")
+
+def _build_writers_commands(sub: Any) -> None:
+    writers_parser = _make_sub(
+        sub,
+        "writers",
+        help="Mutate the writer field on videos based on their titles.",
+        description=(
+            "Commands that derive writers from video titles using the project's\n"
+            "title-parsing rules (comma- and dash-separated names)."
+        ),
+        epilog=("Examples:\n  plexadm writers set-from-titles\n  plexadm writers set-and-sync"),
+    )
+    writers_sub = _add_subparsers(writers_parser, dest="writers_command", title="writers subcommands")
+
+    set_from_titles = _make_sub(
+        writers_sub,
+        "set-from-titles",
+        help="Add writers parsed from each video's title to that video.",
+        description=(
+            "For every video, parse writer names out of the title (e.g.\n"
+            "'Alice, Bob - Foo') and add any that are missing from the writer list."
+        ),
+        epilog="Example:\n  plexadm writers set-from-titles",
+    )
     set_func(set_from_titles, set_writers_from_titles)
-    set_and_sync = writers_sub.add_parser("set-and-sync")
+
+    set_and_sync = _make_sub(
+        writers_sub,
+        "set-and-sync",
+        help="Run `writers set-from-titles` then `smart-collections sync`.",
+        description=(
+            "Convenience for the common end-of-import flow: derive writers from\n"
+            "titles, then create any missing studio/writer smart collections."
+        ),
+        epilog="Example:\n  plexadm writers set-and-sync",
+    )
     set_func(set_and_sync, set_writers_and_sync)
 
-    smart = sub.add_parser("smart-collections")
-    smart_sub = smart.add_subparsers(dest="smart_command", required=True)
-    sync = smart_sub.add_parser("sync")
+
+def _build_smart_collection_commands(sub: Any) -> None:
+    smart = _make_sub(
+        sub,
+        "smart-collections",
+        help="Manage auto-generated smart collections for studios and writers.",
+        description="Create or rename the smart collections that mirror the studio/writer taxonomy.",
+        epilog=(
+            "Examples:\n  plexadm smart-collections sync\n  plexadm smart-collections rename '^02: Studio: ' '02: '"
+        ),
+    )
+    smart_sub = _add_subparsers(smart, dest="smart_command", title="smart-collections subcommands")
+
+    sync = _make_sub(
+        smart_sub,
+        "sync",
+        help="Create missing '02: Studio:' and '03: Star:' smart collections.",
+        description=(
+            "Scan every video and create any missing smart collection of the form\n"
+            f"'02: Studio: <studio>' (or '02: {INDEPENDENT_STUDIO}' for indie) and\n"
+            "'03: Star: <writer>'. Existing collections are left alone."
+        ),
+        epilog="Example:\n  plexadm smart-collections sync",
+    )
     set_func(sync, sync_smart_collections)
-    rename_collection_parser = smart_sub.add_parser("rename")
-    rename_collection_parser.add_argument("pattern")
-    rename_collection_parser.add_argument("replacement")
+
+    rename_collection_parser = _make_sub(
+        smart_sub,
+        "rename",
+        help="Bulk-rename collections using a regex substitution.",
+        description=(
+            "For every collection whose title matches the Python regex PATTERN,\n"
+            "rename it by applying re.sub(PATTERN, REPLACEMENT, title). Both smart\n"
+            "and manual collections are affected."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm smart-collections rename '^02: Studio: ' '02: '\n"
+            "  plexadm smart-collections rename '01: Hair:' '01: Hair Color:'"
+        ),
+    )
+    rename_collection_parser.add_argument("pattern", metavar="PATTERN", help="Python regex to match.")
+    rename_collection_parser.add_argument(
+        "replacement",
+        metavar="REPLACEMENT",
+        help="Replacement string passed to re.sub (supports backrefs like \\1).",
+    )
     set_func(rename_collection_parser, rename_collections)
 
-    tools = sub.add_parser("tools")
-    tools_sub = tools.add_subparsers(dest="tools_command", required=True)
-    missing = tools_sub.add_parser("find-missing-file")
-    missing.add_argument("path")
+
+def _build_tools_commands(sub: Any) -> None:
+    tools = _make_sub(
+        sub,
+        "tools",
+        help="Miscellaneous file-system helpers (renaming, missing-file lookups, uploads).",
+        description="One-off helpers that operate on files on disk rather than on Plex metadata.",
+        epilog=(
+            "Examples:\n"
+            "  plexadm tools find-missing-file '/data/NSFW Scenes/Alice/foo.mp4'\n"
+            "  plexadm tools fix-dl-scene-name 'scene.mp4' --prefix 'Alice'\n"
+            "  plexadm tools upload-vids --remote-host truenas"
+        ),
+    )
+    tools_sub = _add_subparsers(tools, dest="tools_command", title="tools subcommands")
+
+    missing = _make_sub(
+        tools_sub,
+        "find-missing-file",
+        help="Find the Plex item that owns a given on-disk file.",
+        description="Walk every video and print the title of any whose locations contain PATH. Exits non-zero if none match.",
+        epilog="Example:\n  plexadm tools find-missing-file '/data/NSFW Scenes/Alice/foo.mp4'",
+    )
+    missing.add_argument("path", metavar="PATH", help="Absolute on-disk path to look up.")
     set_func(missing, find_missing_file)
-    dl = tools_sub.add_parser("fix-dl-scene-name")
-    dl.add_argument("filename")
-    dl.add_argument("--prefix")
+
+    dl = _make_sub(
+        tools_sub,
+        "fix-dl-scene-name",
+        help="Prefix a downloaded scene filename so it sorts under a known writer.",
+        description=(
+            "Print FILENAME prefixed with 'TBD - ' (or '<prefix> - ' if --prefix is given).\n"
+            "This is a pure transform; it does not move the file."
+        ),
+        epilog="Example:\n  plexadm tools fix-dl-scene-name 'scene.mp4' --prefix 'Alice'",
+    )
+    dl.add_argument("filename", metavar="FILENAME", help="Source filename to prefix.")
+    dl.add_argument(
+        "--prefix",
+        metavar="PREFIX",
+        help="Writer/studio prefix to insert before the filename (default: 'TBD').",
+    )
     dl.set_defaults(func=fix_dl_scene_name)
-    ultra = tools_sub.add_parser("fix-ultrafilms-name")
-    ultra.add_argument("filename")
+
+    ultra = _make_sub(
+        tools_sub,
+        "fix-ultrafilms-name",
+        help="Titleise an UltraFilms-style underscored filename.",
+        description=(
+            "Split FILENAME on whitespace/underscores, title-case every part, apply\n"
+            "the project's writer-name aliases, and print the result with the original\n"
+            "extension preserved."
+        ),
+        epilog="Example:\n  plexadm tools fix-ultrafilms-name 'kate_rose_scene.mp4'",
+    )
+    ultra.add_argument("filename", metavar="FILENAME", help="Source filename to titleise.")
     ultra.set_defaults(func=fix_ultrafilms_name)
-    ofdl_names = tools_sub.add_parser("ofdl-gen-names")
-    ofdl_names.add_argument("--map-file", default="indie_usernames_to_map.json")
+
+    ofdl_names = _make_sub(
+        tools_sub,
+        "ofdl-gen-names",
+        help="Dump the indie-username-to-writer-name mapping from a JSON file.",
+        description="Read the mapping JSON file and print `<source>: <target>` lines sorted by source.",
+        epilog="Example:\n  plexadm tools ofdl-gen-names --map-file indie_usernames_to_map.json",
+    )
+    ofdl_names.add_argument(
+        "--map-file",
+        default="indie_usernames_to_map.json",
+        metavar="FILE",
+        help="Path to the mapping JSON file (default: indie_usernames_to_map.json).",
+    )
     ofdl_names.set_defaults(func=gen_ofdl_names)
-    rsync = tools_sub.add_parser("ofdl-rsync")
-    rsync.add_argument("source")
-    rsync.add_argument("destination")
+
+    rsync = _make_sub(
+        tools_sub,
+        "ofdl-rsync",
+        help="Run `rsync -avh --progress SOURCE DESTINATION` and return its exit code.",
+        description="Thin wrapper that prints the rsync command then executes it.",
+        epilog="Example:\n  plexadm tools ofdl-rsync ./downloads/ truenas:/mnt/data/incoming/",
+    )
+    rsync.add_argument("source", metavar="SOURCE", help="rsync source path.")
+    rsync.add_argument("destination", metavar="DESTINATION", help="rsync destination path.")
     rsync.set_defaults(func=ofdl_rsync)
-    fps = tools_sub.add_parser("remove-fps-title")
-    fps.add_argument("filename")
+
+    fps = _make_sub(
+        tools_sub,
+        "remove-fps-title",
+        help="Rename FILENAME on disk to strip embedded fps suffixes (_24fps, _30fps, ...).",
+        description=(
+            "Rename FILENAME, removing any `_{24,25,30,35,40,45,50,60,65,...}fps` suffix\n"
+            "in the basename. The rename uses shutil.move; the file is modified in place."
+        ),
+        epilog="Example:\n  plexadm tools remove-fps-title 'scene_60fps.mp4'",
+    )
+    fps.add_argument("filename", metavar="FILENAME", help="File to rename.")
     fps.set_defaults(func=remove_fps_title)
-    upload = tools_sub.add_parser("upload-vids")
-    upload.add_argument("--remote-host", default="truenas")
-    upload.add_argument("--upload-path", default="/mnt/myzmirror/plexdata/NSFW Scenes")
+
+    upload = _make_sub(
+        tools_sub,
+        "upload-vids",
+        help="scp every *.mp4 in the cwd to the configured Plex host, then delete locally.",
+        description=(
+            "For every *.mp4 in the current directory, derive the star/writer name from\n"
+            "the filename (first segment before ',' or '-'), ensure the destination\n"
+            "directory exists on the remote host, scp the file as `<name>.tmp`, then\n"
+            "rename it into place and delete the local copy."
+        ),
+        epilog="Example:\n  plexadm tools upload-vids --remote-host truenas",
+    )
+    upload.add_argument(
+        "--remote-host",
+        default="truenas",
+        metavar="HOST",
+        help="SSH host to upload to (default: truenas).",
+    )
+    upload.add_argument(
+        "--upload-path",
+        default="/mnt/myzmirror/plexdata/NSFW Scenes",
+        metavar="PATH",
+        help="Remote base directory under which '<star>/<file>' will be placed (default: /mnt/myzmirror/plexdata/NSFW Scenes).",
+    )
     upload.set_defaults(func=upload_vids)
 
-    top = sub.add_parser("top")
+
+def _build_top_command(sub: Any) -> None:
+    top_help = {
+        "categories": "count of videos per '01: Category:' collection, ranked low to high",
+        "studios": "most common studios, ranked high to low",
+        "writers-without-studios": "most common writer names among studio-less videos",
+        "scenes-without-studios": "most common writer names among studio-less SCENES",
+        "unrated-writers": f"most common writer names inside '{UNRATED_COLLECTION}'",
+        "unrated-scenes": f"most common writer names inside '{UNRATED_COLLECTION}' for SCENES",
+    }
+    top = _make_sub(
+        sub,
+        "top",
+        help="Print the top N items for one of the built-in rankings.",
+        description=(
+            "Rank library content by one of these SOURCES:\n\n"
+            + "\n".join(f"  {key:<28}{desc}" for key, desc in top_help.items())
+            + "\n\nUse --limit to control how many rows are printed. `scenes-without-studios`"
+            "\nand `unrated-scenes` imply --scenes."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm top categories --limit 25\n"
+            "  plexadm top studios\n"
+            "  plexadm top unrated-writers --limit 50"
+        ),
+    )
     top.add_argument(
         "source",
-        choices=[
-            "categories",
-            "studios",
-            "writers-without-studios",
-            "scenes-without-studios",
-            "unrated-writers",
-            "unrated-scenes",
-        ],
+        choices=list(top_help),
+        metavar="SOURCE",
+        help="Ranking to print (see description for the list).",
     )
-    top.add_argument("--limit", type=int, default=15)
-    top.add_argument("--collection")
-    top.add_argument("--scenes", action="store_true")
+    top.add_argument(
+        "--limit",
+        type=int,
+        default=15,
+        metavar="N",
+        help="Maximum number of rows to print (default: 15).",
+    )
+    top.add_argument(
+        "--collection",
+        metavar="NAME",
+        help="Override the collection used for writer-name rankings.",
+    )
+    top.add_argument(
+        "--scenes",
+        action="store_true",
+        help="Only count rows whose title contains 'Scene #' (implied by *-scenes sources).",
+    )
     set_func(top, print_top)
-
-    return parser
 
 
 def main(argv: list[str] | None = None) -> int:
