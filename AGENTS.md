@@ -12,6 +12,10 @@ Use the unified `plexadm` CLI for new Plex automation. Keep mutation behavior co
 
 Do not add new top-level one-off scripts when a `plexadm` subcommand or helper module can cover the behavior.
 
+## Task Tracking
+
+Tasks, bugs, and follow-ups for this repository are filed in Odoo under the project **Plex Management** (`project.project` id `6`).
+
 ## Git Workflow
 
 - Never push commits directly to `master`. Always open a pull request from a feature/fix branch.
