@@ -18,3 +18,5 @@ REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-/usr/local/share/plexadm/reference}
 "$PLEXADM" collection add-writers '01: Hair: Blue' "${REFERENCE_DIR}/writers_blue_hair.txt"
 "$PLEXADM" collection add-writers '01: Hair: Brunette' "${REFERENCE_DIR}/writers_brunette.txt"
 "$PLEXADM" collection add-writers '01: Hair: Red' "${REFERENCE_DIR}/writers_redhead.txt"
+
+"$PLEXADM" collection add-writer '01: Category: Extreme Throating' "Tiptobase69"
