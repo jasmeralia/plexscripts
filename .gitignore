@@ -14,3 +14,4 @@ reference/*.json
 reference/*.log
 reference/*.md
 reference/*.txt
+.claude

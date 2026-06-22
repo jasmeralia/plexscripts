@@ -17,6 +17,7 @@ class PlexConfig:
     token: str
     section_name: str
     section_id: str | None = None
+    stash_endpoint: str | None = None
 
     @property
     def base_url(self) -> str:
@@ -48,4 +49,5 @@ def load_config(path: str | Path | None = None) -> PlexConfig:
         token=section["plexToken"],
         section_name=section["plexSectionName"],
         section_id=section.get("plexSection"),
+        stash_endpoint=section.get("stashEndpoint"),
     )
