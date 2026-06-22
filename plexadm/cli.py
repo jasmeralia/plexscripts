@@ -14,6 +14,8 @@ from plexadm.console import fail, info, ok, warn
 from plexadm.filters import and_filter, in_collection, not_in_collection, rated, title_contains, unrated, writer_any
 from plexadm.plex import PlexContext, add_items, collection_titles, has_collection, reload_if_partial, remove_items
 from plexadm.progress import progress_prefix
+from plexadm.stash_reconcile import reconcile as stash_reconcile
+from plexadm.stash_sync_tags import sync_tags as stash_sync_tags
 from plexadm.writers import missing_title_writers, read_writer_file, writers_from_title
 
 NO_STUDIO_COLLECTION = "00A: NO STUDIO"
@@ -196,6 +198,21 @@ def add_duration_collection(args: argparse.Namespace) -> int:
     for video in results:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     added = add_items(collection, results)
+    print(info(f"{added} videos added to '{collection.title}'."))
+    return 0
+
+
+def add_orgy_collection(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    collection = ctx.collection(args.collection)
+    results = ctx.search(filters=not_in_collection(collection.title), reload=True)
+    matches = []
+    for video in results:
+        writers = getattr(video, "writers", None) or []
+        if len(writers) >= args.min_writers:
+            print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
+            matches.append(video)
+    added = add_items(collection, matches)
     print(info(f"{added} videos added to '{collection.title}'."))
     return 0
 
@@ -754,6 +771,7 @@ def build_parser() -> argparse.ArgumentParser:
     _build_smart_collection_commands(sub)
     _build_tools_commands(sub)
     _build_top_command(sub)
+    _build_stash_commands(sub)
 
     return parser
 
@@ -1125,6 +1143,23 @@ def _build_collection_commands(sub: Any) -> None:
         help="Maximum video duration in milliseconds (default: 90000, i.e. 90s).",
     )
     set_func(add_short, add_duration_collection)
+
+    add_orgy = _make_sub(
+        collection_sub,
+        "add-orgy",
+        help="Add videos with 4+ writers to COLLECTION.",
+        description="Add every video with at least --min-writers writers to COLLECTION.",
+        epilog="Example:\n  plexadm collection add-orgy '01: Category: Orgy'",
+    )
+    add_orgy.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_orgy.add_argument(
+        "--min-writers",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Minimum number of writers to qualify (default: 4).",
+    )
+    set_func(add_orgy, add_orgy_collection)
 
     add_vertical = _make_sub(
         collection_sub,
@@ -1519,6 +1554,112 @@ def _build_top_command(sub: Any) -> None:
         help="Only count rows whose title contains 'Scene #' (implied by *-scenes sources).",
     )
     set_func(top, print_top)
+
+
+def _build_stash_commands(sub: Any) -> None:
+    stash_parser = _make_sub(
+        sub,
+        "stash",
+        help="Commands that sync Plex metadata into a Stash library.",
+        description=(
+            "Commands that read from Plex and write metadata into a Stash instance.\n"
+            "The Stash endpoint is read from the config file (stashEndpoint key)\n"
+            "or overridden with --stash-endpoint."
+        ),
+        epilog="Example:\n  plexadm stash reconcile --limit 25",
+    )
+    stash_sub = _add_subparsers(stash_parser, dest="stash_command", title="stash subcommands")
+
+    reconcile_parser = _make_sub(
+        stash_sub,
+        "reconcile",
+        help="Backfill Stash scenes with Plex metadata (title, performers, studio, tags, rating).",
+        description=(
+            "Reads every Plex item in the configured library section, finds the\n"
+            "corresponding Stash scene(s) by file path, and writes Plex metadata\n"
+            "(title, writers→performers, studio, collections→tags, director,\n"
+            "rating, play count) to each matched Stash scene.\n"
+            "\n"
+            "Only Plex collections prefixed '01: ' are mapped to Stash tags;\n"
+            "the prefix is stripped (e.g. '01: Category: Blowjob' → 'Category: Blowjob').\n"
+            "\n"
+            "Outputs a per-scene change log and exports a CSV listing scenes that\n"
+            "still need enrichment (matched with no Plex data, or Stash scenes with\n"
+            "no Plex match at all).\n"
+            "\n"
+            "Writes are applied immediately. Use --limit for a test run against a\n"
+            "small subset before pointing this at the full library."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm stash reconcile --limit 25\n"
+            "  plexadm stash reconcile --log-level INFO\n"
+            "  plexadm stash reconcile --csv-output scope.csv"
+        ),
+    )
+    reconcile_parser.add_argument(
+        "--limit",
+        metavar="N",
+        type=int,
+        help="Stop after processing N Plex items (useful for test runs before a full run).",
+    )
+    reconcile_parser.add_argument(
+        "--path",
+        metavar="PREFIX",
+        help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/00 Rin).",
+    )
+    reconcile_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    reconcile_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config (e.g. http://localhost:9999).",
+    )
+    reconcile_parser.add_argument(
+        "--csv-output",
+        metavar="PATH",
+        default="stash_scope.csv",
+        dest="csv_output",
+        help="Path for the scope CSV export (default: stash_scope.csv).",
+    )
+    set_func(reconcile_parser, stash_reconcile)
+
+    sync_tags_parser = _make_sub(
+        stash_sub,
+        "sync-tags",
+        help="Sync manual Plex collection membership as Stash tags.",
+        description=(
+            "Walks every non-smart Plex collection (excluding BROKEN, CORRUPT,\n"
+            "and auto-managed prefixes like '01: Category:', '02: Studio:', etc.)\n"
+            "and tags the corresponding Stash scenes with the derived tag name\n"
+            "(leading sort prefix stripped, e.g. '00A: FAVORITES' → 'FAVORITES').\n"
+            "\n"
+            "Safe to re-run: existing tags are preserved and duplicates are skipped."
+        ),
+        epilog="Example:\n  plexadm stash sync-tags",
+    )
+    sync_tags_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    sync_tags_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config.",
+    )
+    set_func(sync_tags_parser, stash_sync_tags)
 
 
 def main(argv: list[str] | None = None) -> int:

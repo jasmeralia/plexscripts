@@ -12,6 +12,10 @@ Use the unified `plexadm` CLI for new Plex automation. Keep mutation behavior co
 
 Do not add new top-level one-off scripts when a `plexadm` subcommand or helper module can cover the behavior.
 
+## Running Scripts
+
+Always run `scripts/mass_process.sh` in the background (e.g. `bash scripts/mass_process.sh &> /tmp/mass_process.log &`). It takes several minutes and should not block the terminal.
+
 ## Task Tracking
 
 Tasks, bugs, and follow-ups for this repository are filed in Odoo under the project **Plex Management** (`project.project` id `6`).

@@ -19,6 +19,9 @@ date; time "${SCRIPT_DIR}/copy_collections.sh"
 # Add short videos to a special collection
 date; time "$PLEXADM" collection add-short '01: Category: Short Videos'
 
+# Add videos with 4+ performers to orgy
+date; time "$PLEXADM" collection add-orgy '01: Category: Orgy'
+
 # Update the contents of the unrated collection
 date; time "${SCRIPT_DIR}/set_unrated.sh"
 
