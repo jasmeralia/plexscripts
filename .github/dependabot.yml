@@ -1,23 +1,27 @@
 version: 2
 updates:
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    auto-merge: enable
-    groups:
-      python-dependencies:
-        patterns:
-          - "*"
-
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    auto-merge: enable
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    auto-merge: enable
+- package-ecosystem: pip
+  directory: /
+  schedule:
+    interval: weekly
+  auto-merge: enable
+  groups:
+    python-dependencies:
+      patterns:
+      - '*'
+  reviewers:
+  - jasmeralia
+- package-ecosystem: docker
+  directory: /
+  schedule:
+    interval: weekly
+  auto-merge: enable
+  reviewers:
+  - jasmeralia
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+  auto-merge: enable
+  reviewers:
+  - jasmeralia
