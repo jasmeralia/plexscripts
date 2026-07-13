@@ -12,7 +12,15 @@ from typing import Any
 from plexadm import __version__
 from plexadm.console import fail, info, ok, warn
 from plexadm.filters import and_filter, in_collection, not_in_collection, rated, title_contains, unrated, writer_any
-from plexadm.plex import PlexContext, add_items, collection_titles, has_collection, reload_if_partial, remove_items
+from plexadm.plex import (
+    LOCKED_COLLECTION,
+    PlexContext,
+    add_items,
+    collection_titles,
+    has_collection,
+    reload_if_partial,
+    remove_items,
+)
 from plexadm.progress import progress_prefix
 from plexadm.stash_reconcile import reconcile as stash_reconcile
 from plexadm.stash_sync_tags import sync_tags as stash_sync_tags
@@ -21,7 +29,8 @@ from plexadm.writers import missing_title_writers, read_writer_file, writers_fro
 NO_STUDIO_COLLECTION = "00A: NO STUDIO"
 UNRATED_COLLECTION = "00C: Unrated"
 INDEPENDENT_STUDIO = "Independent Content"
-LOCKED_COLLECTION = "99: LOCKED"
+LESBIAN_COLLECTION = "01: Category: Lesbian"
+LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION = "00D: Review: Lesbian Single-Writer"
 
 EXCLUDED_COMPOSITION_COLLECTIONS = [
     "01: Category: FFF+",
@@ -100,8 +109,8 @@ def add_matching_titles(args: argparse.Namespace) -> int:
                 matches.append(video)
             else:
                 print(info(f"'{video.title}' is already part of '{collection.title}'"))
-    added = add_items(collection, matches)
-    print(info(f"{matched_count} matches found, {added} collections added."))
+    added = add_items(collection, matches, dry_run=args.dry_run)
+    print(info(f"{matched_count} matches found, {added} collections added.{dry_run_note(args)}"))
     return 0
 
 
@@ -113,8 +122,8 @@ def add_search_results(args: argparse.Namespace) -> int:
     results = ctx.search(filters=filters, reload=True)
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{collection.title}'"))
-    added = add_items(collection, results)
-    print(info(f"{len(results)} matches found, {added} collections added."))
+    added = add_items(collection, results, dry_run=args.dry_run)
+    print(info(f"{len(results)} matches found, {added} collections added.{dry_run_note(args)}"))
     return 0
 
 
@@ -131,8 +140,8 @@ def add_writer_matches(args: argparse.Namespace) -> int:
                 if not has_collection(video, collection.title):
                     print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
                     matches.append(video)
-    added = add_items(collection, matches)
-    print(info(f"{matched_count} matches found, {added} collections added."))
+    added = add_items(collection, matches, dry_run=args.dry_run)
+    print(info(f"{matched_count} matches found, {added} collections added.{dry_run_note(args)}"))
     return 0
 
 
@@ -145,8 +154,8 @@ def add_writers_file(args: argparse.Namespace) -> int:
     results = ctx.search(filters=filters, reload=True)
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{collection.title}'"))
-    added = add_items(collection, results)
-    print(info(f"{len(results)} matches found, {added} collections added."))
+    added = add_items(collection, results, dry_run=args.dry_run)
+    print(info(f"{len(results)} matches found, {added} collections added.{dry_run_note(args)}"))
     return 0
 
 
@@ -158,8 +167,8 @@ def copy_collection(args: argparse.Namespace) -> int:
     results = ctx.search(filters=filters, reload=True)
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{target.title}'"))
-    added = add_items(target, results)
-    print(info(f"{len(results)} matches found, {added} collections added."))
+    added = add_items(target, results, dry_run=args.dry_run)
+    print(info(f"{len(results)} matches found, {added} collections added.{dry_run_note(args)}"))
     return 0
 
 
@@ -170,8 +179,8 @@ def copy_studio(args: argparse.Namespace) -> int:
     results = ctx.search(filters=filters, reload=True)
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{target.title}'"))
-    added = add_items(target, results)
-    print(info(f"{len(results)} matches found, {added} collections added."))
+    added = add_items(target, results, dry_run=args.dry_run)
+    print(info(f"{len(results)} matches found, {added} collections added.{dry_run_note(args)}"))
     return 0
 
 
@@ -185,8 +194,8 @@ def remove_matching_titles(args: argparse.Namespace) -> int:
             if has_collection(video, collection.title):
                 print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
                 matches.append(video)
-    removed = remove_items(collection, matches)
-    print(info(f"{len(matches)} matches found, {removed} collections removed."))
+    removed = remove_items(collection, matches, dry_run=args.dry_run)
+    print(info(f"{len(matches)} matches found, {removed} collections removed.{dry_run_note(args)}"))
     return 0
 
 
@@ -197,8 +206,8 @@ def add_duration_collection(args: argparse.Namespace) -> int:
     results = ctx.search(filters=filters, reload=True)
     for video in results:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
-    added = add_items(collection, results)
-    print(info(f"{added} videos added to '{collection.title}'."))
+    added = add_items(collection, results, dry_run=args.dry_run)
+    print(info(f"{added} videos added to '{collection.title}'.{dry_run_note(args)}"))
     return 0
 
 
@@ -212,8 +221,8 @@ def add_orgy_collection(args: argparse.Namespace) -> int:
         if len(writers) >= args.min_writers:
             print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
             matches.append(video)
-    added = add_items(collection, matches)
-    print(info(f"{added} videos added to '{collection.title}'."))
+    added = add_items(collection, matches, dry_run=args.dry_run)
+    print(info(f"{added} videos added to '{collection.title}'.{dry_run_note(args)}"))
     return 0
 
 
@@ -229,8 +238,8 @@ def add_vertical_collection(args: argparse.Namespace) -> int:
         if height > width:
             print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
             matches.append(video)
-    added = add_items(collection, matches)
-    print(info(f"{added} vertical videos added to '{collection.title}'."))
+    added = add_items(collection, matches, dry_run=args.dry_run)
+    print(info(f"{added} vertical videos added to '{collection.title}'.{dry_run_note(args)}"))
     return 0
 
 
@@ -243,10 +252,10 @@ def sync_unrated(args: argparse.Namespace) -> int:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     for video in to_remove:
         print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
-    added = add_items(collection, to_add)
-    removed = remove_items(collection, to_remove)
-    print(info(f"{added} collections added."))
-    print(info(f"{removed} collections removed."))
+    added = add_items(collection, to_add, dry_run=args.dry_run)
+    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
+    print(info(f"{added} collections added.{dry_run_note(args)}"))
+    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
     return 0
 
 
@@ -260,10 +269,37 @@ def sync_no_studio(args: argparse.Namespace) -> int:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     for video in to_remove:
         print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
-    added = add_items(collection, to_add)
-    removed = remove_items(collection, to_remove)
-    print(info(f"{added} collections added."))
-    print(info(f"{removed} collections removed."))
+    added = add_items(collection, to_add, dry_run=args.dry_run)
+    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
+    print(info(f"{added} collections added.{dry_run_note(args)}"))
+    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
+    return 0
+
+
+def sync_lesbian_single_writer(args: argparse.Namespace) -> int:
+    """Flag '01: Category: Lesbian' members with exactly one credited writer - a lone
+    credited performer is a strong signal the 'Lesbian' tag is wrong, since lesbian
+    content normally credits two or more female performers in the title. Applies
+    regardless of studio, including Independent Content: solo indie creators are
+    exactly the kind of single-writer/no-partner case this should also catch. This is
+    a review/cataloging collection only: it never touches '01: Category: Lesbian'
+    membership itself."""
+    ctx = build_context(args)
+    collection = ctx.collection(args.collection)
+    lesbian_members = ctx.search(filters=in_collection(LESBIAN_COLLECTION), reload=True)
+    matches = [video for video in lesbian_members if len(getattr(video, "writers", None) or []) == 1]
+    match_keys = {video.ratingKey for video in matches}
+    to_add = [video for video in matches if not has_collection(video, collection.title)]
+    current_members = ctx.search(filters=in_collection(collection.title), reload=True)
+    to_remove = [video for video in current_members if video.ratingKey not in match_keys]
+    for video in to_add:
+        print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
+    for video in to_remove:
+        print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
+    added = add_items(collection, to_add, dry_run=args.dry_run)
+    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
+    print(info(f"{added} collections added.{dry_run_note(args)}"))
+    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
     return 0
 
 
@@ -282,13 +318,14 @@ def set_studio_for_title_matches(args: argparse.Namespace) -> int:
         matched += 1
         if not getattr(video, "studio", None):
             print(warn(f"'{video.title}' needs to be added to '{args.studio}'"))
-            video.edit(**{"studio.value": args.studio, "label.locked": 1})
+            if not args.dry_run:
+                video.edit(**{"studio.value": args.studio, "label.locked": 1})
             changed += 1
         elif video.studio == args.studio:
             print(info(f"'{video.title}' is already part of '{args.studio}'"))
         else:
             print(warn(f"'{video.title}' already belongs to studio '{video.studio}', skipping."))
-    print(info(f"{matched} matches found, {changed} studios added."))
+    print(info(f"{matched} matches found, {changed} studios added.{dry_run_note(args)}"))
     return 0
 
 
@@ -308,9 +345,10 @@ def set_independent_for_writers_file(args: argparse.Namespace) -> int:
             print(
                 warn(f"'{video.title}' needs to be added to '{INDEPENDENT_STUDIO}' based on writer '{matched_writer}'")
             )
-            video.edit(**{"studio.value": INDEPENDENT_STUDIO, "label.locked": 1})
+            if not args.dry_run:
+                video.edit(**{"studio.value": INDEPENDENT_STUDIO, "label.locked": 1})
             changed += 1
-    print(info(f"{changed} studios added."))
+    print(info(f"{changed} studios added.{dry_run_note(args)}"))
     return 0
 
 
@@ -319,8 +357,9 @@ def rename_studio(args: argparse.Namespace) -> int:
     results = ctx.search(studio__exact=args.old, sort="titleSort", reload=True)
     for video in results:
         print(warn(f"'{video.title}' needs studio rename '{args.old}' -> '{args.new}'"))
-        video.edit(**{"studio.value": args.new, "label.locked": 1})
-    print(info(f"{len(results)} videos updated."))
+        if not args.dry_run:
+            video.edit(**{"studio.value": args.new, "label.locked": 1})
+    print(info(f"{len(results)} videos updated.{dry_run_note(args)}"))
     return 0
 
 
@@ -461,9 +500,10 @@ def set_writers_from_titles(args: argparse.Namespace) -> int:
         missing = missing_title_writers(video)
         if missing:
             print(warn(f"{progress_prefix(index, len(videos))}Adding writers to '{video.title}': {', '.join(missing)}"))
-            video.addWriter(writers_from_title(video.title), True)
+            if not args.dry_run:
+                video.addWriter(writers_from_title(video.title), True)
             changed += 1
-    print(ok(f"{changed} videos updated."))
+    print(ok(f"{changed} videos updated.{dry_run_note(args)}"))
     return 0
 
 
@@ -482,15 +522,17 @@ def sync_smart_collections(args: argparse.Namespace) -> int:
         title = f"02: {studio}" if studio == INDEPENDENT_STUDIO else f"02: Studio: {studio}"
         if title.lower() not in existing:
             print(warn(f"Creating smart collection '{title}'"))
-            ctx.section.createCollection(title=title, smart=True, sort="titleSort:asc", filters={"studio": studio})
+            if not args.dry_run:
+                ctx.section.createCollection(title=title, smart=True, sort="titleSort:asc", filters={"studio": studio})
             created += 1
     for writer in sorted(writers):
         title = f"03: Star: {writer}"
         if title.lower() not in existing:
             print(warn(f"Creating smart collection '{title}'"))
-            ctx.section.createCollection(title=title, smart=True, sort="titleSort:asc", filters={"writer": writer})
+            if not args.dry_run:
+                ctx.section.createCollection(title=title, smart=True, sort="titleSort:asc", filters={"writer": writer})
             created += 1
-    print(ok(f"Newly created smart collections: {created}"))
+    print(ok(f"Newly created smart collections: {created}{dry_run_note(args)}"))
     return 0
 
 
@@ -508,9 +550,10 @@ def rename_collections(args: argparse.Namespace) -> int:
         new_title = pattern.sub(args.replacement, collection.title)
         if new_title != collection.title:
             print(warn(f"Renaming '{collection.title}' to '{new_title}'"))
-            collection.editTitle(new_title)
+            if not args.dry_run:
+                collection.editTitle(new_title)
             changed += 1
-    print(info(f"{changed} collections renamed."))
+    print(info(f"{changed} collections renamed.{dry_run_note(args)}"))
     return 0
 
 
@@ -693,6 +736,19 @@ def add_common_parser(parser: argparse.ArgumentParser) -> None:
             "(~/.config/plexadm/config.yaml, /etc/plexadm/config.yaml)."
         ),
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=(
+            "Report what would be added, removed, or edited without changing Plex. "
+            "Also honored via the PLEXADM_DRY_RUN=1 environment variable, so it can be "
+            "applied to a whole shell script's worth of plexadm invocations at once."
+        ),
+    )
+
+
+def dry_run_note(args: argparse.Namespace) -> str:
+    return " (dry run - no changes made)" if getattr(args, "dry_run", False) else ""
 
 
 def set_func(parser: argparse.ArgumentParser, func: Any) -> None:
@@ -1208,6 +1264,32 @@ def _build_collection_commands(sub: Any) -> None:
         help=f"Target collection name (default: '{NO_STUDIO_COLLECTION}').",
     )
     set_func(sync_no_studio_parser, sync_no_studio)
+
+    sync_lesbian_single_writer_parser = _make_sub(
+        collection_sub,
+        "sync-lesbian-single-writer",
+        help=(
+            f"Flag likely-mistagged '{LESBIAN_COLLECTION}' members in COLLECTION "
+            f"(default: '{LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION}')."
+        ),
+        description=(
+            f"Add every '{LESBIAN_COLLECTION}' member with exactly one credited writer to "
+            "COLLECTION (any studio, including Independent Content), and remove anything in "
+            "COLLECTION that no longer matches (left '01: Category: Lesbian' or gained a second "
+            "writer). This is a review/cataloging collection only - it "
+            f"never removes anything from '{LESBIAN_COLLECTION}' itself.\n"
+            f"Defaults to '{LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION}'."
+        ),
+        epilog="Example:\n  plexadm collection sync-lesbian-single-writer",
+    )
+    sync_lesbian_single_writer_parser.add_argument(
+        "collection",
+        nargs="?",
+        default=LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION,
+        metavar="COLLECTION",
+        help=f"Target collection name (default: '{LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION}').",
+    )
+    set_func(sync_lesbian_single_writer_parser, sync_lesbian_single_writer)
 
 
 def _build_studio_commands(sub: Any) -> None:

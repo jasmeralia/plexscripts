@@ -27,6 +27,9 @@ date; time "${SCRIPT_DIR}/set_unrated.sh"
 
 date; time "$PLEXADM" collection sync-no-studio "00A: NO STUDIO"
 
+# Flag likely-mistagged '01: Category: Lesbian' members for review
+date; time "$PLEXADM" collection sync-lesbian-single-writer
+
 END_DATE=$(date)
 echo "Start date: ${START_DATE}"
 echo "  End date: ${END_DATE}"
