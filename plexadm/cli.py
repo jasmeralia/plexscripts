@@ -5,21 +5,27 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from plexadm import __version__
+from plexadm import __version__, audit
+from plexadm.config import load_logging_config
 from plexadm.console import fail, info, ok, warn
 from plexadm.filters import and_filter, in_collection, not_in_collection, rated, title_contains, unrated, writer_any
 from plexadm.plex import (
     LOCKED_COLLECTION,
     PlexContext,
     add_items,
+    add_writer,
     collection_titles,
+    create_smart_collection,
     has_collection,
     reload_if_partial,
     remove_items,
+    rename_collection,
+    set_studio,
 )
 from plexadm.progress import progress_prefix
 from plexadm.stash_reconcile import reconcile as stash_reconcile
@@ -318,9 +324,8 @@ def set_studio_for_title_matches(args: argparse.Namespace) -> int:
         matched += 1
         if not getattr(video, "studio", None):
             print(warn(f"'{video.title}' needs to be added to '{args.studio}'"))
-            if not args.dry_run:
-                video.edit(**{"studio.value": args.studio, "label.locked": 1})
-            changed += 1
+            if set_studio(video, args.studio, dry_run=args.dry_run):
+                changed += 1
         elif video.studio == args.studio:
             print(info(f"'{video.title}' is already part of '{args.studio}'"))
         else:
@@ -345,9 +350,8 @@ def set_independent_for_writers_file(args: argparse.Namespace) -> int:
             print(
                 warn(f"'{video.title}' needs to be added to '{INDEPENDENT_STUDIO}' based on writer '{matched_writer}'")
             )
-            if not args.dry_run:
-                video.edit(**{"studio.value": INDEPENDENT_STUDIO, "label.locked": 1})
-            changed += 1
+            if set_studio(video, INDEPENDENT_STUDIO, dry_run=args.dry_run):
+                changed += 1
     print(info(f"{changed} studios added.{dry_run_note(args)}"))
     return 0
 
@@ -355,11 +359,12 @@ def set_independent_for_writers_file(args: argparse.Namespace) -> int:
 def rename_studio(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     results = ctx.search(studio__exact=args.old, sort="titleSort", reload=True)
+    changed = 0
     for video in results:
         print(warn(f"'{video.title}' needs studio rename '{args.old}' -> '{args.new}'"))
-        if not args.dry_run:
-            video.edit(**{"studio.value": args.new, "label.locked": 1})
-    print(info(f"{len(results)} videos updated.{dry_run_note(args)}"))
+        if set_studio(video, args.new, dry_run=args.dry_run):
+            changed += 1
+    print(info(f"{changed} videos updated.{dry_run_note(args)}"))
     return 0
 
 
@@ -500,9 +505,8 @@ def set_writers_from_titles(args: argparse.Namespace) -> int:
         missing = missing_title_writers(video)
         if missing:
             print(warn(f"{progress_prefix(index, len(videos))}Adding writers to '{video.title}': {', '.join(missing)}"))
-            if not args.dry_run:
-                video.addWriter(writers_from_title(video.title), True)
-            changed += 1
+            if add_writer(video, writers_from_title(video.title), dry_run=args.dry_run):
+                changed += 1
     print(ok(f"{changed} videos updated.{dry_run_note(args)}"))
     return 0
 
@@ -522,15 +526,25 @@ def sync_smart_collections(args: argparse.Namespace) -> int:
         title = f"02: {studio}" if studio == INDEPENDENT_STUDIO else f"02: Studio: {studio}"
         if title.lower() not in existing:
             print(warn(f"Creating smart collection '{title}'"))
-            if not args.dry_run:
-                ctx.section.createCollection(title=title, smart=True, sort="titleSort:asc", filters={"studio": studio})
+            create_smart_collection(
+                ctx.section,
+                title=title,
+                sort="titleSort:asc",
+                filters={"studio": studio},
+                dry_run=args.dry_run,
+            )
             created += 1
     for writer in sorted(writers):
         title = f"03: Star: {writer}"
         if title.lower() not in existing:
             print(warn(f"Creating smart collection '{title}'"))
-            if not args.dry_run:
-                ctx.section.createCollection(title=title, smart=True, sort="titleSort:asc", filters={"writer": writer})
+            create_smart_collection(
+                ctx.section,
+                title=title,
+                sort="titleSort:asc",
+                filters={"writer": writer},
+                dry_run=args.dry_run,
+            )
             created += 1
     print(ok(f"Newly created smart collections: {created}{dry_run_note(args)}"))
     return 0
@@ -550,8 +564,7 @@ def rename_collections(args: argparse.Namespace) -> int:
         new_title = pattern.sub(args.replacement, collection.title)
         if new_title != collection.title:
             print(warn(f"Renaming '{collection.title}' to '{new_title}'"))
-            if not args.dry_run:
-                collection.editTitle(new_title)
+            rename_collection(collection, new_title, dry_run=args.dry_run)
             changed += 1
     print(info(f"{changed} collections renamed.{dry_run_note(args)}"))
     return 0
@@ -1747,13 +1760,19 @@ def _build_stash_commands(sub: Any) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    audit.configure(load_logging_config(args.config))
+    audit.set_invocation_context(rule=args.func.__name__, argv=sys.argv)
     if args.command == "top" and args.source in {"scenes-without-studios", "unrated-scenes"}:
         args.scenes = True
     try:
-        return int(args.func(args) or 0)
+        result = int(args.func(args) or 0)
     except KeyboardInterrupt:
         print(fail("Interrupted."))
         return 130
     except Exception as exc:
         print(fail(str(exc)))
         return 1
+    if audit.has_failures():
+        print(fail("One or more audit log writes failed during this run - see above."))
+        return 1
+    return result

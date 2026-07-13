@@ -4,5 +4,6 @@ services:
     restart: "no"
     volumes:
       - /mnt/myzmirror/plexscripts/.plexconfig.ini:/root/.plexconfig.ini:ro
+      - /mnt/myzmirror/plexscripts/audit:/root/.plexadm:rw
       - /mnt/myzmirror/plexscripts/reference:/app/reference:rw
     command: ["bash", "scripts/mass_process.sh"]
