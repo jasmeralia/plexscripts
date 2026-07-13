@@ -6,6 +6,9 @@ from typing import Any
 from plexapi.server import PlexServer
 
 from plexadm.config import PlexConfig, load_config
+from plexadm.console import warn
+
+LOCKED_COLLECTION = "99: LOCKED"
 
 
 class PlexContext:
@@ -60,15 +63,34 @@ def has_collection(video: Any, name: str) -> bool:
     return any(title.lower() == wanted for title in collection_titles(video))
 
 
-def add_items(collection: Any, items: Iterable[Any]) -> int:
+def _drop_locked(items: list[Any]) -> list[Any]:
+    """Filter out videos tagged '99: LOCKED' - that tag means plexadm must never add or
+    remove any of the video's collection memberships, regardless of which command is
+    asking. Checked once here rather than per-command so the guarantee holds for every
+    caller, present and future."""
+    kept = []
+    for item in items:
+        reload_if_partial(item)
+        if has_collection(item, LOCKED_COLLECTION):
+            print(warn(f"Skipping '{item.title}' - locked ('{LOCKED_COLLECTION}')"))
+            continue
+        kept.append(item)
+    return kept
+
+
+def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
-    if item_list:
+    if str(collection.title) != LOCKED_COLLECTION:
+        item_list = _drop_locked(item_list)
+    if item_list and not dry_run:
         collection.addItems(item_list)
     return len(item_list)
 
 
-def remove_items(collection: Any, items: Iterable[Any]) -> int:
+def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
-    if item_list:
+    if str(collection.title) != LOCKED_COLLECTION:
+        item_list = _drop_locked(item_list)
+    if item_list and not dry_run:
         collection.removeItems(item_list)
     return len(item_list)
