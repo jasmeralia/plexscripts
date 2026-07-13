@@ -24,6 +24,7 @@ _CURRENT_INVOCATION: ContextVar[InvocationContext | None] = ContextVar("plexadm_
 
 
 _LEVELS = {
+    "DEBUG": logging.DEBUG,
     "INFO": logging.INFO,
     "WARNING": logging.WARNING,
     "ERROR": logging.ERROR,
@@ -144,7 +145,7 @@ def _logger() -> logging.Logger:
     if _LOGGER is None:
         logger = logging.getLogger("plexadm.audit")
         logger.propagate = False
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.DEBUG)
         logger.handlers.clear()
         logger.addHandler(_build_handler(_CONFIG or LoggingConfig()))
         _LOGGER = logger

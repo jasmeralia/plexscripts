@@ -94,12 +94,23 @@ class TestLogEventLevelDispatch:
     def test_dispatches_to_matching_python_logging_level(self) -> None:
         fake_logger = MagicMock()
         with patch.object(audit, "_logger", return_value=fake_logger):
+            audit.log_event(AuditEvent(action="add", title="Example", level="DEBUG"))
             audit.log_event(AuditEvent(action="add", title="Example", level="INFO"))
             audit.log_event(AuditEvent(action="interrupted", title="Example", level="WARNING"))
             audit.log_event(AuditEvent(action="error", title="Example", level="ERROR"))
 
         levels = [call.args[0] for call in fake_logger.log.call_args_list]
-        assert levels == [logging.INFO, logging.WARNING, logging.ERROR]
+        assert levels == [logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR]
+
+    def test_logger_threshold_lets_debug_events_through(self, tmp_path: Path) -> None:
+        audit.configure(LoggingConfig(file=FileSinkConfig(path=tmp_path / "audit.jsonl")))
+        logger = audit._logger()
+        try:
+            assert logger.isEnabledFor(logging.DEBUG)
+        finally:
+            for handler in logger.handlers:
+                handler.close()
+            logger.handlers.clear()
 
     def test_unknown_level_falls_back_to_info(self) -> None:
         fake_logger = MagicMock()

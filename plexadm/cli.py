@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -1764,6 +1765,7 @@ def main(argv: list[str] | None = None) -> int:
     audit.set_invocation_context(rule=args.func.__name__, argv=sys.argv)
     if args.command == "top" and args.source in {"scenes-without-studios", "unrated-scenes"}:
         args.scenes = True
+    start = time.monotonic()
     try:
         result = int(args.func(args) or 0)
     except KeyboardInterrupt:
@@ -1776,6 +1778,14 @@ def main(argv: list[str] | None = None) -> int:
         audit.log_error(str(exc), exc=exc)
         print(fail(str(exc)))
         return 1
+    finally:
+        audit.log_event(
+            audit.AuditEvent(
+                action="timing",
+                title=f"'{args.func.__name__}' finished",
+                details={"duration_seconds": round(time.monotonic() - start, 3)},
+            )
+        )
     if audit.has_failures():
         print(fail("One or more audit log writes failed during this run - see above."))
         return 1

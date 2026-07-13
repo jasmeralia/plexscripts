@@ -79,19 +79,29 @@ def _drop_locked(items: list[Any]) -> list[Any]:
     return kept
 
 
+def _mutation_level_and_details(dry_run: bool, details: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    if dry_run:
+        return "DEBUG", {**details, "dry_run": True}
+    return "INFO", details
+
+
 def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
     if str(collection.title) != LOCKED_COLLECTION:
         item_list = _drop_locked(item_list)
-    if item_list and not dry_run:
-        collection.addItems(item_list)
+    if item_list:
+        if not dry_run:
+            collection.addItems(item_list)
+        level, details = _mutation_level_and_details(dry_run, {})
         for item in item_list:
             log_event(
                 AuditEvent(
                     action="add",
+                    level=level,
                     title=item.title,
                     rating_key=getattr(item, "ratingKey", None),
                     collection=str(collection.title),
+                    details=details,
                 )
             )
     return len(item_list)
@@ -101,15 +111,19 @@ def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False
     item_list = list(items)
     if str(collection.title) != LOCKED_COLLECTION:
         item_list = _drop_locked(item_list)
-    if item_list and not dry_run:
-        collection.removeItems(item_list)
+    if item_list:
+        if not dry_run:
+            collection.removeItems(item_list)
+        level, details = _mutation_level_and_details(dry_run, {})
         for item in item_list:
             log_event(
                 AuditEvent(
                     action="remove",
+                    level=level,
                     title=item.title,
                     rating_key=getattr(item, "ratingKey", None),
                     collection=str(collection.title),
+                    details=details,
                 )
             )
     return len(item_list)
@@ -119,16 +133,17 @@ def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
     if has_collection(video, LOCKED_COLLECTION):
         print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
         return False
-    if dry_run:
-        return True
     old_studio = getattr(video, "studio", None)
-    video.edit(**{"studio.value": studio, "label.locked": 1})
+    if not dry_run:
+        video.edit(**{"studio.value": studio, "label.locked": 1})
+    level, details = _mutation_level_and_details(dry_run, {"old_studio": old_studio, "new_studio": studio})
     log_event(
         AuditEvent(
             action="edit_studio",
+            level=level,
             title=video.title,
             rating_key=getattr(video, "ratingKey", None),
-            details={"old_studio": old_studio, "new_studio": studio},
+            details=details,
         )
     )
     return True
@@ -138,15 +153,16 @@ def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) ->
     if has_collection(video, LOCKED_COLLECTION):
         print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
         return False
-    if dry_run:
-        return True
-    video.addWriter(writer_names, True)
+    if not dry_run:
+        video.addWriter(writer_names, True)
+    level, details = _mutation_level_and_details(dry_run, {"writers": writer_names})
     log_event(
         AuditEvent(
             action="add_writer",
+            level=level,
             title=video.title,
             rating_key=getattr(video, "ratingKey", None),
-            details={"writers": writer_names},
+            details=details,
         )
     )
     return True
@@ -154,10 +170,10 @@ def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) ->
 
 def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False) -> None:
     old_title = str(collection.title)
-    if dry_run:
-        return
-    collection.editTitle(new_title)
-    log_event(AuditEvent(action="rename_collection", title=new_title, details={"old_title": old_title}))
+    if not dry_run:
+        collection.editTitle(new_title)
+    level, details = _mutation_level_and_details(dry_run, {"old_title": old_title})
+    log_event(AuditEvent(action="rename_collection", level=level, title=new_title, details=details))
 
 
 def create_smart_collection(
@@ -168,7 +184,7 @@ def create_smart_collection(
     filters: dict[str, Any],
     dry_run: bool = False,
 ) -> None:
-    if dry_run:
-        return
-    section.createCollection(title=title, smart=True, sort=sort, filters=filters)
-    log_event(AuditEvent(action="create_collection", title=title, details={"filters": filters}))
+    if not dry_run:
+        section.createCollection(title=title, smart=True, sort=sort, filters=filters)
+    level, details = _mutation_level_and_details(dry_run, {"filters": filters})
+    log_event(AuditEvent(action="create_collection", level=level, title=title, details=details))
