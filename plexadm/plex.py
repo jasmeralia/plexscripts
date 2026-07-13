@@ -5,6 +5,7 @@ from typing import Any
 
 from plexapi.server import PlexServer
 
+from plexadm.audit import MutationEvent, log_mutation
 from plexadm.config import PlexConfig, load_config
 from plexadm.console import warn
 
@@ -84,6 +85,15 @@ def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -
         item_list = _drop_locked(item_list)
     if item_list and not dry_run:
         collection.addItems(item_list)
+        for item in item_list:
+            log_mutation(
+                MutationEvent(
+                    action="add",
+                    title=item.title,
+                    rating_key=getattr(item, "ratingKey", None),
+                    collection=str(collection.title),
+                )
+            )
     return len(item_list)
 
 
@@ -93,4 +103,72 @@ def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False
         item_list = _drop_locked(item_list)
     if item_list and not dry_run:
         collection.removeItems(item_list)
+        for item in item_list:
+            log_mutation(
+                MutationEvent(
+                    action="remove",
+                    title=item.title,
+                    rating_key=getattr(item, "ratingKey", None),
+                    collection=str(collection.title),
+                )
+            )
     return len(item_list)
+
+
+def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
+    if has_collection(video, LOCKED_COLLECTION):
+        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
+        return False
+    if dry_run:
+        return True
+    old_studio = getattr(video, "studio", None)
+    video.edit(**{"studio.value": studio, "label.locked": 1})
+    log_mutation(
+        MutationEvent(
+            action="edit_studio",
+            title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details={"old_studio": old_studio, "new_studio": studio},
+        )
+    )
+    return True
+
+
+def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) -> bool:
+    if has_collection(video, LOCKED_COLLECTION):
+        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
+        return False
+    if dry_run:
+        return True
+    video.addWriter(writer_names, True)
+    log_mutation(
+        MutationEvent(
+            action="add_writer",
+            title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details={"writers": writer_names},
+        )
+    )
+    return True
+
+
+def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False) -> None:
+    old_title = str(collection.title)
+    if dry_run:
+        return
+    collection.editTitle(new_title)
+    log_mutation(MutationEvent(action="rename_collection", title=new_title, details={"old_title": old_title}))
+
+
+def create_smart_collection(
+    section: Any,
+    *,
+    title: str,
+    sort: str,
+    filters: dict[str, Any],
+    dry_run: bool = False,
+) -> None:
+    if dry_run:
+        return
+    section.createCollection(title=title, smart=True, sort=sort, filters=filters)
+    log_mutation(MutationEvent(action="create_collection", title=title, details={"filters": filters}))

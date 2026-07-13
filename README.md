@@ -15,9 +15,40 @@ plexPort = 32400
 plexToken = your-token
 plexSectionName = Your Library Name
 plexSection = optional-section-id
+
+[logging]
+sink = file
+
+[logging.file]
+path = ~/.plexadm/audit.jsonl
+max_bytes = 10485760
+backup_count = 10
 ```
 
 You can use another config file with `--config PATH` on Plex-backed subcommands.
+
+Every successful, non-dry-run Plex mutation is appended as a structured audit event. Exactly one audit sink is active. The default `file` sink uses size-based rotation and works without adding a `[logging]` section to an existing config. Available sinks are `file`, `syslog`, `journal`, and `opensearch`:
+
+```ini
+[logging]
+sink = opensearch
+
+[logging.syslog]
+address = /dev/log
+facility = user
+
+[logging.journal]
+identifier = plexadm
+
+[logging.opensearch]
+url = https://opensearch.example.com:9200
+index = plexadm-audit
+username = plexadm
+password = your-password
+verify_tls = true
+```
+
+For remote syslog, set `address = host:port`; Docker containers generally do not have `/dev/log`. The journal sink is primarily for bare-metal runs and may need the host's `/run/systemd/journal` mounted in a container. It also requires the optional dependency `pip install systemd-python`, which is intentionally not installed by default. Journal, syslog, and OpenSearch retention are managed by those systems; only the file sink handles its own rotation and retention.
 
 ## Install
 
@@ -56,7 +87,10 @@ docker compose up --build
 The compose file mounts:
 
 - `~/.plexconfig.ini:/root/.plexconfig.ini:ro`
+- `/mnt/myzmirror/plexscripts/audit:/root/.plexadm:rw`
 - `./reference:/app/reference:rw`
+
+The audit mount preserves the default file sink's JSONL files when a container is removed. Adjust the host path to suit the deployment.
 
 Override the default command with a shell:
 

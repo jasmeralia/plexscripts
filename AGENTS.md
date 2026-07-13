@@ -16,6 +16,10 @@ Do not add new top-level one-off scripts when a `plexadm` subcommand or helper m
 
 Any video tagged `99: LOCKED` must never have its collection memberships changed by plexadm - neither additions nor removals - regardless of which command is operating. This is enforced once, centrally, in `plexadm.plex.add_items`/`remove_items` (both silently drop locked videos from the item list before touching the Plex API, unless the target collection *is* `99: LOCKED` itself, since adding/removing the lock is how you set/unset it). Do not re-implement this check per-command; if you add a new mutating command, it gets this protection for free by going through `add_items`/`remove_items`.
 
+## Persistent audit logging
+
+Every real, non-dry-run Plex mutation must go through the centralized helpers in `plexadm.plex`, which write a structured event only after the Plex API call succeeds. Do not call Plex mutation methods directly from commands; add or extend a `plexadm.plex` helper instead. This includes studio and writer edits, collection renames, and smart-collection creation: centralizing those formerly direct `cli.py` call sites also closes their old gap where they bypassed the `99: LOCKED` guard entirely. Audit logging uses one separately configured, non-propagating logger and must not be connected to the root logger or the Stash debug logging.
+
 ## Running Scripts
 
 Always run `scripts/mass_process.sh` in the background (e.g. `bash scripts/mass_process.sh &> /tmp/mass_process.log &`). It takes several minutes and should not block the terminal.
