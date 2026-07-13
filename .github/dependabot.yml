@@ -9,19 +9,13 @@ updates:
     python-dependencies:
       patterns:
       - '*'
-  reviewers:
-  - jasmeralia
 - package-ecosystem: docker
   directory: /
   schedule:
     interval: weekly
   auto-merge: enable
-  reviewers:
-  - jasmeralia
 - package-ecosystem: github-actions
   directory: /
   schedule:
     interval: weekly
   auto-merge: enable
-  reviewers:
-  - jasmeralia
