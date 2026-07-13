@@ -50,6 +50,8 @@ verify_tls = true
 
 For remote syslog, set `address = host:port`; Docker containers generally do not have `/dev/log`. The journal sink is primarily for bare-metal runs and may need the host's `/run/systemd/journal` mounted in a container. It also requires the optional dependency `pip install systemd-python`, which is intentionally not installed by default. Journal, syslog, and OpenSearch retention are managed by those systems; only the file sink handles its own rotation and retention.
 
+Every audit event carries a `level` (`INFO`, `WARNING`, or `ERROR`), which is mapped to the matching native severity on the syslog and journal sinks (e.g. an `ERROR` event reaches syslog at the `err` priority, not `info`). Plex mutations are logged at `INFO`. In addition to mutations, plexadm logs two non-mutation event types to the same sink: any uncaught exception during a command is logged at `ERROR` (`action = "error"`), and a `Ctrl-C` interrupt is logged at `WARNING` (`action = "interrupted"`) — both so a crashed or aborted run leaves a trace instead of only a stderr message.
+
 ## Install
 
 Install local development dependencies into `.venv/`:

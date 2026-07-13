@@ -1767,9 +1767,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = int(args.func(args) or 0)
     except KeyboardInterrupt:
+        audit.log_event(
+            audit.AuditEvent(action="interrupted", level="WARNING", title=f"Interrupted during '{args.func.__name__}'")
+        )
         print(fail("Interrupted."))
         return 130
     except Exception as exc:
+        audit.log_error(str(exc), exc=exc)
         print(fail(str(exc)))
         return 1
     if audit.has_failures():

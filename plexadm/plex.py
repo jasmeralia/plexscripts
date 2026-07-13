@@ -5,7 +5,7 @@ from typing import Any
 
 from plexapi.server import PlexServer
 
-from plexadm.audit import MutationEvent, log_mutation
+from plexadm.audit import AuditEvent, log_event
 from plexadm.config import PlexConfig, load_config
 from plexadm.console import warn
 
@@ -86,8 +86,8 @@ def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -
     if item_list and not dry_run:
         collection.addItems(item_list)
         for item in item_list:
-            log_mutation(
-                MutationEvent(
+            log_event(
+                AuditEvent(
                     action="add",
                     title=item.title,
                     rating_key=getattr(item, "ratingKey", None),
@@ -104,8 +104,8 @@ def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False
     if item_list and not dry_run:
         collection.removeItems(item_list)
         for item in item_list:
-            log_mutation(
-                MutationEvent(
+            log_event(
+                AuditEvent(
                     action="remove",
                     title=item.title,
                     rating_key=getattr(item, "ratingKey", None),
@@ -123,8 +123,8 @@ def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
         return True
     old_studio = getattr(video, "studio", None)
     video.edit(**{"studio.value": studio, "label.locked": 1})
-    log_mutation(
-        MutationEvent(
+    log_event(
+        AuditEvent(
             action="edit_studio",
             title=video.title,
             rating_key=getattr(video, "ratingKey", None),
@@ -141,8 +141,8 @@ def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) ->
     if dry_run:
         return True
     video.addWriter(writer_names, True)
-    log_mutation(
-        MutationEvent(
+    log_event(
+        AuditEvent(
             action="add_writer",
             title=video.title,
             rating_key=getattr(video, "ratingKey", None),
@@ -157,7 +157,7 @@ def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False)
     if dry_run:
         return
     collection.editTitle(new_title)
-    log_mutation(MutationEvent(action="rename_collection", title=new_title, details={"old_title": old_title}))
+    log_event(AuditEvent(action="rename_collection", title=new_title, details={"old_title": old_title}))
 
 
 def create_smart_collection(
@@ -171,4 +171,4 @@ def create_smart_collection(
     if dry_run:
         return
     section.createCollection(title=title, smart=True, sort=sort, filters=filters)
-    log_mutation(MutationEvent(action="create_collection", title=title, details={"filters": filters}))
+    log_event(AuditEvent(action="create_collection", title=title, details={"filters": filters}))
