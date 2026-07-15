@@ -23,10 +23,19 @@ class InvocationContext:
 _CURRENT_INVOCATION: ContextVar[InvocationContext | None] = ContextVar("plexadm_invocation", default=None)
 
 
+_LEVELS = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
+
+
 @dataclass(frozen=True)
-class MutationEvent:
+class AuditEvent:
     action: str
     title: str
+    level: str = "INFO"
     rating_key: int | None = None
     collection: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
@@ -35,6 +44,7 @@ class MutationEvent:
         ctx = _CURRENT_INVOCATION.get()
         return {
             "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
+            "level": self.level,
             "action": self.action,
             "title": self.title,
             "rating_key": self.rating_key,
@@ -135,21 +145,27 @@ def _logger() -> logging.Logger:
     if _LOGGER is None:
         logger = logging.getLogger("plexadm.audit")
         logger.propagate = False
-        logger.setLevel(logging.INFO)
+        logger.setLevel(logging.DEBUG)
         logger.handlers.clear()
         logger.addHandler(_build_handler(_CONFIG or LoggingConfig()))
         _LOGGER = logger
     return _LOGGER
 
 
-def log_mutation(event: MutationEvent) -> None:
+def log_event(event: AuditEvent) -> None:
     global _FAILURE_COUNT
     try:
-        _logger().info(json.dumps(event.to_record(), sort_keys=True))
+        level = _LEVELS.get(event.level.upper(), logging.INFO)
+        _logger().log(level, json.dumps(event.to_record(), sort_keys=True))
     except Exception as exc:
         _FAILURE_COUNT += 1
         sink = (_CONFIG or LoggingConfig()).sink
         print(fail(f"AUDIT LOG WRITE FAILED ({sink}): {exc}"), file=sys.stderr)
+
+
+def log_error(message: str, *, exc: BaseException | None = None) -> None:
+    details: dict[str, Any] = {"exception_type": type(exc).__name__} if exc is not None else {}
+    log_event(AuditEvent(action="error", level="ERROR", title=message, details=details))
 
 
 def has_failures() -> bool:

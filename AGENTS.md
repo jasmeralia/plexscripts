@@ -20,6 +20,8 @@ Any video tagged `99: LOCKED` must never have its collection memberships changed
 
 Every real, non-dry-run Plex mutation must go through the centralized helpers in `plexadm.plex`, which write a structured event only after the Plex API call succeeds. Do not call Plex mutation methods directly from commands; add or extend a `plexadm.plex` helper instead. This includes studio and writer edits, collection renames, and smart-collection creation: centralizing those formerly direct `cli.py` call sites also closes their old gap where they bypassed the `99: LOCKED` guard entirely. Audit logging uses one separately configured, non-propagating logger and must not be connected to the root logger or the Stash debug logging.
 
+Every `AuditEvent` carries a `level` (`INFO`/`WARNING`/`ERROR`), which is dispatched through the matching Python `logging` level so syslog/journal severity reflects it natively. Mutations are `INFO`. `plexadm.cli.main` also logs uncaught command exceptions (`audit.log_error`, `ERROR`) and `Ctrl-C` interrupts (`WARNING`) to the same sink, so a crashed or aborted run is traceable, not just a mutation history.
+
 ## Running Scripts
 
 Always run `scripts/mass_process.sh` in the background (e.g. `bash scripts/mass_process.sh &> /tmp/mass_process.log &`). It takes several minutes and should not block the terminal.
