@@ -8,9 +8,11 @@ from plexadm.stash import StashClient
 from plexadm.stash_backfill_tags import (
     COMPOSITION_COLLECTIONS,
     COMPOSITION_TAGS,
+    _has_existing_plex_match,
     _load_review,
     _plex_tags_in_scope,
     _stash_tags_in_scope,
+    _suggested_action,
     _tag_to_collection,
     _write_review,
     apply_review,
@@ -251,7 +253,119 @@ class TestStashClientAllTags:
         gql.assert_called_once()
 
 
+class TestHasExistingPlexMatch:
+    def test_direct_match_via_category_prefix(self) -> None:
+        tag = {"name": "Category: Solo", "stash_ids": []}
+        assert _has_existing_plex_match(tag, {"01: Category: Solo"}) is True
+
+    def test_category_prefixed_tag_with_no_match_is_not_broadened(self) -> None:
+        tag = {"name": "Category: Blowjob", "stash_ids": []}
+        assert _has_existing_plex_match(tag, {"01: Category: Fingering"}) is False
+
+    def test_unprefixed_stash_box_tag_matches_existing_category_collection(self) -> None:
+        tag = {"name": "Fingering", "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "x"}]}
+        assert _has_existing_plex_match(tag, {"01: Category: Fingering"}) is True
+
+    def test_unprefixed_stash_box_tag_matches_existing_hair_collection(self) -> None:
+        tag = {"name": "Red", "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "x"}]}
+        assert _has_existing_plex_match(tag, {"01: Hair: Red"}) is True
+
+    def test_unprefixed_stash_box_tag_with_no_match_stays_unmapped(self) -> None:
+        tag = {"name": "Masturbation", "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "x"}]}
+        assert _has_existing_plex_match(tag, {"01: Category: Fingering"}) is False
+
+    def test_local_unprefixed_tag_does_not_get_the_broader_check(self) -> None:
+        # "FAVORITES" is local and really does map to "00A: FAVORITES" in Plex, but that's a
+        # different prefix family this check deliberately doesn't attempt to cover.
+        tag = {"name": "FAVORITES", "stash_ids": []}
+        assert _has_existing_plex_match(tag, {"01: Category: FAVORITES", "00A: FAVORITES"}) is False
+
+
+class TestSuggestedAction:
+    def test_recommends_merge_when_hair_keyword_matches_existing_collection(self) -> None:
+        assert _suggested_action("Red Hair (Male)", {"01: Hair: Red"}) == "merge -> 01: Hair: Red"
+
+    def test_matches_word_regardless_of_position_or_case(self) -> None:
+        assert _suggested_action("Natural Blonde Hair Bombshell", {"01: Hair: Blonde"}) == "merge -> 01: Hair: Blonde"
+
+    def test_color_word_alone_without_hair_context_does_not_merge(self) -> None:
+        # Real false positives found on a live run before this requirement was added: color
+        # words alone match plenty of tags that have nothing to do with hair.
+        targets = {
+            "01: Hair: White",
+            "01: Hair: Blue",
+            "01: Hair: Brunette",
+            "01: Hair: Pink",
+            "01: Hair: Red",
+        }
+        for tag_name in ("White Woman", "Blue Eyes", "Brown Eyes", "Pink Labia", "Red Lipstick"):
+            assert _suggested_action(tag_name, targets) == "add"
+
+    def test_does_not_catch_fused_compound_words(self) -> None:
+        # "Redhead" is one token with no word boundary before "head" - real data confirms this
+        # doesn't matter in practice (no standalone "Redhead" tag exists; Stash's own alias
+        # mechanism already folds it into "Hair: Red"), and catching it would require substring
+        # matching that produces real false positives elsewhere (e.g. "Hundred" contains "red").
+        assert _suggested_action("Redhead", {"01: Hair: Red"}) == "add"
+
+    def test_does_not_recommend_merge_when_target_collection_does_not_exist(self) -> None:
+        assert _suggested_action("Redhead", set()) == "add"
+
+    def test_does_not_false_positive_on_substring_only_match(self) -> None:
+        # "Chair" contains "hair" as a substring but not "red"/"blue"/etc. as a whole word.
+        assert _suggested_action("Chair", {"01: Hair: Red"}) == "add"
+
+    def test_recommends_skip_for_technical_metadata_tags(self) -> None:
+        assert _suggested_action("4K Available", set()) == "skip"
+        assert _suggested_action("60 FPS", set()) == "skip"
+
+    def test_skip_takes_priority_over_merge(self) -> None:
+        assert _suggested_action("4K Red Something", {"01: Hair: Red"}) == "skip"
+
+    def test_defaults_to_add_for_ordinary_tags(self) -> None:
+        assert _suggested_action("Masturbation", {"01: Hair: Red"}) == "add"
+
+
 class TestUnmappedTags:
+    def test_unprefixed_tag_covered_by_a_differently_named_stash_tag_is_excluded(self, tmp_path: Path) -> None:
+        tags = [
+            {
+                "id": "1",
+                "name": "Fingering",
+                "scene_count": 132,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "x"}],
+            },
+            {
+                "id": "2",
+                "name": "Category: Fingering",
+                "scene_count": 578,
+                "stash_ids": [],
+            },
+        ]
+        stash = MagicMock()
+        stash.all_tags.return_value = tags
+        stash.configured_stash_boxes.return_value = [{"name": "StashDB", "endpoint": "https://stashdb.org/graphql"}]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = [SimpleNamespace(title="01: Category: Fingering")]
+        output = tmp_path / "unmapped.md"
+        args = SimpleNamespace(
+            config="config.ini",
+            log_level="WARNING",
+            output=output,
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert unmapped_tags(args) == 0
+
+        report = output.read_text(encoding="utf-8")
+        assert "Found 0 unmapped tags out of 2 total Stash tags." in report
+        assert "Fingering" not in report
+
     def test_reports_real_collection_gaps_sorted_by_scene_count(self, tmp_path: Path) -> None:
         tags = [
             {"id": "1", "name": "Category: Solo", "scene_count": 30, "stash_ids": []},

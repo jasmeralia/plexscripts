@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -129,11 +130,90 @@ def _tag_source(tag: dict[str, Any], stash_box_names: dict[str, str]) -> str:
     return ", ".join(sorted(sources))
 
 
+def _has_existing_plex_match(tag: dict[str, Any], existing_titles: set[str]) -> bool:
+    """Check whether a Stash tag already corresponds to some existing Plex collection.
+
+    The direct "01: <name>" derivation only produces a real title for tags already
+    following the Category:/Hair: naming convention - that's the only prefix this
+    tool's own backfill logic ever writes. A non-local, unprefixed tag (almost always
+    a StashDB act/attribute tag, e.g. "Fingering") can still correspond to an existing
+    "01: Category: Fingering" collection filed under a *different*, already-mapped
+    Stash tag ("Category: Fingering") - reporting that as a gap would be misleading,
+    since nothing is actually missing from Plex, it's just Stash carrying two tags
+    for related concepts. Local tags are excluded from this broader check: they were
+    either hand-created or synced in from Plex under whatever prefix family that
+    collection actually used (often not "01:" at all, e.g. "00A: FAVORITES") - this
+    check doesn't attempt to cover that separate, wider prefix-family mismatch.
+    """
+    tag_name = str(tag["name"])
+    if _tag_to_collection(tag_name) in existing_titles:
+        return True
+    is_local = not (tag.get("stash_ids") or [])
+    if is_local or tag_name.startswith(("Category: ", "Hair: ")):
+        return False
+    return f"01: Category: {tag_name}" in existing_titles or f"01: Hair: {tag_name}" in existing_titles
+
+
+_HAIR_MERGE_KEYWORDS: dict[str, str] = {
+    "black": "01: Hair: Black",
+    "blonde": "01: Hair: Blonde",
+    "blond": "01: Hair: Blonde",
+    "blue": "01: Hair: Blue",
+    "brunette": "01: Hair: Brunette",
+    "brown": "01: Hair: Brunette",
+    "green": "01: Hair: Green",
+    "pink": "01: Hair: Pink",
+    "purple": "01: Hair: Purple",
+    "red": "01: Hair: Red",
+    "silver": "01: Hair: Silver",
+    "white": "01: Hair: White",
+}
+
+_SKIP_MARKER_WORDS = {"4k", "8k", "1080p", "720p", "fps", "hdr", "vr", "available"}
+
+_HAIR_CONTEXT_WORDS = {"hair", "haired"}
+
+
+def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
+    """Heuristic-only suggestion for an unmapped tag: 'add', 'merge -> <collection>', or 'skip'.
+
+    A starting point for human review, not a decision. The merge check requires a hair-color
+    keyword AND the word "hair"/"haired" to both appear as whole, space/punctuation-delimited
+    words in the tag name - not just the color word alone. Color words alone are not a
+    reliable signal: verified against this tool's real, live-data test run that a color-word-
+    only match produces mostly false positives ("White Woman", "Blue Eyes", "Brown Eyes",
+    "Pink Labia", "Red Lipstick", ... - none of those are about hair), while every tag that
+    also contains "hair" was a correct match ("Brown Hair (Male)", "Blond Hair (Male)",
+    "Platinum Blond Hair", ...). Requiring both words present (not necessarily adjacent, since
+    these tag names are short enough that co-occurrence alone is already precise) eliminated
+    every false positive in that run while keeping every true positive. Deliberately not a
+    substring match either (e.g. "Hundred" contains "red"), so a fused compound with no word
+    boundary, like "Redhead", is NOT caught - confirmed this doesn't matter in practice: no
+    standalone "Redhead" tag exists, because Stash's own alias mechanism already folds exact-
+    name synonyms (e.g. "Red Hair") into one tag entity before they'd ever reach this function
+    as a separate, unmapped tag object. Only recommends a merge target that actually exists as
+    a Plex collection already. Composition-side merges are deliberately not attempted - those
+    terms (MMF, FFM, FFFM, ...) are short/abbreviation-heavy enough that keyword matching
+    would be too noisy to trust even as a suggestion; a human scanning the raw list is more
+    reliable there.
+    """
+    words = set(re.findall(r"[a-z0-9]+", tag_name.lower()))
+    if words & _SKIP_MARKER_WORDS:
+        return "skip"
+    if words & _HAIR_CONTEXT_WORDS:
+        for word in words:
+            target = _HAIR_MERGE_KEYWORDS.get(word)
+            if target and target in existing_titles:
+                return f"merge -> {target}"
+    return "add"
+
+
 def _write_unmapped_tags_report(
     path: str | Path,
     unmapped: list[dict[str, Any]],
     web_base: str,
     stash_box_names: dict[str, str],
+    existing_titles: set[str],
     *,
     total_tag_count: int,
 ) -> None:
@@ -147,12 +227,17 @@ def _write_unmapped_tags_report(
         "",
         f"Found {len(unmapped)} unmapped tags out of {total_tag_count} total Stash tags.",
         "",
-        "| Scenes | Tag | Source | Link |",
-        "|---:|---|---|---|",
+        "Suggested Action is a heuristic starting point for review, not a decision - "
+        "especially `merge`, which only catches hair-color keywords and always reflects "
+        "an actual existing Plex collection as the target. Verify before acting on any row.",
+        "",
+        "| Scenes | Tag | Source | Suggested Action | Link |",
+        "|---:|---|---|---|---|",
     ]
     lines.extend(
         f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
         f"{_escape_markdown_table_cell(_tag_source(tag, stash_box_names))} | "
+        f"{_escape_markdown_table_cell(_suggested_action(str(tag['name']), existing_titles))} | "
         f"[view]({web_base}/tags/{tag['id']}) |"
         for tag in unmapped
     )
@@ -412,11 +497,13 @@ def unmapped_tags(args: Any) -> int:
     plex_ctx = PlexContext(cfg)
     existing_titles = {str(collection.title) for collection in plex_ctx.section.collections()}
 
-    unmapped = [tag for tag in tags if _tag_to_collection(str(tag["name"])) not in existing_titles]
+    unmapped = [tag for tag in tags if not _has_existing_plex_match(tag, existing_titles)]
     unmapped.sort(key=lambda tag: tag.get("scene_count") or 0, reverse=True)
 
     report_path = Path(getattr(args, "output", "reference/stash_unmapped_tags.md"))
-    _write_unmapped_tags_report(report_path, unmapped, web_base, stash_box_names, total_tag_count=len(tags))
+    _write_unmapped_tags_report(
+        report_path, unmapped, web_base, stash_box_names, existing_titles, total_tag_count=len(tags)
+    )
 
     print(ok(f"Unmapped tags: {len(unmapped)} of {len(tags)} total"))
     print(info(f"Report written to {report_path}"))
