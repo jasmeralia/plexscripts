@@ -292,15 +292,16 @@ class TestSuggestedAction:
 
     def test_color_word_alone_without_hair_context_does_not_merge(self) -> None:
         # Real false positives found on a live run before this requirement was added: color
-        # words alone match plenty of tags that have nothing to do with hair.
+        # words alone match plenty of tags that have nothing to do with hair. "White Woman" is
+        # excluded here since it's since been added to _SKIP_EXACT_TAG_NAMES (ethnicity, not
+        # hair) - covered instead by TestSkipSignals.
         targets = {
-            "01: Hair: White",
             "01: Hair: Blue",
             "01: Hair: Brunette",
             "01: Hair: Pink",
             "01: Hair: Red",
         }
-        for tag_name in ("White Woman", "Blue Eyes", "Brown Eyes", "Pink Labia", "Red Lipstick"):
+        for tag_name in ("Blue Eyes", "Brown Eyes", "Pink Labia", "Red Lipstick"):
             assert _suggested_action(tag_name, targets) == "add"
 
     def test_redhead_is_caught_via_the_curated_phrase_list(self) -> None:
@@ -337,6 +338,51 @@ class TestSuggestedAction:
         assert _suggested_action("Blackmail Fantasy", set()) == "add"
         assert _suggested_action("Blackmail Fantasy", {"01: Category: Blackmail"}) == "merge -> 01: Category: Blackmail"
 
+    def test_pussy_licking_merges_into_pussy_eating(self) -> None:
+        assert (
+            _suggested_action("Pussy Licking", {"01: Category: Pussy Eating"}) == "merge -> 01: Category: Pussy Eating"
+        )
+        # Variants of the same act are also caught by the phrase match.
+        assert (
+            _suggested_action("Standing Pussy Licking", {"01: Category: Pussy Eating"})
+            == "merge -> 01: Category: Pussy Eating"
+        )
+
+    def test_cum_on_pussy_merges_into_cum_on_vagina(self) -> None:
+        assert (
+            _suggested_action("Cum on Pussy", {"01: Category: Cum On Vagina"}) == "merge -> 01: Category: Cum On Vagina"
+        )
+
+    def test_threesome_bbg_merges_into_mmf(self) -> None:
+        assert _suggested_action("Threesome (BBG)", {"01: Category: MMF"}) == "merge -> 01: Category: MMF"
+
+    def test_open_mouth_facial_merges_into_both_targets(self) -> None:
+        targets = {"01: Category: Cum In Mouth", "01: Category: Facial"}
+        assert (
+            _suggested_action("Open Mouth Facial", targets)
+            == "merge -> 01: Category: Cum In Mouth + 01: Category: Facial"
+        )
+
+    def test_open_mouth_facial_requires_both_targets_to_exist(self) -> None:
+        assert _suggested_action("Open Mouth Facial", {"01: Category: Facial"}) == "add"
+
+
+class TestSkipSignals:
+    def test_exact_tag_names_are_skipped(self) -> None:
+        for tag_name in ("Hardcore", "Indoors", "European", "White Woman", "Bed", "Russian", "Gonzo", "Exclusive"):
+            assert _suggested_action(tag_name, set()) == "skip"
+
+    def test_exact_skip_does_not_catch_more_specific_variants(self) -> None:
+        # "Cumshot"/"Threesome" alone are too broad to be useful, but specific variants are not.
+        assert _suggested_action("Cumshot", set()) == "skip"
+        assert _suggested_action("Massive Cumshot", set()) == "add"
+        assert _suggested_action("Threesome", set()) == "skip"
+        assert _suggested_action("Threesome (GTT)", set()) == "add"
+
+    def test_generic_body_descriptor_words_are_skipped(self) -> None:
+        for tag_name in ("Slim", "Medium Ass", "Athletic Woman", "Average Height Man", "Medium Hair"):
+            assert _suggested_action(tag_name, set()) == "skip"
+
 
 class TestTagSource:
     def test_local_tag_has_no_stash_ids(self) -> None:
@@ -360,6 +406,10 @@ class TestSuggestNewCollectionName:
 
     def test_prop_keyword(self) -> None:
         assert _suggest_new_collection_name("Pink Dildo") == "01: Prop: Pink Dildo"
+
+    def test_prop_keyword_covers_worn_fetish_attire_and_bondage_gear(self) -> None:
+        for tag_name in ("Black Stockings", "Woman's Heels", "Handcuffs", "Sybian", "Gags"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Prop: ")
 
     def test_activity_keyword(self) -> None:
         assert _suggest_new_collection_name("Rough Anal") == "01: Activity: Rough Anal"

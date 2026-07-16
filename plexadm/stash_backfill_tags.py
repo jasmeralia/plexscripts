@@ -171,6 +171,34 @@ _HAIR_MERGE_KEYWORDS: dict[str, str] = {
 
 _SKIP_MARKER_WORDS = {"4k", "8k", "1080p", "720p", "fps", "hdr", "vr", "available"}
 
+# Generic body-type descriptors - not technical metadata like _SKIP_MARKER_WORDS, but equally
+# not worth a dedicated collection: the current taxonomy has no body-build or hair-length axis,
+# and these words show up fused into otherwise-unrelated tag names ("Medium Ass", "Athletic
+# Woman", "Average Height Man", "Medium Hair"). Confirmed by direct user review of the live
+# report, not guessed.
+_SKIP_GENERIC_BODY_WORDS = {"athletic", "slim", "average", "medium"}
+
+# Whole-tag-name (not substring) skips: too broad to be a useful collection ("Cumshot",
+# "Threesome" - the specific variants like "Massive Cumshot" or "Threesome (BBG)" are still
+# useful and must NOT be caught by this), pure ethnicity/nationality descriptors the user
+# doesn't want tracked, or metadata about the tagging process itself rather than the content
+# ("Missing Performer (Male)", "Exclusive"). Confirmed by direct user review of the live report.
+_SKIP_EXACT_TAG_NAMES = {
+    "hardcore",
+    "cumshot",
+    "threesome",
+    "professional production",
+    "indoors",
+    "european",
+    "white woman",
+    "bed",
+    "russian",
+    "gonzo",
+    "missing performer (male)",
+    "exclusive",
+    "straight",
+}
+
 _HAIR_CONTEXT_WORDS = {"hair", "haired"}
 
 # A curated subset of scripts/set_tags_based_on_title.sh's title -> collection keyword
@@ -201,6 +229,19 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     # hair heuristic below deliberately does not catch on its own.
     "redhead": "01: Hair: Red",
     "red head": "01: Hair: Red",
+    # Confirmed by direct user review of the live report, not sourced from the script.
+    "pussy licking": "01: Category: Pussy Eating",
+    "cum on pussy": "01: Category: Cum On Vagina",
+    # BBG = Boy-Boy-Girl, the same composition already tracked as MMF.
+    "threesome (bbg)": "01: Category: MMF",
+}
+
+# A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
+# is both a cum-in-mouth and a facial variant) rather than one - confirmed by direct user
+# review of the live report. Requires every listed target to already exist, same as the
+# single-target phrases above.
+_MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
+    "open mouth facial": ["01: Category: Cum In Mouth", "01: Category: Facial"],
 }
 
 
@@ -209,11 +250,20 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
 
     A starting point for human review, not a decision.
 
-    Two merge signals, both requiring the target collection to actually exist already:
-    1. A curated phrase from `_CATEGORY_MERGE_PHRASES` (sourced from
-       scripts/set_tags_based_on_title.sh's own already-validated keyword associations)
-       appearing anywhere in the tag name.
-    2. A hair-color keyword AND the word "hair"/"haired" both appearing as whole, space/
+    Skip signals, checked first: an exact (whole tag name, not substring) match against
+    `_SKIP_EXACT_TAG_NAMES`, or a whole word from `_SKIP_MARKER_WORDS`/`_SKIP_GENERIC_BODY_WORDS`.
+    Exact-name matching for the former is deliberate - "Cumshot" alone is too broad to be a
+    useful collection, but "Massive Cumshot" and "Threesome (BBG)" are specific enough to keep,
+    so a substring match would wrongly swallow those too.
+
+    Merge signals, all requiring every target collection to actually exist already:
+    1. `_MULTI_TARGET_MERGE_PHRASES` for a tag that legitimately spans more than one existing
+       collection at once (e.g. "Open Mouth Facial" -> both Cum In Mouth and Facial).
+    2. A curated phrase from `_CATEGORY_MERGE_PHRASES` (sourced from
+       scripts/set_tags_based_on_title.sh's own already-validated keyword associations, plus
+       entries confirmed by direct user review of the live report) appearing anywhere in the
+       tag name.
+    3. A hair-color keyword AND the word "hair"/"haired" both appearing as whole, space/
        punctuation-delimited words - not just the color word alone. Color words alone are
        not a reliable signal: verified against this tool's real, live-data test run that a
        color-word-only match produces mostly false positives ("White Woman", "Blue Eyes",
@@ -229,8 +279,11 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
     """
     lower_name = tag_name.lower()
     words = set(re.findall(r"[a-z0-9]+", lower_name))
-    if words & _SKIP_MARKER_WORDS:
+    if lower_name in _SKIP_EXACT_TAG_NAMES or words & (_SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS):
         return "skip"
+    for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
+        if phrase in lower_name and all(target in existing_titles for target in targets):
+            return f"merge -> {' + '.join(targets)}"
     for phrase, target in _CATEGORY_MERGE_PHRASES.items():
         if phrase in lower_name and target in existing_titles:
             return f"merge -> {target}"
@@ -263,6 +316,32 @@ _PROP_KEYWORDS = frozenset(
         "wax",
         "glory",
         "hole",
+        # Confirmed by direct user review of the live report: physical objects/gear and worn
+        # fetish attire, matching the existing "01: Category: Latex" -> "01: Prop: Latex"
+        # precedent. Deliberately excludes furniture/setting words ("bed", "chair", "couch",
+        # "table") and broad genre words ("bondage") - those read more like a location or theme
+        # than a discrete prop and weren't part of what was confirmed.
+        "lingerie",
+        "stockings",
+        "stocking",
+        "bodystocking",
+        "heels",
+        "heel",
+        "heeled",
+        "handcuffs",
+        "handcuff",
+        "leash",
+        "mirror",
+        "wand",
+        "wands",
+        "whip",
+        "cane",
+        "canes",
+        "flogger",
+        "mask",
+        "sybian",
+        "gag",
+        "gags",
     }
 )
 _ACTIVITY_KEYWORDS = frozenset(
