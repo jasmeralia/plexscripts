@@ -218,6 +218,36 @@ _SKIP_EXACT_TAG_NAMES = {
     "ottoman",
     "desk",
     "lounger",
+    # Ethnicity/nationality descriptors beyond the two the user actually tracks (Asian, Ebony -
+    # see the "black"/"asian woman" merges below). "White Woman" already covered above;
+    # "White Man" is the same case. Confirmed by direct user review of the live report.
+    "white man",
+    "latina woman",
+    "latino man",
+    "mixed race woman",
+    "mixed race man",
+    "middle eastern woman",
+    "latin",
+    "american",
+    "american porn",
+    "ukrainian",
+    "czech",
+    "spanish",
+    "french",
+    "hungarian",
+    "british",
+    "dutch",
+    "romanian",
+    "israeli",
+    "brazilian",
+    "canadian",
+    "estonian",
+    "finnish",
+    "polish",
+    "portuguese",
+    "venezuelan",
+    "italian",
+    "german",
 }
 
 _HAIR_CONTEXT_WORDS = {"hair", "haired"}
@@ -271,6 +301,34 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     "nipple piercing": "01: Category: Pierced Nipples",
     "tongue piercing": "01: Category: Pierced Tongue",
     "pussy piercing": "01: Category: Pierced Vagina",
+    # The user only cares about the coarse Fauxcest flag, not which specific step-relation is
+    # involved - collapsing all of StashDB's finer-grained relation tags into it is intentional.
+    "family roleplay": "01: Category: Fauxcest",
+    "step dad": "01: Category: Fauxcest",
+    "step daughter": "01: Category: Fauxcest",
+    "step sister": "01: Category: Fauxcest",
+    "step mother": "01: Category: Fauxcest",
+    "step brother": "01: Category: Fauxcest",
+    "step cousin": "01: Category: Fauxcest",
+    "step siblings": "01: Category: Fauxcest",
+    # "Teacher/Tutor" (see _EXISTING_CATEGORY_RENAMES) is meant to become "Teacher/Student" to
+    # capture both nuances - these already belong there under the current name.
+    "teacher": "01: Category: Teacher/Tutor",
+    "teaching": "01: Category: Teacher/Tutor",
+    "tutor": "01: Category: Teacher/Tutor",
+    # Headcount above a threesome (excepting FFFM, which keeps its own category) collapses to
+    # Orgy/Gangbang/Reverse Gangbang by gender ratio - the user's own classification rule.
+    # Order matters: the specific parenthetical variants must be checked before any future bare
+    # "foursome"/"sixsome" entry would be added, since phrase matching is substring-based and
+    # first-match-wins - deliberately no bare "foursome"/"fivesome"/"sixsome" entry exists here,
+    # so there's no such collision today, but keep new entries specific for the same reason.
+    "foursome (bggg)": "01: Category: Reverse Gangbang",  # 1 male, 3 female
+    "foursome (bbbg)": "01: Category: Gangbang",  # 3 male, 1 female
+    "foursome (bbgg)": "01: Category: Orgy",  # balanced mixed group
+    "fivesome (bbbgg)": "01: Category: Orgy",
+    "sixsome (bbbbgg)": "01: Category: Orgy",
+    "asian woman": "01: Category: Asian",
+    "black woman": "01: Category: Ebony",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
@@ -279,6 +337,28 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
 # single-target phrases above.
 _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     "open mouth facial": ["01: Category: Cum In Mouth", "01: Category: Facial"],
+    # "Blowbang would be Gangbang+Blowjob and likely Orgy" - the user's own description.
+    "blowbang": ["01: Category: Gangbang", "01: Category: Blowjob", "01: Category: Orgy"],
+}
+
+# Exact whole-tag-name (not substring) merges: "black" alone is too short/common a substring to
+# match safely against tag names like "Black Hair (Female)" or "Black Stockings" - those are
+# about hair color and clothing, not ethnicity, and must keep going through their own separate
+# checks. Confirmed by direct user review: Ebony and Asian are the only two ethnicities tracked.
+_EXACT_MATCH_MERGE_PHRASES: dict[str, str] = {
+    "black": "01: Category: Ebony",
+}
+
+# New Composition collections the user wants (not yet real Plex collections, so these can't go
+# through the merge-phrase system above) for specific known StashDB tags that would otherwise
+# fall through to the generic "01: Composition: <name>" keyword suggestion using the tag's own
+# verbatim (and misleading) parenthetical name. "Leave Lesbian alone" - these are deliberately
+# routed elsewhere rather than expanding that collection's existing dual meaning.
+_COMPOSITION_NEW_COLLECTION_OVERRIDES: dict[str, str] = {
+    "twosome (lesbian)": "01: Composition: FF Only",
+    "foursome (lesbian)": "01: Composition: Female Only",
+    "sixsome (lesbian)": "01: Composition: Female Only",
+    "orgy (lesbian)": "01: Composition: Female Only",
 }
 
 
@@ -318,6 +398,9 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
     words = set(re.findall(r"[a-z0-9]+", lower_name))
     if lower_name in _SKIP_EXACT_TAG_NAMES or words & (_SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS):
         return "skip"
+    exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
+    if exact_target and exact_target in existing_titles:
+        return f"merge -> {exact_target}"
     for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
         if phrase in lower_name and all(target in existing_titles for target in targets):
             return f"merge -> {' + '.join(targets)}"
@@ -453,7 +536,15 @@ def _suggest_new_collection_name(tag_name: str) -> str:
     existing, safe default - when no keyword matches, rather than guessing into a specific new
     bucket without a real signal. The tag's own name is used verbatim as the suggested
     collection's suffix.
+
+    `_COMPOSITION_NEW_COLLECTION_OVERRIDES` is checked first: without it, a tag like "Foursome
+    (Lesbian)" would hit the generic "orgy"/"foursome" Composition keywords below and suggest
+    "01: Composition: Foursome (Lesbian)" verbatim - technically not wrong, but the user asked
+    for these routed to new dedicated FF Only/Female Only collections instead.
     """
+    override = _COMPOSITION_NEW_COLLECTION_OVERRIDES.get(tag_name.lower())
+    if override:
+        return override
     words = set(re.findall(r"[a-z0-9]+", tag_name.lower()))
     for prefix, keywords in _NEW_PREFIX_KEYWORD_GROUPS:
         if words & keywords:
@@ -565,7 +656,8 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Striptease": "01: Activity: Striptease",
     "01: Category: TF Only": "01: Composition: TF Only",
     "01: Category: TTF": "01: Composition: TTF",
-    "01: Category: Teacher/Tutor": "01: Theme: Teacher/Tutor",
+    # Renamed (not just re-prefixed) per direct user request, to capture both nuances.
+    "01: Category: Teacher/Tutor": "01: Theme: Teacher/Student",
     "01: Category: Throatpie": "01: Cumshot: Throatpie",
     "01: Category: Tit Fucking": "01: Activity: Tit Fucking",
     "01: Category: Trans MTF": "01: Composition: Trans MTF",

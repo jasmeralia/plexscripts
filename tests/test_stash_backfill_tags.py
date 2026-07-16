@@ -419,6 +419,70 @@ class TestAdditionalCategorySynonyms:
         for tag_name, target in cases.items():
             assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
 
+    def test_fauxcest_relation_tags_collapse_into_the_coarse_category(self) -> None:
+        target = "01: Category: Fauxcest"
+        for tag_name in (
+            "Family Roleplay",
+            "Step Dad",
+            "Step Daughter",
+            "Step Sister",
+            "Step Mother",
+            "Step Brother",
+            "Step Cousin",
+            "Step Siblings",
+        ):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_teacher_tutor_variants_merge_into_the_existing_collection(self) -> None:
+        target = "01: Category: Teacher/Tutor"
+        for tag_name in ("Teacher", "Male Teacher", "Teaching Sex", "Tutoring"):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_headcount_above_threesome_merges_by_gender_ratio(self) -> None:
+        cases = {
+            "Foursome (BGGG)": "01: Category: Reverse Gangbang",
+            "Foursome (BBBG)": "01: Category: Gangbang",
+            "Foursome (BBGG)": "01: Category: Orgy",
+            "Fivesome (BBBGG)": "01: Category: Orgy",
+            "Sixsome (BBBBGG)": "01: Category: Orgy",
+        }
+        for tag_name, target in cases.items():
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_blowbang_merges_into_all_three_targets(self) -> None:
+        targets = {"01: Category: Gangbang", "01: Category: Blowjob", "01: Category: Orgy"}
+        assert _suggested_action("Blowbang", targets) == (
+            "merge -> 01: Category: Gangbang + 01: Category: Blowjob + 01: Category: Orgy"
+        )
+
+    def test_ethnicity_merges_are_limited_to_asian_and_ebony(self) -> None:
+        assert _suggested_action("Asian Woman", {"01: Category: Asian"}) == "merge -> 01: Category: Asian"
+        assert _suggested_action("Black Woman", {"01: Category: Ebony"}) == "merge -> 01: Category: Ebony"
+        assert _suggested_action("Black", {"01: Category: Ebony"}) == "merge -> 01: Category: Ebony"
+
+    def test_black_exact_match_does_not_catch_hair_or_clothing_tags(self) -> None:
+        # "black" alone would be a dangerous substring match against these - must go through
+        # their own hair-context/prop checks instead, not the ethnicity merge.
+        targets = {"01: Category: Ebony", "01: Hair: Black"}
+        assert _suggested_action("Black Hair (Female)", targets) == "merge -> 01: Hair: Black"
+        assert _suggested_action("Black Stockings", targets) == "add"
+
+    def test_other_nationalities_are_skipped_not_merged(self) -> None:
+        for tag_name in ("Latina Woman", "Latino Man", "Mixed Race Woman", "German", "American Porn", "White Man"):
+            assert _suggested_action(tag_name, set()) == "skip"
+
+
+class TestCompositionNewCollectionOverrides:
+    def test_lesbian_headcount_variants_route_to_new_dedicated_collections(self) -> None:
+        assert _suggest_new_collection_name("Twosome (Lesbian)") == "01: Composition: FF Only"
+        assert _suggest_new_collection_name("Foursome (Lesbian)") == "01: Composition: Female Only"
+        assert _suggest_new_collection_name("Sixsome (Lesbian)") == "01: Composition: Female Only"
+        assert _suggest_new_collection_name("Orgy (Lesbian)") == "01: Composition: Female Only"
+
+    def test_plain_lesbian_composition_tags_are_unaffected(self) -> None:
+        # Confirms the override is scoped to the specific tag names above, not "lesbian" broadly.
+        assert _suggest_new_collection_name("Lesbian Anal") == "01: Activity: Lesbian Anal"
+
 
 class TestTagSource:
     def test_local_tag_has_no_stash_ids(self) -> None:
