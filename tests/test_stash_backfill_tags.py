@@ -282,6 +282,12 @@ class TestHasExistingPlexMatch:
         tag = {"name": "FAVORITES", "stash_ids": []}
         assert _has_existing_plex_match(tag, {"01: Category: FAVORITES", "00A: FAVORITES"}) is False
 
+    def test_broader_check_is_case_insensitive(self) -> None:
+        # Real gap found on a live run: "Cum on Hands" only differed from the actual collection
+        # "01: Category: Cum On Hands" by case.
+        tag = {"name": "Cum on Hands", "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "x"}]}
+        assert _has_existing_plex_match(tag, {"01: Category: Cum On Hands"}) is True
+
 
 class TestSuggestedAction:
     def test_recommends_merge_when_hair_keyword_matches_existing_collection(self) -> None:
@@ -321,8 +327,8 @@ class TestSuggestedAction:
         assert _suggested_action("Redhead", set()) == "add"
 
     def test_does_not_false_positive_on_substring_only_match(self) -> None:
-        # "Chair" contains "hair" as a substring but not "red"/"blue"/etc. as a whole word.
-        assert _suggested_action("Chair", {"01: Hair: Red"}) == "add"
+        # "Chairman" contains "hair" as a substring but not "red"/"blue"/etc. as a whole word.
+        assert _suggested_action("Chairman", {"01: Hair: Red"}) == "add"
 
     def test_recommends_skip_for_technical_metadata_tags(self) -> None:
         assert _suggested_action("4K Available", set()) == "skip"
@@ -382,6 +388,36 @@ class TestSkipSignals:
     def test_generic_body_descriptor_words_are_skipped(self) -> None:
         for tag_name in ("Slim", "Medium Ass", "Athletic Woman", "Average Height Man", "Medium Hair"):
             assert _suggested_action(tag_name, set()) == "skip"
+
+    def test_furniture_is_skipped_but_settings_and_bondage_are_not(self) -> None:
+        for tag_name in ("Bedroom", "Chair", "Couch", "Table", "Blanket", "Ottoman", "Desk", "Lounger"):
+            assert _suggested_action(tag_name, set()) == "skip"
+        # Locations (not literal furniture) and the general bondage genre were confirmed as
+        # worth keeping, so they must not be caught by the furniture skip.
+        for tag_name in ("Bathroom", "Shower", "Poolside", "Bondage", "Massage Table", "Countertop"):
+            assert _suggested_action(tag_name, set()) == "add"
+
+
+class TestAdditionalCategorySynonyms:
+    # Found via a systematic pass cross-referencing every real "01: Category:" collection
+    # against the live Add-section list for differently-worded StashDB synonyms of the same
+    # concept, confirmed by direct user review.
+    def test_synonym_phrases_merge_into_their_existing_collection(self) -> None:
+        cases = {
+            "Mouth Creampie": "01: Category: Cum In Mouth",
+            "Throat Creampie": "01: Category: Throatpie",
+            "Cum on Asshole": "01: Category: Cum On Ass",
+            "Peeing": "01: Category: Pee",
+            "No Sex": "01: Category: Non-Sexual",
+            "Jerk Off Instruction": "01: Category: JOI",
+            "Behind the Scenes": "01: Category: BTS",
+            "Nipple Piercing": "01: Category: Pierced Nipples",
+            "Tongue Piercing": "01: Category: Pierced Tongue",
+            "Pussy Piercing": "01: Category: Pierced Vagina",
+            "Twosome (Trans-Female)": "01: Category: TF Only",
+        }
+        for tag_name, target in cases.items():
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
 
 
 class TestTagSource:

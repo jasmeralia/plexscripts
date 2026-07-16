@@ -144,14 +144,24 @@ def _has_existing_plex_match(tag: dict[str, Any], existing_titles: set[str]) -> 
     either hand-created or synced in from Plex under whatever prefix family that
     collection actually used (often not "01:" at all, e.g. "00A: FAVORITES") - this
     check doesn't attempt to cover that separate, wider prefix-family mismatch.
+
+    Comparison is case-insensitive: the real collection list is inconsistently cased
+    ("01: Category: Cum On Ass" vs "01: Category: Cum on Body"), and a real Stash tag
+    ("Cum on Hands") was found on a live run that only differed from its matching
+    collection ("01: Category: Cum On Hands") by case - a case-sensitive comparison
+    wrongly reported that as a gap.
     """
     tag_name = str(tag["name"])
-    if _tag_to_collection(tag_name) in existing_titles:
+    existing_titles_lower = {title.lower() for title in existing_titles}
+    if _tag_to_collection(tag_name).lower() in existing_titles_lower:
         return True
     is_local = not (tag.get("stash_ids") or [])
     if is_local or tag_name.startswith(("Category: ", "Hair: ")):
         return False
-    return f"01: Category: {tag_name}" in existing_titles or f"01: Hair: {tag_name}" in existing_titles
+    return (
+        f"01: category: {tag_name}".lower() in existing_titles_lower
+        or f"01: hair: {tag_name}".lower() in existing_titles_lower
+    )
 
 
 _HAIR_MERGE_KEYWORDS: dict[str, str] = {
@@ -197,6 +207,17 @@ _SKIP_EXACT_TAG_NAMES = {
     "missing performer (male)",
     "exclusive",
     "straight",
+    # Furniture - the user doesn't care about tracking it as a collection. Exact-name only:
+    # "Massage Table" and "Countertop" describe a specific act/setting, not bare furniture, and
+    # weren't part of what was confirmed.
+    "bedroom",
+    "chair",
+    "couch",
+    "table",
+    "blanket",
+    "ottoman",
+    "desk",
+    "lounger",
 }
 
 _HAIR_CONTEXT_WORDS = {"hair", "haired"}
@@ -234,6 +255,22 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     "cum on pussy": "01: Category: Cum On Vagina",
     # BBG = Boy-Boy-Girl, the same composition already tracked as MMF.
     "threesome (bbg)": "01: Category: MMF",
+    # GTT = Girl-Trans-Trans, the same composition already tracked as TTF.
+    "threesome (gtt)": "01: Category: TTF",
+    "twosome (trans-female)": "01: Category: TF Only",
+    # Found via a systematic pass cross-referencing every real "01: Category:" collection
+    # against the live Add-section list for differently-worded StashDB synonyms of the same
+    # concept - not sourced from the script, confirmed by direct user review.
+    "mouth creampie": "01: Category: Cum In Mouth",
+    "throat creampie": "01: Category: Throatpie",
+    "cum on asshole": "01: Category: Cum On Ass",
+    "peeing": "01: Category: Pee",
+    "no sex": "01: Category: Non-Sexual",
+    "jerk off instruction": "01: Category: JOI",
+    "behind the scenes": "01: Category: BTS",
+    "nipple piercing": "01: Category: Pierced Nipples",
+    "tongue piercing": "01: Category: Pierced Tongue",
+    "pussy piercing": "01: Category: Pierced Vagina",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
