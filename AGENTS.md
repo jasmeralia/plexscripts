@@ -28,7 +28,7 @@ Always run `scripts/mass_process.sh` in the background (e.g. `bash scripts/mass_
 
 ## Task Tracking
 
-Tasks, bugs, and follow-ups for this repository are filed in Odoo under the project **Plex Management** (`project.project` id `6`).
+Tasks, bugs, and follow-ups for this repository are filed in Odoo under the project **Plex Management** (`project.project` id `6`). This is the default project for anything filed from this repo — use it unless explicitly told otherwise for a specific task.
 
 ## Git Workflow
 

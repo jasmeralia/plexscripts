@@ -1733,6 +1733,13 @@ def _build_top_command(sub: Any) -> None:
 
 
 def _build_stash_commands(sub: Any) -> None:
+    from plexadm.stash_backfill_tags import (
+        apply_review as stash_apply_review,
+    )
+    from plexadm.stash_backfill_tags import (
+        backfill_tags as stash_backfill_tags,
+    )
+
     stash_parser = _make_sub(
         sub,
         "stash",
@@ -1819,6 +1826,88 @@ def _build_stash_commands(sub: Any) -> None:
         "runs before reconciling. Use if you already scanned Stash yourself.",
     )
     set_func(reconcile_parser, stash_reconcile)
+
+    backfill_parser = _make_sub(
+        stash_sub,
+        "backfill-tags",
+        help="Backfill Plex composition collections from matched Stash scene tags.",
+        description=(
+            "Reads every Plex item in the configured library section, matches Stash\n"
+            "scenes by file path, and immediately adds missing, unambiguous\n"
+            "composition-category memberships to Plex. Potential removals and\n"
+            "internally ambiguous Stash tags are written to a JSON review file and\n"
+            "are never removed by this command."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm stash backfill-tags --dry-run --limit 25\n"
+            "  plexadm stash backfill-tags --review-output reference/stash_backfill_review.json"
+        ),
+    )
+    backfill_parser.add_argument(
+        "--limit",
+        metavar="N",
+        type=int,
+        help="Stop after processing N Plex items (useful for test runs before a full run).",
+    )
+    backfill_parser.add_argument(
+        "--path",
+        metavar="PREFIX",
+        help="Only process Plex items whose file path starts with PREFIX.",
+    )
+    backfill_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    backfill_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config.",
+    )
+    backfill_parser.add_argument(
+        "--review-output",
+        metavar="PATH",
+        default="reference/stash_backfill_review.json",
+        dest="review_output",
+        help="Path for staged removals and ambiguous entries (default: reference/stash_backfill_review.json).",
+    )
+    set_func(backfill_parser, stash_backfill_tags)
+
+    apply_review_parser = _make_sub(
+        stash_sub,
+        "apply-review",
+        help="Apply human-reviewed composition-category removals to Plex.",
+        description=(
+            "Reads a JSON review file produced by `stash backfill-tags` and removes\n"
+            "the surviving remove-candidate memberships. Ambiguous entries are\n"
+            "skipped unless --include-ambiguous is supplied and the human reviewer\n"
+            "has added a collection_to_remove field."
+        ),
+        epilog="Example:\n  plexadm stash apply-review reference/stash_backfill_review.json --dry-run",
+    )
+    apply_review_parser.add_argument(
+        "review_file",
+        metavar="REVIEW_FILE",
+        help="Human-reviewed JSON file produced by `stash backfill-tags`.",
+    )
+    apply_review_parser.add_argument(
+        "--include-ambiguous",
+        action="store_true",
+        help="Also apply ambiguous entries that a reviewer gave a collection_to_remove field.",
+    )
+    apply_review_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    set_func(apply_review_parser, stash_apply_review)
 
     sync_tags_parser = _make_sub(
         stash_sub,
