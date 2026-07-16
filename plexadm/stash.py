@@ -28,6 +28,12 @@ query FindScenes($page: Int!, $per_page: Int!) {
 }
 """
 
+_ALL_TAGS = """
+query AllTags {
+  allTags { id name scene_count }
+}
+"""
+
 _FIND_PERFORMER = """
 query FindPerformer($name: String!) {
   findPerformers(
@@ -153,6 +159,10 @@ class StashClient:
                 break
             page += 1
         return index
+
+    def all_tags(self) -> list[dict[str, Any]]:
+        """Return every Stash tag with its id, name, and scene_count."""
+        return self._gql(_ALL_TAGS)["allTags"]  # type: ignore[no-any-return]
 
     def find_or_create_performer(self, name: str) -> str:
         if name in self._performer_cache:

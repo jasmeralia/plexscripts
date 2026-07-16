@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from plexadm.cli import EXCLUDED_COMPOSITION_COLLECTIONS
+from plexadm.cli import EXCLUDED_COMPOSITION_COLLECTIONS, EXCLUDED_HAIR_COLLECTIONS
 from plexadm.config import load_config
 from plexadm.console import info, ok, warn
 from plexadm.plex import PlexContext, add_items, reload_if_partial, remove_items
@@ -18,6 +18,8 @@ from plexadm.stash_reconcile import _collection_to_tag
 log = logging.getLogger(__name__)
 
 COMPOSITION_COLLECTIONS = frozenset(EXCLUDED_COMPOSITION_COLLECTIONS) | {"01: Category: Lesbian"}
+HAIR_COLLECTIONS = frozenset(EXCLUDED_HAIR_COLLECTIONS)
+HAIR_TAGS = frozenset(tag for collection in HAIR_COLLECTIONS if (tag := _collection_to_tag(collection)) is not None)
 
 GROUP_SINGLE_FEMALE = {
     "Category: Solo",
@@ -32,7 +34,7 @@ GROUP_MULTI_FEMALE_HEADCOUNT = {
     "Category: FFF+",
 }
 GROUP_MULTI_FEMALE_ACTIVITY = {"Category: Lesbian"}
-COMPOSITION_TAGS = GROUP_SINGLE_FEMALE | GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY
+COMPOSITION_TAGS = frozenset(GROUP_SINGLE_FEMALE | GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY)
 
 
 @dataclass
@@ -86,15 +88,13 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
     return SceneDecision(rating_key="", title="", file_paths=[], adds=adds, remove_candidates=remove_candidates)
 
 
-def _stash_composition_tags(scene: dict[str, Any]) -> set[str]:
-    return {
-        str(tag["name"]) for tag in scene.get("tags") or [] if tag.get("name") and str(tag["name"]) in COMPOSITION_TAGS
-    }
+def _stash_tags_in_scope(scene: dict[str, Any], scope: frozenset[str]) -> set[str]:
+    return {str(tag["name"]) for tag in scene.get("tags") or [] if tag.get("name") and str(tag["name"]) in scope}
 
 
-def _plex_composition_tags(video: Any) -> set[str]:
+def _plex_tags_in_scope(video: Any, scope: frozenset[str]) -> set[str]:
     tags = {_collection_to_tag(str(collection)) for collection in getattr(video, "collections", None) or []}
-    return {tag for tag in tags if tag in COMPOSITION_TAGS}
+    return {tag for tag in tags if tag in scope}
 
 
 def _write_review(path: str | Path, entries: list[dict[str, Any]]) -> None:
@@ -105,6 +105,115 @@ def _write_review(path: str | Path, entries: list[dict[str, Any]]) -> None:
     with review_path.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=2)
         fh.write("\n")
+
+
+def _escape_markdown_table_cell(value: object) -> str:
+    return str(value).replace("|", "\\|")
+
+
+def _write_unmapped_tags_report(
+    path: str | Path,
+    unmapped: list[dict[str, Any]],
+    web_base: str,
+    *,
+    total_tag_count: int,
+) -> None:
+    report_path = Path(path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines = [
+        "# Stash Tags With No Matching Plex Collection",
+        "",
+        f"Generated: {generated_at}",
+        "",
+        f"Found {len(unmapped)} unmapped tags out of {total_tag_count} total Stash tags.",
+        "",
+        "| Scenes | Tag | Link |",
+        "|---:|---|---|",
+    ]
+    lines.extend(
+        f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
+        f"[view]({web_base}/tags/{tag['id']}) |"
+        for tag in unmapped
+    )
+    report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_backfill_report(
+    path: str | Path,
+    *,
+    dry_run: bool,
+    processed: int,
+    matched_count: int,
+    composition_additions: dict[str, list[Any]],
+    hair_additions: dict[str, list[Any]],
+    composition_added_count: int,
+    hair_added_count: int,
+    ambiguous_entries: list[tuple[str, str]],
+    review_path: str | Path,
+    review_entry_count: int,
+) -> None:
+    report_path = Path(path)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    mode = "DRY RUN (no Plex changes made)" if dry_run else "APPLIED"
+    lines = [
+        "# Stash -> Plex Backfill Report",
+        "",
+        f"Generated: {generated_at}",
+        f"Mode: {mode}",
+        "",
+        "## Summary",
+        "",
+        f"- Plex videos scanned: {processed}",
+        f"- Matched to Stash: {matched_count}",
+        f"- Composition memberships added: {composition_added_count}",
+        f"- Hair memberships added: {hair_added_count}",
+        f"- Ambiguous matches staged for review: {len(ambiguous_entries)}",
+        f"- Review entries written: {review_entry_count} -> {review_path}",
+    ]
+
+    if composition_additions:
+        lines.extend(
+            [
+                "",
+                "## Composition additions by collection",
+                "",
+                "| Collection | Videos added |",
+                "|---|---:|",
+            ]
+        )
+        lines.extend(
+            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {len(videos)} |"
+            for tag, videos in sorted(composition_additions.items())
+        )
+
+    if hair_additions:
+        lines.extend(
+            [
+                "",
+                "## Hair additions by collection",
+                "",
+                "| Collection | Videos added |",
+                "|---|---:|",
+            ]
+        )
+        lines.extend(
+            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {len(videos)} |"
+            for tag, videos in sorted(hair_additions.items())
+        )
+
+    lines.extend(["", "## Ambiguous scenes (staged for review, not applied)", ""])
+    if ambiguous_entries:
+        lines.extend(["| Title | Reason |", "|---|---|"])
+        lines.extend(
+            f"| {_escape_markdown_table_cell(title)} | {_escape_markdown_table_cell(reason)} |"
+            for title, reason in ambiguous_entries
+        )
+    else:
+        lines.append("_No ambiguous scenes this run._")
+
+    report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _load_review(path: str | Path) -> list[dict[str, Any]]:
@@ -167,7 +276,9 @@ def backfill_tags(args: Any) -> int:
     limit: int | None = getattr(args, "limit", None)
     path_filter: str | None = getattr(args, "path", None)
     additions: dict[str, list[Any]] = defaultdict(list)
+    hair_additions: dict[str, list[Any]] = defaultdict(list)
     review_entries: list[dict[str, Any]] = []
+    ambiguous_entries: list[tuple[str, str]] = []
     processed = 0
     matched_count = 0
     ambiguous_count = 0
@@ -195,8 +306,13 @@ def backfill_tags(args: Any) -> int:
             continue
 
         matched_count += 1
-        stash_tags = set().union(*(_stash_composition_tags(scene) for scene in matched.values()))
-        plex_tags = _plex_composition_tags(video)
+        stash_hair_tags = set().union(*(_stash_tags_in_scope(scene, HAIR_TAGS) for scene in matched.values()))
+        plex_hair_tags = _plex_tags_in_scope(video, HAIR_TAGS)
+        for tag in sorted(stash_hair_tags - plex_hair_tags):
+            hair_additions[tag].append(video)
+
+        stash_tags = set().union(*(_stash_tags_in_scope(scene, COMPOSITION_TAGS) for scene in matched.values()))
+        plex_tags = _plex_tags_in_scope(video, COMPOSITION_TAGS)
         decision = classify_scene(stash_tags, plex_tags)
         if decision is None:
             continue
@@ -207,6 +323,7 @@ def backfill_tags(args: Any) -> int:
 
         if decision.ambiguous_reason:
             ambiguous_count += 1
+            ambiguous_entries.append((decision.title, decision.ambiguous_reason))
         else:
             for tag in decision.adds:
                 additions[tag].append(video)
@@ -215,18 +332,73 @@ def backfill_tags(args: Any) -> int:
     review_path = Path(getattr(args, "review_output", "reference/stash_backfill_review.json"))
     _write_review(review_path, review_entries)
 
-    added_count = 0
+    composition_added_count = 0
     for tag, videos in sorted(additions.items()):
         collection = plex_ctx.collection(_tag_to_collection(tag))
-        added_count += add_items(collection, videos, dry_run=args.dry_run)
+        composition_added_count += add_items(collection, videos, dry_run=args.dry_run)
+
+    hair_added_count = 0
+    for tag, videos in sorted(hair_additions.items()):
+        collection = plex_ctx.collection(_tag_to_collection(tag))
+        hair_added_count += add_items(collection, videos, dry_run=args.dry_run)
+
+    report_path = Path(getattr(args, "report_output", "reference/stash_backfill_report.md"))
+    _write_backfill_report(
+        report_path,
+        dry_run=args.dry_run,
+        processed=processed,
+        matched_count=matched_count,
+        composition_additions=additions,
+        hair_additions=hair_additions,
+        composition_added_count=composition_added_count,
+        hair_added_count=hair_added_count,
+        ambiguous_entries=ambiguous_entries,
+        review_path=review_path,
+        review_entry_count=len(review_entries),
+    )
 
     print(ok(f"Plex videos scanned: {processed}"))
     print(info(f"Matched to Stash: {matched_count}"))
-    print(info(f"Composition memberships added: {added_count}"))
+    print(info(f"Composition memberships added: {composition_added_count}"))
+    print(info(f"Hair memberships added: {hair_added_count}"))
     print(info(f"Ambiguous matches staged: {ambiguous_count}"))
     print(info(f"Review entries written: {len(review_entries)} → {review_path}"))
+    print(info(f"Report written to {report_path}"))
     if args.dry_run:
         print(warn("Dry run - no Plex changes made."))
+    return 0
+
+
+def unmapped_tags(args: Any) -> int:
+    log_level = getattr(args, "log_level", "WARNING").upper()
+    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING), format="%(levelname)s: %(message)s")
+
+    cfg = load_config(args.config)
+    endpoint = getattr(args, "stash_endpoint", None) or cfg.stash_endpoint
+    if not endpoint:
+        raise ValueError(
+            "No Stash endpoint configured. Add stashEndpoint to your config file or pass --stash-endpoint."
+        )
+    web_base = endpoint.rstrip("/")
+    if web_base.endswith("/graphql"):
+        web_base = web_base[: -len("/graphql")]
+
+    print(info("Fetching Stash tags..."))
+    stash = StashClient(endpoint)
+    tags = stash.all_tags()
+
+    print(info("Fetching Plex collections..."))
+    plex_ctx = PlexContext(cfg)
+    existing_titles = {str(collection.title) for collection in plex_ctx.section.collections()}
+
+    unmapped = [tag for tag in tags if _tag_to_collection(str(tag["name"])) not in existing_titles]
+    unmapped.sort(key=lambda tag: tag.get("scene_count") or 0, reverse=True)
+
+    report_path = Path(getattr(args, "output", "reference/stash_unmapped_tags.md"))
+    _write_unmapped_tags_report(report_path, unmapped, web_base, total_tag_count=len(tags))
+
+    print(ok(f"Unmapped tags: {len(unmapped)} of {len(tags)} total"))
+    print(info(f"Report written to {report_path}"))
     return 0
 
 

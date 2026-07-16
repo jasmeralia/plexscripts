@@ -4,16 +4,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from plexadm.stash import StashClient
 from plexadm.stash_backfill_tags import (
     COMPOSITION_COLLECTIONS,
+    COMPOSITION_TAGS,
     _load_review,
-    _plex_composition_tags,
-    _stash_composition_tags,
+    _plex_tags_in_scope,
+    _stash_tags_in_scope,
     _tag_to_collection,
     _write_review,
     apply_review,
     backfill_tags,
     classify_scene,
+    unmapped_tags,
 )
 from plexadm.stash_reconcile import _collection_to_tag
 
@@ -118,12 +121,88 @@ class TestTagCollectionMapping:
             ]
         }
 
-        assert _stash_composition_tags(scene) == {"Category: Solo"}
+        assert _stash_tags_in_scope(scene, COMPOSITION_TAGS) == {"Category: Solo"}
 
     def test_plex_collections_are_limited_to_composition_scope(self) -> None:
         video = _mock_video(collections=["01: Category: Solo", "01: Category: Blowjob", "99: LOCKED"])
 
-        assert _plex_composition_tags(video) == {"Category: Solo"}
+        assert _plex_tags_in_scope(video, COMPOSITION_TAGS) == {"Category: Solo"}
+
+
+class TestHairBackfill:
+    def test_adds_only_missing_hair_tags_with_dry_run(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(locations=[path], collections=["01: Hair: Red"])
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [
+                {"id": "1", "name": "Hair: Red"},
+                {"id": "2", "name": "Hair: Blonde"},
+            ],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        collection = SimpleNamespace(title="01: Hair: Blonde")
+        plex_ctx = MagicMock()
+        plex_ctx.all_videos.return_value = [video]
+        plex_ctx.collection.return_value = collection
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=True,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+            patch("plexadm.stash_backfill_tags.add_items", return_value=1) as add_items,
+        ):
+            assert backfill_tags(args) == 0
+
+        add_items.assert_called_once_with(collection, [video], dry_run=True)
+        plex_ctx.collection.assert_called_once_with("01: Hair: Blonde")
+        assert _load_review(args.review_output) == []
+
+    def test_matching_hair_tags_do_not_add_memberships(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(locations=[path], collections=["01: Hair: Red"])
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [{"id": "1", "name": "Hair: Red"}],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        plex_ctx = MagicMock()
+        plex_ctx.all_videos.return_value = [video]
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=False,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+            patch("plexadm.stash_backfill_tags.add_items") as add_items,
+        ):
+            assert backfill_tags(args) == 0
+
+        add_items.assert_not_called()
+        assert _load_review(args.review_output) == []
 
 
 class TestReviewFileIO:
@@ -151,6 +230,56 @@ class TestReviewFileIO:
         assert {key: value for key, value in loaded[0].items() if key != "generated_at"} == entries[0]
 
 
+class TestStashClientAllTags:
+    def test_returns_all_tags_from_graphql(self) -> None:
+        tags = [{"id": "1", "name": "Category: Solo", "scene_count": 12}]
+        client = StashClient("http://stash:9999")
+
+        with patch.object(client, "_gql", return_value={"allTags": tags}) as gql:
+            assert client.all_tags() == tags
+
+        gql.assert_called_once()
+        assert "allTags { id name scene_count }" in gql.call_args.args[0]
+
+
+class TestUnmappedTags:
+    def test_reports_real_collection_gaps_sorted_by_scene_count(self, tmp_path: Path) -> None:
+        tags = [
+            {"id": "1", "name": "Category: Solo", "scene_count": 30},
+            {"id": "2", "name": "Category: Blowjob", "scene_count": 20},
+            {"id": "3", "name": "Free | Text", "scene_count": 40},
+        ]
+        stash = MagicMock()
+        stash.all_tags.return_value = tags
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = [
+            SimpleNamespace(title="01: Category: Solo"),
+            SimpleNamespace(title="01: Existing Manual Tag"),
+        ]
+        output = tmp_path / "nested" / "unmapped.md"
+        args = SimpleNamespace(
+            config="config.ini",
+            log_level="WARNING",
+            output=output,
+            stash_endpoint="https://stash.example.test/graphql",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert unmapped_tags(args) == 0
+
+        report = output.read_text(encoding="utf-8")
+        assert "Found 2 unmapped tags out of 3 total Stash tags." in report
+        assert "Category: Solo" not in report
+        assert report.index("Free \\| Text") < report.index("Category: Blowjob")
+        assert "[view](https://stash.example.test/tags/3)" in report
+        assert "[view](https://stash.example.test/tags/2)" in report
+        assert "/graphql/tags/" not in report
+
+
 class TestBackfillIntegration:
     def test_adds_are_applied_through_helper_with_dry_run(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
@@ -172,6 +301,7 @@ class TestBackfillIntegration:
             limit=None,
             path=None,
             log_level="WARNING",
+            report_output=tmp_path / "report.md",
             review_output=tmp_path / "review.json",
             stash_endpoint="http://stash:9999",
         )
@@ -186,6 +316,10 @@ class TestBackfillIntegration:
 
         add_items.assert_called_once_with(collection, [video], dry_run=True)
         assert _load_review(args.review_output) == []
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "Mode: DRY RUN (no Plex changes made)" in report
+        assert "| 01: Category: Solo | 1 |" in report
+        assert "_No ambiguous scenes this run._" in report
 
     def test_remove_candidates_are_only_written_to_review(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
@@ -208,6 +342,7 @@ class TestBackfillIntegration:
             limit=None,
             path=None,
             log_level="WARNING",
+            report_output=tmp_path / "report.md",
             review_output=tmp_path / "review.json",
             stash_endpoint="http://stash:9999",
         )
@@ -227,6 +362,50 @@ class TestBackfillIntegration:
         assert len(review) == 1
         assert review[0]["action"] == "remove_candidate"
         assert review[0]["collection_to_remove"] == "01: Category: Lesbian"
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "Mode: APPLIED" in report
+        assert "## Composition additions by collection" not in report
+        assert "## Hair additions by collection" not in report
+
+    def test_ambiguous_scene_is_in_markdown_report(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(title="Scene | One", locations=[path])
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [
+                {"id": "1", "name": "Category: Solo"},
+                {"id": "2", "name": "Category: FFM"},
+            ],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        plex_ctx = MagicMock()
+        plex_ctx.all_videos.return_value = [video]
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=False,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+            patch("plexadm.stash_backfill_tags.add_items") as add_items,
+        ):
+            assert backfill_tags(args) == 0
+
+        add_items.assert_not_called()
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "| Title | Reason |" in report
+        assert "| Scene \\| One | cross-axis: ['Category: Solo'] + ['Category: FFM'] |" in report
+        assert "Ambiguous matches staged for review: 1" in report
 
     def test_apply_review_uses_remove_helper_with_dry_run(self, tmp_path: Path) -> None:
         review_path = tmp_path / "review.json"

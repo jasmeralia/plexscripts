@@ -1739,6 +1739,9 @@ def _build_stash_commands(sub: Any) -> None:
     from plexadm.stash_backfill_tags import (
         backfill_tags as stash_backfill_tags,
     )
+    from plexadm.stash_backfill_tags import (
+        unmapped_tags as stash_unmapped_tags,
+    )
 
     stash_parser = _make_sub(
         sub,
@@ -1876,7 +1879,47 @@ def _build_stash_commands(sub: Any) -> None:
         dest="review_output",
         help="Path for staged removals and ambiguous entries (default: reference/stash_backfill_review.json).",
     )
+    backfill_parser.add_argument(
+        "--report-output",
+        metavar="PATH",
+        default="reference/stash_backfill_report.md",
+        dest="report_output",
+        help="Markdown run report path (default: reference/stash_backfill_report.md).",
+    )
     set_func(backfill_parser, stash_backfill_tags)
+
+    unmapped_tags_parser = _make_sub(
+        stash_sub,
+        "unmapped-tags",
+        help="Report Stash tags that have no matching Plex collection.",
+        description=(
+            "Fetches every Stash tag and compares its mapped collection title\n"
+            "against the collections that currently exist in the configured Plex\n"
+            "library. Writes every gap to a markdown report sorted by scene count."
+        ),
+        epilog="Example:\n  plexadm stash unmapped-tags --output reference/stash_unmapped_tags.md",
+    )
+    unmapped_tags_parser.add_argument(
+        "--output",
+        metavar="PATH",
+        default="reference/stash_unmapped_tags.md",
+        help="Markdown report path (default: reference/stash_unmapped_tags.md).",
+    )
+    unmapped_tags_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config.",
+    )
+    unmapped_tags_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    set_func(unmapped_tags_parser, stash_unmapped_tags)
 
     apply_review_parser = _make_sub(
         stash_sub,
