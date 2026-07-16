@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import requests
@@ -96,6 +97,20 @@ mutation AddPlay($id: ID!, $times: [Timestamp!]) {
 }
 """
 
+_METADATA_SCAN = """
+mutation MetadataScan($input: ScanMetadataInput!) {
+  metadataScan(input: $input)
+}
+"""
+
+_FIND_JOB = """
+query FindJob($id: ID!) {
+  findJob(input: {id: $id}) { id status error }
+}
+"""
+
+_FAILED_JOB_STATUSES = {"CANCELLED", "FAILED"}
+
 
 class StashClient:
     def __init__(self, endpoint: str) -> None:
@@ -188,6 +203,37 @@ class StashClient:
         self._gql(_RESET_PLAY_COUNT, {"id": scene_id})
         if timestamps:
             self._gql(_ADD_PLAY, {"id": scene_id, "times": timestamps})
+
+    def scan(
+        self,
+        *,
+        generate_phashes: bool = True,
+        paths: list[str] | None = None,
+        timeout: float = 3600.0,
+        poll_interval: float = 3.0,
+    ) -> None:
+        """Trigger a Stash library scan and block until the job reaches a terminal state.
+
+        Defaults to generating phashes, since a scan triggered here is meant to make
+        newly-added content fully usable in Stash (matching, dedup, Identify), not just
+        visible - a bare scan alone would leave new scenes without them.
+        """
+        scan_input: dict[str, Any] = {"paths": paths or [], "scanGeneratePhashes": generate_phashes}
+        job_id = self._gql(_METADATA_SCAN, {"input": scan_input})["metadataScan"]
+        self._wait_for_job(job_id, timeout=timeout, poll_interval=poll_interval)
+
+    def _wait_for_job(self, job_id: str, *, timeout: float, poll_interval: float) -> None:
+        deadline = time.monotonic() + timeout
+        while True:
+            job = self._gql(_FIND_JOB, {"id": job_id})["findJob"]
+            status = job["status"]
+            if status == "FINISHED":
+                return
+            if status in _FAILED_JOB_STATUSES:
+                raise RuntimeError(f"Stash job {job_id} ended with status {status}: {job.get('error')}")
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"Stash job {job_id} did not finish within {timeout}s (last status: {status})")
+            time.sleep(poll_interval)
 
     def merge_scenes(self, source_ids: list[str], destination_id: str, fields: dict[str, Any]) -> None:
         """Merge source scenes into destination, applying fields to the result. Sources are deleted."""

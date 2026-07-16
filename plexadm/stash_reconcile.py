@@ -72,8 +72,14 @@ def reconcile(args: Any) -> int:
             "No Stash endpoint configured. Add stashEndpoint to your config file or pass --stash-endpoint."
         )
 
-    print(info("Connecting to Stash and building scene index..."))
     stash = StashClient(endpoint)
+
+    if not getattr(args, "skip_scan", False):
+        print(info("Scanning Stash library (with phash generation) before reconciling..."))
+        stash.scan()
+        print(ok("Stash scan complete."))
+
+    print(info("Connecting to Stash and building scene index..."))
     stash_index = stash.all_scenes()  # path -> scene dict
     stash_scenes_by_id: dict[str, dict[str, Any]] = {s["id"]: s for s in stash_index.values()}
     print(info(f"Stash: {len(stash_scenes_by_id)} scenes across {len(stash_index)} paths"))
