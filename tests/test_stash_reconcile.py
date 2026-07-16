@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from plexadm import stash_reconcile
 from plexadm.stash_reconcile import _collection_to_tag, _has_usable_metadata, reconcile
 
@@ -164,6 +166,37 @@ class TestReconcileScanGating:
         fake_stash = self._run(tmp_path, skip_scan=True)
         fake_stash.scan.assert_not_called()
         fake_stash.all_scenes.assert_called_once_with()
+
+
+class TestReconcileProgress:
+    def test_prints_progress_at_time_intervals(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        fake_stash = MagicMock()
+        fake_stash.all_scenes.return_value = {}
+        fake_plex_ctx = MagicMock()
+        fake_plex_ctx.all_videos.return_value = [SimpleNamespace(title=f"Video {i}", locations=[]) for i in range(1, 4)]
+        args = SimpleNamespace(
+            config=None,
+            stash_endpoint="http://stash.example.com",
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            csv_output=str(tmp_path / "scope.csv"),
+            skip_scan=True,
+        )
+
+        with (
+            patch.object(stash_reconcile, "load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch.object(stash_reconcile, "StashClient", return_value=fake_stash),
+            patch.object(stash_reconcile, "PlexContext", return_value=fake_plex_ctx),
+            patch.object(stash_reconcile.time, "monotonic", side_effect=[0, 100, 110, 120]),
+        ):
+            result = reconcile(args)  # type: ignore[arg-type]
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "1/3 - 33.3%" in out
+        assert "2/3 -" not in out
+        assert "3/3 -" not in out
 
 
 class TestRatingConversion:

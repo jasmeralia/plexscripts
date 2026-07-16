@@ -217,6 +217,15 @@ class StashClient:
         Defaults to generating phashes, since a scan triggered here is meant to make
         newly-added content fully usable in Stash (matching, dedup, Identify), not just
         visible - a bare scan alone would leave new scenes without them.
+
+        `rescan` is deliberately never set on the mutation input (left at Stash's
+        default/false), NOT an oversight: verified against a real instance that with
+        `rescan` unset, `scanGeneratePhashes: true` only computes fingerprints (oshash +
+        phash together) for files that are new or changed since the last scan - existing
+        files' `updated_at` and fingerprint values are untouched, confirmed by diffing the
+        same scenes before/after a repeat scan. Passing `rescan: true` here would force
+        every file in the library to be reprocessed on every reconcile run, which is
+        exactly what this method must not do.
         """
         scan_input: dict[str, Any] = {"paths": paths or [], "scanGeneratePhashes": generate_phashes}
         job_id = self._gql(_METADATA_SCAN, {"input": scan_input})["metadataScan"]

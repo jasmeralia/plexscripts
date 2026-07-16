@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import csv
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -92,9 +93,20 @@ def reconcile(args: Any) -> int:
     processed = 0
 
     print(info("Scanning Plex library..."))
-    for video in plex_ctx.all_videos():
+    videos = plex_ctx.all_videos()
+    total = len(videos)
+    last_progress_at = time.monotonic()
+    progress_interval = float(getattr(args, "progress_interval", 60) or 60)
+
+    for loop_index, video in enumerate(videos, start=1):
         if limit is not None and processed >= limit:
             break
+
+        now = time.monotonic()
+        if now - last_progress_at >= progress_interval:
+            percent = (loop_index / total * 100) if total else 0.0
+            print(info(f"{loop_index}/{total} - {percent:.1f}%"))
+            last_progress_at = now
 
         reload_if_partial(video)
         locations = list(getattr(video, "locations", None) or [])
