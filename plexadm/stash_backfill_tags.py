@@ -173,39 +173,307 @@ _SKIP_MARKER_WORDS = {"4k", "8k", "1080p", "720p", "fps", "hdr", "vr", "availabl
 
 _HAIR_CONTEXT_WORDS = {"hair", "haired"}
 
+# A curated subset of scripts/set_tags_based_on_title.sh's title -> collection keyword
+# associations (already validated by hand against real content, just for title matching
+# rather than Stash tag names). Only phrases specific/unambiguous enough to trust as a
+# substring match against a short, curated Stash tag name are included here - excluded:
+# bare 2-3 letter tokens ("BJ", "DP", "gg"), words already covered more precisely elsewhere
+# ("throat"/"finger" alone risk over-matching more specific variants like "Anal Fingering",
+# the same failure mode the hair-color heuristic had before requiring "hair" co-occurrence),
+# and words the script itself maps to more than one target ("strap" -> both Sex Toys and
+# Strap On, "fuck machine" -> both Fuck Machine and Sex Toys - ambiguous, left out).
+_CATEGORY_MERGE_PHRASES: dict[str, str] = {
+    "blackmail": "01: Category: Blackmail",
+    "cheating": "01: Category: Cheating",
+    "double anal": "01: Category: Double Anal",
+    "double penetration": "01: Category: Double Penetration",
+    "girlfriend experience": "01: Category: GFE",
+    "goth": "01: Category: Goth",
+    "hitachi": "01: Category: Sex Toys",
+    "interview": "01: Category: Interview",
+    "latex": "01: Category: Latex",
+    "live stream": "01: Category: Live Stream",
+    "livestream": "01: Category: Live Stream",
+    "throatpie": "01: Category: Throatpie",
+    "vibrator": "01: Category: Sex Toys",
+    # Confirmed by the script's own explicit title-matching rule ("Red head"/"Redhead" ->
+    # Hair: Red) rather than guessed - this is exactly the fused-compound case the whole-word
+    # hair heuristic below deliberately does not catch on its own.
+    "redhead": "01: Hair: Red",
+    "red head": "01: Hair: Red",
+}
+
 
 def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
     """Heuristic-only suggestion for an unmapped tag: 'add', 'merge -> <collection>', or 'skip'.
 
-    A starting point for human review, not a decision. The merge check requires a hair-color
-    keyword AND the word "hair"/"haired" to both appear as whole, space/punctuation-delimited
-    words in the tag name - not just the color word alone. Color words alone are not a
-    reliable signal: verified against this tool's real, live-data test run that a color-word-
-    only match produces mostly false positives ("White Woman", "Blue Eyes", "Brown Eyes",
-    "Pink Labia", "Red Lipstick", ... - none of those are about hair), while every tag that
-    also contains "hair" was a correct match ("Brown Hair (Male)", "Blond Hair (Male)",
-    "Platinum Blond Hair", ...). Requiring both words present (not necessarily adjacent, since
-    these tag names are short enough that co-occurrence alone is already precise) eliminated
-    every false positive in that run while keeping every true positive. Deliberately not a
-    substring match either (e.g. "Hundred" contains "red"), so a fused compound with no word
-    boundary, like "Redhead", is NOT caught - confirmed this doesn't matter in practice: no
-    standalone "Redhead" tag exists, because Stash's own alias mechanism already folds exact-
-    name synonyms (e.g. "Red Hair") into one tag entity before they'd ever reach this function
-    as a separate, unmapped tag object. Only recommends a merge target that actually exists as
-    a Plex collection already. Composition-side merges are deliberately not attempted - those
-    terms (MMF, FFM, FFFM, ...) are short/abbreviation-heavy enough that keyword matching
-    would be too noisy to trust even as a suggestion; a human scanning the raw list is more
-    reliable there.
+    A starting point for human review, not a decision.
+
+    Two merge signals, both requiring the target collection to actually exist already:
+    1. A curated phrase from `_CATEGORY_MERGE_PHRASES` (sourced from
+       scripts/set_tags_based_on_title.sh's own already-validated keyword associations)
+       appearing anywhere in the tag name.
+    2. A hair-color keyword AND the word "hair"/"haired" both appearing as whole, space/
+       punctuation-delimited words - not just the color word alone. Color words alone are
+       not a reliable signal: verified against this tool's real, live-data test run that a
+       color-word-only match produces mostly false positives ("White Woman", "Blue Eyes",
+       "Brown Eyes", "Pink Labia", "Red Lipstick", ... - none of those are about hair), while
+       every tag that also contains "hair" was a correct match ("Brown Hair (Male)", "Blond
+       Hair (Male)", "Platinum Blond Hair", ...). Requiring both words present (not
+       necessarily adjacent, since these tag names are short enough that co-occurrence alone
+       is already precise) eliminated every false positive in that run while keeping every
+       true positive. Composition-side merges are deliberately not attempted for the whole-
+       word path - those terms (MMF, FFM, FFFM, ...) are short/abbreviation-heavy enough that
+       keyword matching would be too noisy to trust even as a suggestion; a human scanning
+       the raw list is more reliable there.
     """
-    words = set(re.findall(r"[a-z0-9]+", tag_name.lower()))
+    lower_name = tag_name.lower()
+    words = set(re.findall(r"[a-z0-9]+", lower_name))
     if words & _SKIP_MARKER_WORDS:
         return "skip"
+    for phrase, target in _CATEGORY_MERGE_PHRASES.items():
+        if phrase in lower_name and target in existing_titles:
+            return f"merge -> {target}"
     if words & _HAIR_CONTEXT_WORDS:
         for word in words:
-            target = _HAIR_MERGE_KEYWORDS.get(word)
-            if target and target in existing_titles:
-                return f"merge -> {target}"
+            hair_target = _HAIR_MERGE_KEYWORDS.get(word)
+            if hair_target and hair_target in existing_titles:
+                return f"merge -> {hair_target}"
     return "add"
+
+
+_CUMSHOT_KEYWORDS = frozenset({"cum", "creampie", "bukkake", "facial", "swallow", "throatpie", "cumshot"})
+_COMPOSITION_KEYWORDS = frozenset(
+    {"solo", "gangbang", "orgy", "threesome", "foursome", "mmf", "ffm", "fffm", "fff", "daisy", "chain", "trio"}
+)
+_PROP_KEYWORDS = frozenset(
+    {
+        "toy",
+        "toys",
+        "vibrator",
+        "dildo",
+        "plug",
+        "machine",
+        "clamp",
+        "clamps",
+        "blindfold",
+        "rope",
+        "restraint",
+        "restraints",
+        "wax",
+        "glory",
+        "hole",
+    }
+)
+_ACTIVITY_KEYWORDS = frozenset(
+    {
+        "anal",
+        "blowjob",
+        "deepthroat",
+        "fingering",
+        "fisting",
+        "handjob",
+        "footjob",
+        "rimming",
+        "spanking",
+        "squirting",
+        "squirt",
+        "massage",
+        "choking",
+        "licking",
+        "eating",
+        "penetration",
+        "throating",
+        "throated",
+        "tribbing",
+        "slapping",
+        "sitting",
+    }
+)
+_THEME_KEYWORDS = frozenset(
+    {
+        "gfe",
+        "cheating",
+        "interview",
+        "teacher",
+        "blackmail",
+        "goth",
+        "cosplay",
+        "hentai",
+        "fetish",
+        "stream",
+        "roleplay",
+        "outdoor",
+        "outdoors",
+        "public",
+        "voyeur",
+        "voyeurism",
+        "cuckold",
+        "cuckolding",
+        "custom",
+        "classic",
+    }
+)
+
+# Checked in this order - some words plausibly fit more than one bucket (e.g. "throatpie" is
+# cum-related first, act-related second), so priority matters. "01: Hair:" is deliberately not
+# a target here: a tag reaching this function had no merge match against any existing hair
+# collection, and inventing a 12th hair-color collection from a keyword guess is a bigger claim
+# than this heuristic should make - left as a plain "add" with no special prefix instead.
+_NEW_PREFIX_KEYWORD_GROUPS: list[tuple[str, frozenset[str]]] = [
+    ("01: Cumshot: ", _CUMSHOT_KEYWORDS),
+    ("01: Composition: ", _COMPOSITION_KEYWORDS),
+    ("01: Prop: ", _PROP_KEYWORDS),
+    ("01: Activity: ", _ACTIVITY_KEYWORDS),
+    ("01: Theme: ", _THEME_KEYWORDS),
+]
+
+
+def _suggest_new_collection_name(tag_name: str) -> str:
+    """Suggest a "01: <Prefix>: <name>" collection name for a tag with no existing match.
+
+    Heuristic keyword classification into the emerging Cumshot/Composition/Prop/Activity/Theme
+    taxonomy, checked in that priority order. Falls back to "01: Category: <name>" - the
+    existing, safe default - when no keyword matches, rather than guessing into a specific new
+    bucket without a real signal. The tag's own name is used verbatim as the suggested
+    collection's suffix.
+    """
+    words = set(re.findall(r"[a-z0-9]+", tag_name.lower()))
+    for prefix, keywords in _NEW_PREFIX_KEYWORD_GROUPS:
+        if words & keywords:
+            return f"{prefix}{tag_name}"
+    return f"01: Category: {tag_name}"
+
+
+# Hand-classified, not keyword-guessed: the real "01: Category:" list is a small, fixed,
+# fully-known set (106 collections as of 2026-07-16), so every entry got individual judgment
+# rather than running it through the same heuristic used for the open-ended Stash tag list.
+# Genuinely ambiguous calls (documented inline) and collections that don't cleanly fit any of
+# Cumshot/Composition/Prop/Activity/Theme at all (ethnicity, body modification, skin
+# complexion, video format, and one likely-mislabeled studio name) are deliberately left out of
+# this table entirely rather than forced into a bucket - see the report's own notes section for
+# that residual list. "Lesbian" is included despite its known dual composition/activity meaning
+# (see plans discussion) - this table doesn't attempt to resolve that split, only the rename.
+_EXISTING_CATEGORY_RENAMES: dict[str, str] = {
+    "01: Category: 69": "01: Activity: 69",
+    "01: Category: Anal": "01: Activity: Anal",
+    "01: Category: Anal Creampie": "01: Cumshot: Anal Creampie",
+    "01: Category: BTS": "01: Theme: BTS",
+    "01: Category: Blackmail": "01: Theme: Blackmail",
+    "01: Category: Blindfold": "01: Prop: Blindfold",
+    "01: Category: Blowjob": "01: Activity: Blowjob",
+    "01: Category: Bukkake": "01: Cumshot: Bukkake",
+    "01: Category: Butt Plug": "01: Prop: Butt Plug",
+    "01: Category: Cheating": "01: Theme: Cheating",
+    "01: Category: Choking": "01: Activity: Choking",
+    "01: Category: Classic": "01: Theme: Classic",
+    "01: Category: Completely Throated": "01: Activity: Completely Throated",
+    "01: Category: Cosplay": "01: Theme: Cosplay",
+    "01: Category: Cuckolding": "01: Theme: Cuckolding",
+    "01: Category: Cum In Mouth": "01: Cumshot: Cum In Mouth",
+    "01: Category: Cum On Ass": "01: Cumshot: Cum On Ass",
+    "01: Category: Cum On Hands": "01: Cumshot: Cum On Hands",
+    "01: Category: Cum On Self": "01: Cumshot: Cum On Self",
+    "01: Category: Cum On Tits": "01: Cumshot: Cum On Tits",
+    "01: Category: Cum On Vagina": "01: Cumshot: Cum On Vagina",
+    "01: Category: Cum Play": "01: Cumshot: Cum Play",
+    "01: Category: Cum Swapping": "01: Cumshot: Cum Swapping",
+    "01: Category: Cum on Body": "01: Cumshot: Cum on Body",
+    "01: Category: Cum on Feet": "01: Cumshot: Cum on Feet",
+    "01: Category: Cum on Stomach": "01: Cumshot: Cum on Stomach",
+    "01: Category: Custom": "01: Theme: Custom",
+    "01: Category: Daisy Chain": "01: Composition: Daisy Chain",
+    "01: Category: Deepthroat": "01: Activity: Deepthroat",
+    # Double Anal/Blowjob/Penetration/Vaginal describe an act performed on/by a specific
+    # partner count, closer to Composition than plain Activity - but none of these are in the
+    # existing EXCLUDED_COMPOSITION_COLLECTIONS grouping the codebase already uses elsewhere,
+    # so Activity was chosen to match that existing precedent rather than override it. Worth a
+    # second look during the actual migration.
+    "01: Category: Double Anal": "01: Activity: Double Anal",
+    "01: Category: Double Blowjob": "01: Activity: Double Blowjob",
+    "01: Category: Double Penetration": "01: Activity: Double Penetration",
+    "01: Category: Double Vaginal": "01: Activity: Double Vaginal",
+    "01: Category: Extreme Throating": "01: Activity: Extreme Throating",
+    "01: Category: FFF+": "01: Composition: FFF+",
+    "01: Category: FFFM": "01: Composition: FFFM",
+    "01: Category: FFM": "01: Composition: FFM",
+    "01: Category: FFT": "01: Composition: FFT",
+    "01: Category: Face Sitting": "01: Activity: Face Sitting",
+    "01: Category: Face Slapping": "01: Activity: Face Slapping",
+    "01: Category: Facial": "01: Cumshot: Facial",
+    "01: Category: Fauxcest": "01: Theme: Fauxcest",
+    "01: Category: Fetish": "01: Theme: Fetish",
+    "01: Category: Fingering": "01: Activity: Fingering",
+    "01: Category: Fisting": "01: Activity: Fisting",
+    "01: Category: Foot Fetish": "01: Theme: Foot Fetish",
+    "01: Category: Footjob": "01: Activity: Footjob",
+    "01: Category: Fuck Machine": "01: Prop: Fuck Machine",
+    "01: Category: GFE": "01: Theme: GFE",
+    "01: Category: Gangbang": "01: Composition: Gangbang",
+    "01: Category: Glory Hole": "01: Prop: Glory Hole",
+    "01: Category: Goth": "01: Theme: Goth",
+    "01: Category: Handjob": "01: Activity: Handjob",
+    "01: Category: Hentai": "01: Theme: Hentai",
+    # Prop (the wax itself) rather than Activity (the act of applying it) - a judgment call,
+    # same reasoning applies to Oil below.
+    "01: Category: Hot Wax": "01: Prop: Hot Wax",
+    "01: Category: Interview": "01: Theme: Interview",
+    "01: Category: JOI": "01: Theme: JOI",
+    "01: Category: Latex": "01: Prop: Latex",
+    "01: Category: Lesbian": "01: Composition: Lesbian",
+    "01: Category: Live Stream": "01: Theme: Live Stream",
+    "01: Category: Live Stream Clip": "01: Theme: Live Stream Clip",
+    "01: Category: MF Only": "01: Composition: MF Only",
+    "01: Category: MMF": "01: Composition: MMF",
+    "01: Category: Massage": "01: Activity: Massage",
+    "01: Category: Nipple Clamps": "01: Prop: Nipple Clamps",
+    "01: Category: Nipple Play": "01: Activity: Nipple Play",
+    "01: Category: Oil": "01: Prop: Oil",
+    "01: Category: Orgy": "01: Composition: Orgy",
+    "01: Category: Outdoors": "01: Theme: Outdoors",
+    "01: Category: Painal": "01: Activity: Painal",
+    "01: Category: Panty Stuffing": "01: Prop: Panty Stuffing",
+    "01: Category: Pee": "01: Activity: Pee",
+    "01: Category: Plaid Miniskirt": "01: Theme: Plaid Miniskirt",
+    "01: Category: Prone Bone": "01: Activity: Prone Bone",
+    "01: Category: Pussy Eating": "01: Activity: Pussy Eating",
+    "01: Category: Pussy Spanking": "01: Activity: Pussy Spanking",
+    "01: Category: Reverse Gangbang": "01: Composition: Reverse Gangbang",
+    "01: Category: Rimming": "01: Activity: Rimming",
+    "01: Category: Sex Toys": "01: Prop: Sex Toys",
+    "01: Category: Social Event": "01: Theme: Social Event",
+    "01: Category: Solo": "01: Composition: Solo",
+    "01: Category: Spanking": "01: Activity: Spanking",
+    "01: Category: Squirting": "01: Activity: Squirting",
+    "01: Category: Strap On": "01: Prop: Strap On",
+    "01: Category: Striptease": "01: Activity: Striptease",
+    "01: Category: TF Only": "01: Composition: TF Only",
+    "01: Category: TTF": "01: Composition: TTF",
+    "01: Category: Teacher/Tutor": "01: Theme: Teacher/Tutor",
+    "01: Category: Throatpie": "01: Cumshot: Throatpie",
+    "01: Category: Tit Fucking": "01: Activity: Tit Fucking",
+    "01: Category: Trans MTF": "01: Composition: Trans MTF",
+    "01: Category: Tribbing": "01: Activity: Tribbing",
+    "01: Category: Triple Anal": "01: Activity: Triple Anal",
+    "01: Category: Vaginal Creampie": "01: Cumshot: Vaginal Creampie",
+    "01: Category: Voyeurism": "01: Theme: Voyeurism",
+    "01: Category: Water": "01: Activity: Water",
+}
+
+# Existing "01: Category:" collections deliberately left out of _EXISTING_CATEGORY_RENAMES -
+# none of Cumshot/Composition/Prop/Activity/Theme fit cleanly, for the reason noted per entry.
+_UNCLASSIFIED_CATEGORY_NOTES: dict[str, str] = {
+    "01: Category: Asian": "ethnicity descriptor, not a fit for any current bucket",
+    "01: Category: Beautiful Agony": "looks like it may actually be a studio/brand name, not a content category - worth checking before any rename",
+    "01: Category: Ebony": "ethnicity descriptor, not a fit for any current bucket",
+    "01: Category: Non-Sexual": "content-type flag (also appears in EXCLUDED_MONEYSHOT_COLLECTIONS for the same reason), not a content descriptor itself",
+    "01: Category: Pierced Nipples": "body modification, not a fit for any current bucket - possibly wants its own future prefix alongside Hair, e.g. Piercing",
+    "01: Category: Pierced Tongue": "body modification, same note as Pierced Nipples",
+    "01: Category: Pierced Vagina": "body modification, same note as Pierced Nipples",
+    "01: Category: Porcelain Skin": "skin complexion, similar situation to hair color but no existing bucket for it",
+    "01: Category: Short Videos": "video format/length, not a content descriptor",
+    "01: Category: Vertical Video": "video format/orientation, not a content descriptor",
+}
 
 
 def _write_unmapped_tags_report(
@@ -216,31 +484,109 @@ def _write_unmapped_tags_report(
     existing_titles: set[str],
     *,
     total_tag_count: int,
+    local_tag_count: int,
 ) -> None:
     report_path = Path(path)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    add_rows: list[dict[str, Any]] = []
+    merge_rows: list[tuple[dict[str, Any], str]] = []
+    skip_rows: list[dict[str, Any]] = []
+    for tag in unmapped:
+        action = _suggested_action(str(tag["name"]), existing_titles)
+        if action == "skip":
+            skip_rows.append(tag)
+        elif action.startswith("merge -> "):
+            merge_rows.append((tag, action[len("merge -> ") :]))
+        else:
+            add_rows.append(tag)
+
     lines = [
         "# Stash Tags With No Matching Plex Collection",
         "",
         f"Generated: {generated_at}",
         "",
-        f"Found {len(unmapped)} unmapped tags out of {total_tag_count} total Stash tags.",
+        f"Found {len(unmapped)} unmapped tags out of {total_tag_count} total Stash tags "
+        f"({local_tag_count} local tags excluded - see AGENTS.md/README for why).",
+        f"{len(add_rows)} suggested add, {len(merge_rows)} suggested merge, {len(skip_rows)} suggested skip.",
         "",
-        "Suggested Action is a heuristic starting point for review, not a decision - "
-        "especially `merge`, which only catches hair-color keywords and always reflects "
-        "an actual existing Plex collection as the target. Verify before acting on any row.",
+        "All of the below is a heuristic starting point for review, not a decision. `merge` "
+        "always reflects an actual existing Plex collection as the target. `Suggested "
+        "Collection` for `Add` rows is a keyword-based guess at the emerging taxonomy "
+        "(Cumshot/Composition/Prop/Activity/Theme) and falls back to the existing `Category:` "
+        "form when no keyword matched - verify before creating anything.",
         "",
-        "| Scenes | Tag | Source | Suggested Action | Link |",
+        "## Add",
+        "",
+        "| Scenes | Tag | Source | Suggested Collection | Link |",
         "|---:|---|---|---|---|",
     ]
     lines.extend(
         f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
         f"{_escape_markdown_table_cell(_tag_source(tag, stash_box_names))} | "
-        f"{_escape_markdown_table_cell(_suggested_action(str(tag['name']), existing_titles))} | "
+        f"{_escape_markdown_table_cell(_suggest_new_collection_name(str(tag['name'])))} | "
         f"[view]({web_base}/tags/{tag['id']}) |"
-        for tag in unmapped
+        for tag in sorted(add_rows, key=lambda t: t.get("scene_count") or 0, reverse=True)
     )
+
+    lines.extend(["", "## Merge", "", "| Scenes | Tag | Source | Merge Into | Link |", "|---:|---|---|---|---|"])
+    lines.extend(
+        f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
+        f"{_escape_markdown_table_cell(_tag_source(tag, stash_box_names))} | "
+        f"{_escape_markdown_table_cell(target)} | "
+        f"[view]({web_base}/tags/{tag['id']}) |"
+        for tag, target in sorted(merge_rows, key=lambda pair: pair[1])
+    )
+
+    lines.extend(["", "## Skip", "", "| Scenes | Tag | Source | Link |", "|---:|---|---|---|"])
+    lines.extend(
+        f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
+        f"{_escape_markdown_table_cell(_tag_source(tag, stash_box_names))} | "
+        f"[view]({web_base}/tags/{tag['id']}) |"
+        for tag in sorted(skip_rows, key=lambda t: t.get("scene_count") or 0, reverse=True)
+    )
+
+    existing_renames = sorted(
+        ((old, new) for old, new in _EXISTING_CATEGORY_RENAMES.items() if old in existing_titles),
+        key=lambda pair: pair[1],
+    )
+    lines.extend(
+        [
+            "",
+            '## Existing "01: Category:" Rename Suggestions',
+            "",
+            "Hand-classified, not keyword-guessed - the full 01: Category: list is small and "
+            "fixed enough to review individually. Sorted by suggested name so collections "
+            "headed for the same new prefix are grouped together. This is a starting point "
+            "for the taxonomy rework, not something this tool applies automatically.",
+            "",
+            "| Current | Suggested |",
+            "|---|---|",
+        ]
+    )
+    lines.extend(
+        f"| {_escape_markdown_table_cell(old)} | {_escape_markdown_table_cell(new)} |" for old, new in existing_renames
+    )
+
+    unclassified = sorted(title for title in _UNCLASSIFIED_CATEGORY_NOTES if title in existing_titles)
+    if unclassified:
+        lines.extend(
+            [
+                "",
+                "### Not classified",
+                "",
+                "No clean fit in Cumshot/Composition/Prop/Activity/Theme:",
+                "",
+                "| Collection | Note |",
+                "|---|---|",
+            ]
+        )
+        lines.extend(
+            f"| {_escape_markdown_table_cell(title)} | {_escape_markdown_table_cell(_UNCLASSIFIED_CATEGORY_NOTES[title])} |"
+            for title in unclassified
+        )
+
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -497,15 +843,23 @@ def unmapped_tags(args: Any) -> int:
     plex_ctx = PlexContext(cfg)
     existing_titles = {str(collection.title) for collection in plex_ctx.section.collections()}
 
-    unmapped = [tag for tag in tags if not _has_existing_plex_match(tag, existing_titles)]
+    candidates = [tag for tag in tags if not _has_existing_plex_match(tag, existing_titles)]
+    local_tag_count = sum(1 for tag in candidates if not (tag.get("stash_ids") or []))
+    unmapped = [tag for tag in candidates if tag.get("stash_ids") or []]
     unmapped.sort(key=lambda tag: tag.get("scene_count") or 0, reverse=True)
 
     report_path = Path(getattr(args, "output", "reference/stash_unmapped_tags.md"))
     _write_unmapped_tags_report(
-        report_path, unmapped, web_base, stash_box_names, existing_titles, total_tag_count=len(tags)
+        report_path,
+        unmapped,
+        web_base,
+        stash_box_names,
+        existing_titles,
+        total_tag_count=len(tags),
+        local_tag_count=local_tag_count,
     )
 
-    print(ok(f"Unmapped tags: {len(unmapped)} of {len(tags)} total"))
+    print(ok(f"Unmapped tags: {len(unmapped)} of {len(tags)} total ({local_tag_count} local excluded)"))
     print(info(f"Report written to {report_path}"))
     return 0
 
