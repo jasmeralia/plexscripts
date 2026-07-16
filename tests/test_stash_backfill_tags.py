@@ -300,14 +300,15 @@ class TestSuggestedAction:
         # Real false positives found on a live run before this requirement was added: color
         # words alone match plenty of tags that have nothing to do with hair. "White Woman" is
         # excluded here since it's since been added to _SKIP_EXACT_TAG_NAMES (ethnicity, not
-        # hair) - covered instead by TestSkipSignals.
+        # hair), and "Blue Eyes"/"Brown Eyes" since eye color is now skipped outright - both
+        # covered instead by TestSkipSignals.
         targets = {
             "01: Hair: Blue",
             "01: Hair: Brunette",
             "01: Hair: Pink",
             "01: Hair: Red",
         }
-        for tag_name in ("Blue Eyes", "Brown Eyes", "Pink Labia", "Red Lipstick"):
+        for tag_name in ("Blue Bikini", "Brown Boots", "Pink Labia", "Red Lipstick"):
             assert _suggested_action(tag_name, targets) == "add"
 
     def test_redhead_is_caught_via_the_curated_phrase_list(self) -> None:
@@ -396,6 +397,13 @@ class TestSkipSignals:
         # worth keeping, so they must not be caught by the furniture skip.
         for tag_name in ("Bathroom", "Shower", "Poolside", "Bondage", "Massage Table", "Countertop"):
             assert _suggested_action(tag_name, set()) == "add"
+
+    def test_eye_color_is_skipped(self) -> None:
+        for tag_name in ("Blue Eyes", "Brown Eyes", "Green Eyes", "Grey Eyes", "Hazel Eyes"):
+            assert _suggested_action(tag_name, set()) == "skip"
+        # "Eye"/"Eyebrow" as different words must not be caught.
+        assert _suggested_action("Eye Contact", set()) == "add"
+        assert _suggested_action("Eyebrow Piercing", set()) == "add"
 
 
 class TestAdditionalCategorySynonyms:
@@ -514,6 +522,17 @@ class TestSuggestNewCollectionName:
     def test_activity_keyword(self) -> None:
         assert _suggest_new_collection_name("Rough Anal") == "01: Activity: Rough Anal"
 
+    def test_activity_keyword_covers_verb_shaped_act_tags(self) -> None:
+        # Found via direct user review: "Kissing" and similar verb/gerund act tags were
+        # wrongly falling to the "01: Category:" fallback.
+        for tag_name in ("Kissing", "Riding", "Ball Sucking", "Gagging", "Ass Worship", "Tickling"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Activity: ")
+
+    def test_named_positions_stay_category_not_activity(self) -> None:
+        # Named positions (proper nouns, not verbs) are deliberately left alone.
+        for tag_name in ("Cowgirl", "Missionary", "Doggy Style"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Category: ")
+
     def test_theme_keyword(self) -> None:
         assert _suggest_new_collection_name("Hot Cosplay") == "01: Theme: Hot Cosplay"
 
@@ -611,7 +630,7 @@ class TestUnmappedTags:
             },
             {
                 "id": "2",
-                "name": "Category: Blowjob",
+                "name": "Category: Trivia",
                 "scene_count": 20,
                 "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "y"}],
             },
@@ -648,8 +667,8 @@ class TestUnmappedTags:
         report = output.read_text(encoding="utf-8")
         assert "Found 2 unmapped tags out of 3 total Stash tags" in report
         assert "| 30 | Category: Solo |" not in report
-        # Both remaining tags land in the "Add" section, sorted by scene count descending.
-        assert report.index("Free \\| Text") < report.index("Category: Blowjob")
+        # Both remaining tags land in the "### Category" Add subsection, sorted by scene count.
+        assert report.index("Free \\| Text") < report.index("Category: Trivia")
         assert "[view](https://stash.example.test/tags/3)" in report
         assert "[view](https://stash.example.test/tags/2)" in report
         assert "/graphql/tags/" not in report
@@ -694,6 +713,54 @@ class TestUnmappedTags:
         assert "| 1 | Some Retired Box Tag | https://retired-box.example/graphql | " in report
         assert "| 5 | Big Tits | StashDB | " in report
         assert "| 1 | Some Retired Box Tag | https://retired-box.example/graphql | " in report
+
+    def test_add_section_is_grouped_into_taxonomy_subsections(self, tmp_path: Path) -> None:
+        tags = [
+            {
+                "id": "1",
+                "name": "Kissing",
+                "scene_count": 5,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "a"}],
+            },
+            {
+                "id": "2",
+                "name": "Masturbation",
+                "scene_count": 3,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "b"}],
+            },
+            {
+                "id": "3",
+                "name": "Pink Dildo",
+                "scene_count": 1,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "c"}],
+            },
+        ]
+        stash = MagicMock()
+        stash.all_tags.return_value = tags
+        stash.configured_stash_boxes.return_value = [{"name": "StashDB", "endpoint": "https://stashdb.org/graphql"}]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = []
+        output = tmp_path / "unmapped.md"
+        args = SimpleNamespace(
+            config="config.ini",
+            log_level="WARNING",
+            output=output,
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert unmapped_tags(args) == 0
+
+        report = output.read_text(encoding="utf-8")
+        # Subsections are sorted alphabetically: Activity, then Category, then Prop.
+        assert report.index("### Activity") < report.index("### Category") < report.index("### Prop")
+        assert report.index("### Activity") < report.index("Kissing")
+        assert report.index("### Category") < report.index("Masturbation") < report.index("### Prop")
+        assert report.index("### Prop") < report.index("Pink Dildo")
 
 
 class TestBackfillIntegration:

@@ -188,6 +188,14 @@ _SKIP_MARKER_WORDS = {"4k", "8k", "1080p", "720p", "fps", "hdr", "vr", "availabl
 # report, not guessed.
 _SKIP_GENERIC_BODY_WORDS = {"athletic", "slim", "average", "medium"}
 
+# Eye color - same "not a tracked attribute axis" spirit as the body words above, kept separate
+# since it's specifically about eyes, not build. Word-based (not a curated per-color list like
+# hair) since "eyes" doesn't otherwise appear in any current tag name outside the color variants
+# ("Eye Contact", "Eye Makeup", "Eyebrow Piercing" are all different singular/compound words),
+# so this is safe today and doesn't need updating for future colors. Confirmed by direct user
+# review of the live report.
+_SKIP_EYE_COLOR_WORDS = {"eyes"}
+
 # Whole-tag-name (not substring) skips: too broad to be a useful collection ("Cumshot",
 # "Threesome" - the specific variants like "Massive Cumshot" or "Threesome (BBG)" are still
 # useful and must NOT be caught by this), pure ethnicity/nationality descriptors the user
@@ -396,7 +404,9 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
     """
     lower_name = tag_name.lower()
     words = set(re.findall(r"[a-z0-9]+", lower_name))
-    if lower_name in _SKIP_EXACT_TAG_NAMES or words & (_SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS):
+    if lower_name in _SKIP_EXACT_TAG_NAMES or words & (
+        _SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS | _SKIP_EYE_COLOR_WORDS
+    ):
         return "skip"
     exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
     if exact_target and exact_target in existing_titles:
@@ -487,6 +497,33 @@ _ACTIVITY_KEYWORDS = frozenset(
         "tribbing",
         "slapping",
         "sitting",
+        # Confirmed by direct user review of the live report: verb/gerund-shaped act tags that
+        # were falling to the "01: Category:" fallback and belong here instead (e.g. "Kissing").
+        # Deliberately excludes named positions ("Cowgirl", "Missionary", "Doggy Style") and
+        # generic words too ambiguous to trust ("play", "holding", "spread") - those stay
+        # Category.
+        "kissing",
+        "riding",
+        "sucking",
+        "gagging",
+        "rubbing",
+        "spitting",
+        "fondling",
+        "grinding",
+        "humping",
+        "smacking",
+        "grabbing",
+        "squeezing",
+        "touching",
+        "pinching",
+        "pulling",
+        "insertion",
+        "prolapse",
+        "worship",
+        "tickling",
+        "flashing",
+        "twerking",
+        "gripping",
     }
 )
 _THEME_KEYWORDS = frozenset(
@@ -727,16 +764,31 @@ def _write_unmapped_tags_report(
         "",
         "## Add",
         "",
-        "| Scenes | Tag | Source | Suggested Collection | Link |",
-        "|---:|---|---|---|---|",
+        "Grouped by the suggested taxonomy prefix below - `Category` is the catch-all for "
+        "tags that didn't match any of the other keyword groups.",
     ]
-    lines.extend(
-        f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
-        f"{_escape_markdown_table_cell(_tag_source(tag, stash_box_names))} | "
-        f"{_escape_markdown_table_cell(_suggest_new_collection_name(str(tag['name'])))} | "
-        f"[view]({web_base}/tags/{tag['id']}) |"
-        for tag in sorted(add_rows, key=lambda t: t.get("scene_count") or 0, reverse=True)
-    )
+    add_by_prefix: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for tag in add_rows:
+        suggested = _suggest_new_collection_name(str(tag["name"]))
+        prefix_label = suggested.split(": ", 2)[1]
+        add_by_prefix[prefix_label].append(tag)
+    for prefix_label in sorted(add_by_prefix):
+        lines.extend(
+            [
+                "",
+                f"### {prefix_label}",
+                "",
+                "| Scenes | Tag | Source | Suggested Collection | Link |",
+                "|---:|---|---|---|---|",
+            ]
+        )
+        lines.extend(
+            f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
+            f"{_escape_markdown_table_cell(_tag_source(tag, stash_box_names))} | "
+            f"{_escape_markdown_table_cell(_suggest_new_collection_name(str(tag['name'])))} | "
+            f"[view]({web_base}/tags/{tag['id']}) |"
+            for tag in sorted(add_by_prefix[prefix_label], key=lambda t: t.get("scene_count") or 0, reverse=True)
+        )
 
     lines.extend(["", "## Merge", "", "| Scenes | Tag | Source | Merge Into | Link |", "|---:|---|---|---|---|"])
     lines.extend(
