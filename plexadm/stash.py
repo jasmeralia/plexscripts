@@ -30,7 +30,13 @@ query FindScenes($page: Int!, $per_page: Int!) {
 
 _ALL_TAGS = """
 query AllTags {
-  allTags { id name scene_count }
+  allTags { id name scene_count stash_ids { endpoint stash_id } }
+}
+"""
+
+_CONFIGURED_STASH_BOXES = """
+query ConfiguredStashBoxes {
+  configuration { general { stashBoxes { name endpoint } } }
 }
 """
 
@@ -161,8 +167,12 @@ class StashClient:
         return index
 
     def all_tags(self) -> list[dict[str, Any]]:
-        """Return every Stash tag with its id, name, and scene_count."""
+        """Return every Stash tag with its id, name, scene_count, and stash_ids (external stash-box links)."""
         return self._gql(_ALL_TAGS)["allTags"]  # type: ignore[no-any-return]
+
+    def configured_stash_boxes(self) -> list[dict[str, Any]]:
+        """Return this instance's configured stash-box connections (name + endpoint)."""
+        return self._gql(_CONFIGURED_STASH_BOXES)["configuration"]["general"]["stashBoxes"]  # type: ignore[no-any-return]
 
     def find_or_create_performer(self, name: str) -> str:
         if name in self._performer_cache:

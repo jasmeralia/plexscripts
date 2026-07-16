@@ -111,10 +111,29 @@ def _escape_markdown_table_cell(value: object) -> str:
     return str(value).replace("|", "\\|")
 
 
+def _tag_source(tag: dict[str, Any], stash_box_names: dict[str, str]) -> str:
+    """Return where a tag came from: 'local' (no external link) or the stash-box name(s) it's linked to.
+
+    A tag with no stash_ids is purely local to this Stash instance - that includes tags
+    synced in from Plex via `plexadm stash sync-tags`, since Stash has no way to record
+    that provenance beyond "not linked to an external stash-box". Falls back to the raw
+    endpoint URL if a stash_id references a box that isn't in the currently configured list
+    (e.g. a box that was since removed from Settings).
+    """
+    stash_ids = tag.get("stash_ids") or []
+    if not stash_ids:
+        return "local"
+    sources = {
+        stash_box_names.get(sid.get("endpoint", ""), sid.get("endpoint") or "unknown stash-box") for sid in stash_ids
+    }
+    return ", ".join(sorted(sources))
+
+
 def _write_unmapped_tags_report(
     path: str | Path,
     unmapped: list[dict[str, Any]],
     web_base: str,
+    stash_box_names: dict[str, str],
     *,
     total_tag_count: int,
 ) -> None:
@@ -128,11 +147,12 @@ def _write_unmapped_tags_report(
         "",
         f"Found {len(unmapped)} unmapped tags out of {total_tag_count} total Stash tags.",
         "",
-        "| Scenes | Tag | Link |",
-        "|---:|---|---|",
+        "| Scenes | Tag | Source | Link |",
+        "|---:|---|---|---|",
     ]
     lines.extend(
         f"| {tag.get('scene_count') or 0} | {_escape_markdown_table_cell(tag['name'])} | "
+        f"{_escape_markdown_table_cell(_tag_source(tag, stash_box_names))} | "
         f"[view]({web_base}/tags/{tag['id']}) |"
         for tag in unmapped
     )
@@ -386,6 +406,7 @@ def unmapped_tags(args: Any) -> int:
     print(info("Fetching Stash tags..."))
     stash = StashClient(endpoint)
     tags = stash.all_tags()
+    stash_box_names = {box["endpoint"]: str(box["name"]) for box in stash.configured_stash_boxes()}
 
     print(info("Fetching Plex collections..."))
     plex_ctx = PlexContext(cfg)
@@ -395,7 +416,7 @@ def unmapped_tags(args: Any) -> int:
     unmapped.sort(key=lambda tag: tag.get("scene_count") or 0, reverse=True)
 
     report_path = Path(getattr(args, "output", "reference/stash_unmapped_tags.md"))
-    _write_unmapped_tags_report(report_path, unmapped, web_base, total_tag_count=len(tags))
+    _write_unmapped_tags_report(report_path, unmapped, web_base, stash_box_names, total_tag_count=len(tags))
 
     print(ok(f"Unmapped tags: {len(unmapped)} of {len(tags)} total"))
     print(info(f"Report written to {report_path}"))

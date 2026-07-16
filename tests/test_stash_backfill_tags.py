@@ -232,25 +232,35 @@ class TestReviewFileIO:
 
 class TestStashClientAllTags:
     def test_returns_all_tags_from_graphql(self) -> None:
-        tags = [{"id": "1", "name": "Category: Solo", "scene_count": 12}]
+        tags = [{"id": "1", "name": "Category: Solo", "scene_count": 12, "stash_ids": []}]
         client = StashClient("http://stash:9999")
 
         with patch.object(client, "_gql", return_value={"allTags": tags}) as gql:
             assert client.all_tags() == tags
 
         gql.assert_called_once()
-        assert "allTags { id name scene_count }" in gql.call_args.args[0]
+        assert "stash_ids" in gql.call_args.args[0]
+
+    def test_configured_stash_boxes_returns_name_and_endpoint(self) -> None:
+        boxes = [{"name": "StashDB", "endpoint": "https://stashdb.org/graphql"}]
+        client = StashClient("http://stash:9999")
+
+        with patch.object(client, "_gql", return_value={"configuration": {"general": {"stashBoxes": boxes}}}) as gql:
+            assert client.configured_stash_boxes() == boxes
+
+        gql.assert_called_once()
 
 
 class TestUnmappedTags:
     def test_reports_real_collection_gaps_sorted_by_scene_count(self, tmp_path: Path) -> None:
         tags = [
-            {"id": "1", "name": "Category: Solo", "scene_count": 30},
-            {"id": "2", "name": "Category: Blowjob", "scene_count": 20},
-            {"id": "3", "name": "Free | Text", "scene_count": 40},
+            {"id": "1", "name": "Category: Solo", "scene_count": 30, "stash_ids": []},
+            {"id": "2", "name": "Category: Blowjob", "scene_count": 20, "stash_ids": []},
+            {"id": "3", "name": "Free | Text", "scene_count": 40, "stash_ids": []},
         ]
         stash = MagicMock()
         stash.all_tags.return_value = tags
+        stash.configured_stash_boxes.return_value = []
         plex_ctx = MagicMock()
         plex_ctx.section.collections.return_value = [
             SimpleNamespace(title="01: Category: Solo"),
@@ -278,6 +288,47 @@ class TestUnmappedTags:
         assert "[view](https://stash.example.test/tags/3)" in report
         assert "[view](https://stash.example.test/tags/2)" in report
         assert "/graphql/tags/" not in report
+
+    def test_source_column_distinguishes_local_and_stash_box_tags(self, tmp_path: Path) -> None:
+        tags = [
+            {"id": "1", "name": "Category: Blowjob", "scene_count": 10, "stash_ids": []},
+            {
+                "id": "2",
+                "name": "Big Tits",
+                "scene_count": 5,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "abc"}],
+            },
+            {
+                "id": "3",
+                "name": "Some Retired Box Tag",
+                "scene_count": 1,
+                "stash_ids": [{"endpoint": "https://retired-box.example/graphql", "stash_id": "xyz"}],
+            },
+        ]
+        stash = MagicMock()
+        stash.all_tags.return_value = tags
+        stash.configured_stash_boxes.return_value = [{"name": "StashDB", "endpoint": "https://stashdb.org/graphql"}]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = []
+        output = tmp_path / "unmapped.md"
+        args = SimpleNamespace(
+            config="config.ini",
+            log_level="WARNING",
+            output=output,
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert unmapped_tags(args) == 0
+
+        report = output.read_text(encoding="utf-8")
+        assert "| 10 | Category: Blowjob | local | " in report
+        assert "| 5 | Big Tits | StashDB | " in report
+        assert "| 1 | Some Retired Box Tag | https://retired-box.example/graphql | " in report
 
 
 class TestBackfillIntegration:
