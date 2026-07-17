@@ -25,6 +25,9 @@ date; time "$PLEXADM" collection add-orgy '01: Category: Orgy'
 # Update the contents of the unrated collection
 date; time "${SCRIPT_DIR}/set_unrated.sh"
 
+# Update the contents of the PPV collection
+date; time "${SCRIPT_DIR}/set_ppv.sh"
+
 date; time "$PLEXADM" collection sync-no-studio "00A: NO STUDIO"
 
 # Flag likely-mistagged '01: Category: Lesbian' members for review
