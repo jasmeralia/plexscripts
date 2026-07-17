@@ -979,8 +979,6 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Teacher/Tutor": "01: Theme: Teacher/Student",
     "01: Category: Throatpie": "01: Cumshot: Throatpie",
     "01: Category: Tit Fucking": "01: Activity: Tit Fucking",
-    # Trans MTF deliberately has no entry here - confirmed by direct user correction that it
-    # stays plain Category, not Composition, so no rename is needed at all.
     "01: Category: Tribbing": "01: Activity: Tribbing",
     "01: Category: Triple Anal": "01: Activity: Triple Anal",
     "01: Category: Vaginal Creampie": "01: Cumshot: Vaginal Creampie",
@@ -996,6 +994,10 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Pierced Nipples": "01: Attributes: Pierced Nipples",
     "01: Category: Pierced Tongue": "01: Attributes: Pierced Tongue",
     "01: Category: Pierced Vagina": "01: Attributes: Pierced Vagina",
+    # Confirmed by direct user correction: Trans MTF is a performer attribute, not a
+    # composition axis - no longer in EXCLUDED_COMPOSITION_COLLECTIONS, so this rename runs
+    # through the normal (non-composition) path.
+    "01: Category: Trans MTF": "01: Attributes: Trans MTF",
 }
 
 # Existing "01: Category:" collections deliberately left out of _EXISTING_CATEGORY_RENAMES -

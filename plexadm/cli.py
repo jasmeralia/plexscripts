@@ -72,7 +72,6 @@ EXCLUDED_COMPOSITION_COLLECTIONS = [
     "01: Category: Orgy",
     "01: Category: Reverse Gangbang",
     "01: Category: Solo",
-    "01: Category: Trans MTF",
 ]
 
 EXCLUDED_HAIR_COLLECTIONS = [
