@@ -450,8 +450,8 @@ collections that actually exist; anything left unclassified (format tags, a like
 etc.) is untouched.
 
 Composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) are skipped by default -
-`plexadm stash backfill-tags` matches these against Stash tags by exact name, and the Stash side
-isn't renamed by this command, so renaming them here would silently break that matching:
+`plexadm stash backfill-tags` matches these against Stash tags by exact name, so renaming them
+here without also renaming the matching Stash tags would silently break that matching:
 
 ```bash
 plexadm collection rename-categories --dry-run
@@ -468,6 +468,11 @@ before passing `--include-composition` here:
 plexadm stash rename-tags --dry-run
 plexadm stash rename-tags
 ```
+
+**Status: complete.** All `01: Category:` collections have been migrated except the 4 left
+deliberately unclassified (Beautiful Agony, Non-Sexual, Short Videos, Vertical Video) and PPV.
+The commands above remain as the documented procedure in case a newly-added collection ever
+needs the same treatment.
 
 **This is a one-time migration, not part of `mass_process.sh`.** `scripts/rename_categories.sh`
 wraps it with logging (defaults to a dry-run preview; pass `--apply` to actually rename). Every

@@ -20,7 +20,7 @@ date; time "${SCRIPT_DIR}/copy_collections.sh"
 date; time "$PLEXADM" collection add-short '01: Category: Short Videos'
 
 # Add videos with 4+ performers to orgy
-date; time "$PLEXADM" collection add-orgy '01: Category: Orgy'
+date; time "$PLEXADM" collection add-orgy '01: Composition: Orgy'
 
 # Update the contents of the unrated collection
 date; time "${SCRIPT_DIR}/set_unrated.sh"
@@ -30,7 +30,7 @@ date; time "${SCRIPT_DIR}/set_ppv.sh"
 
 date; time "$PLEXADM" collection sync-no-studio "00A: NO STUDIO"
 
-# Flag likely-mistagged '01: Category: Lesbian' members for review
+# Flag likely-mistagged '01: Composition: Lesbian' members for review
 date; time "$PLEXADM" collection sync-lesbian-single-writer
 
 END_DATE=$(date)

@@ -3,8 +3,11 @@
 #
 # Renames existing '01: Category:' collections into the Activity/Composition/Cumshot/Prop/
 # Theme/Attributes taxonomy (see plexadm.stash_backfill_tags._EXISTING_CATEGORY_RENAMES).
-# Composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) are skipped by default since
-# Stash tags aren't renamed to match yet - see `plexadm collection rename-categories --help`.
+# Composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) were skipped by default until
+# `plexadm stash rename-tags` renamed the matching Stash tags - that migration is complete, so
+# there is nothing left for this script to rename; it now runs as a no-op safety net in case a
+# newly-added "01: Category:" collection ever needs classifying (see
+# `plexadm collection rename-categories --help` for --include-composition details).
 #
 # Every other script that references a renamed collection by its old name
 # (set_tags_based_on_title.sh, copy_collections.sh, set_tags_based_on_writers.sh,
