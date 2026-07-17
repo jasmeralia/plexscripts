@@ -91,6 +91,12 @@ mutation UpdateScene($input: SceneUpdateInput!) {
 }
 """
 
+_UPDATE_TAG = """
+mutation UpdateTag($input: TagUpdateInput!) {
+  tagUpdate(input: $input) { id name }
+}
+"""
+
 _MERGE_SCENES = """
 mutation MergeScenes($input: SceneMergeInput!) {
   sceneMerge(input: $input) { id }
@@ -217,6 +223,9 @@ class StashClient:
         update = dict(fields)
         update["id"] = scene_id
         self._gql(_UPDATE_SCENE, {"input": update})
+
+    def rename_tag(self, tag_id: str, new_name: str) -> None:
+        self._gql(_UPDATE_TAG, {"input": {"id": tag_id, "name": new_name}})
 
     def sync_play_history(self, scene_id: str, timestamps: list[str]) -> None:
         """Replace Stash play history with the given ISO8601 timestamps from Plex."""

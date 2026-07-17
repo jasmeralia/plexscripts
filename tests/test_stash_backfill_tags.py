@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from plexadm.stash import StashClient
 from plexadm.stash_backfill_tags import (
+    _COMPOSITION_TAG_RENAMES,
     _EXISTING_CATEGORY_RENAMES,
     COMPOSITION_COLLECTIONS,
     COMPOSITION_TAGS,
@@ -22,6 +23,7 @@ from plexadm.stash_backfill_tags import (
     apply_review,
     backfill_tags,
     classify_scene,
+    rename_tags,
     unmapped_tags,
 )
 from plexadm.stash_reconcile import _collection_to_tag
@@ -133,6 +135,24 @@ class TestTagCollectionMapping:
         video = _mock_video(collections=["01: Category: Solo", "01: Category: Blowjob", "99: LOCKED"])
 
         assert _plex_tags_in_scope(video, COMPOSITION_TAGS) == {"Category: Solo"}
+
+
+class TestCompositionTagRenames:
+    def test_covers_exactly_the_composition_tags_classify_scene_reads(self) -> None:
+        # Derived from _EXISTING_CATEGORY_RENAMES, restricted to COMPOSITION_TAGS - must never
+        # drift from the set classify_scene() actually intersects against.
+        assert set(_COMPOSITION_TAG_RENAMES) == COMPOSITION_TAGS
+
+    def test_excludes_composition_collections_outside_classify_scene_scope(self) -> None:
+        # FFT and Orgy are deferred alongside the real composition tags in
+        # EXCLUDED_COMPOSITION_COLLECTIONS, but classify_scene() never reads them, so they don't
+        # need a Stash tag rename.
+        assert "Category: FFT" not in _COMPOSITION_TAG_RENAMES
+        assert "Category: Orgy" not in _COMPOSITION_TAG_RENAMES
+
+    def test_maps_to_the_composition_prefix(self) -> None:
+        assert _COMPOSITION_TAG_RENAMES["Category: Solo"] == "Composition: Solo"
+        assert _COMPOSITION_TAG_RENAMES["Category: Lesbian"] == "Composition: Lesbian"
 
 
 class TestHairBackfill:
@@ -255,6 +275,15 @@ class TestStashClientAllTags:
             assert client.configured_stash_boxes() == boxes
 
         gql.assert_called_once()
+
+    def test_rename_tag_sends_id_and_new_name(self) -> None:
+        client = StashClient("http://stash:9999")
+
+        with patch.object(client, "_gql", return_value={"tagUpdate": {"id": "1", "name": "Composition: Solo"}}) as gql:
+            client.rename_tag("1", "Composition: Solo")
+
+        gql.assert_called_once()
+        assert gql.call_args.args[1] == {"input": {"id": "1", "name": "Composition: Solo"}}
 
 
 class TestHasExistingPlexMatch:
@@ -1157,6 +1186,77 @@ class TestUnmappedTags:
         # "01: Activity: Cowgirl - POV" suggestion.
         pending_section = report[report.index("## Pending Collections") :]
         assert pending_section.index("| 01: Theme: POV |") < pending_section.index("| 01: Activity: Cowgirl |")
+
+
+class TestRenameTags:
+    def _stash(self, existing_names: list[str]) -> MagicMock:
+        stash = MagicMock()
+        stash.all_tags.return_value = [
+            {"id": str(i), "name": name, "scene_count": 1, "stash_ids": []}
+            for i, name in enumerate(existing_names, start=1)
+        ]
+        return stash
+
+    def test_dry_run_reports_without_calling_rename_tag(self) -> None:
+        stash = self._stash(["Category: Solo", "Category: Lesbian"])
+        args = SimpleNamespace(
+            config="config.ini", log_level="WARNING", stash_endpoint="http://stash:9999", dry_run=True
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+        ):
+            assert rename_tags(args) == 0
+
+        stash.rename_tag.assert_not_called()
+
+    def test_real_run_renames_every_matching_tag(self) -> None:
+        stash = self._stash(["Category: Solo", "Category: Lesbian", "Category: Blowjob"])
+        args = SimpleNamespace(
+            config="config.ini", log_level="WARNING", stash_endpoint="http://stash:9999", dry_run=False
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+        ):
+            assert rename_tags(args) == 0
+
+        # "Category: Blowjob" isn't in COMPOSITION_TAGS, so it must be left untouched.
+        stash.rename_tag.assert_any_call("1", "Composition: Solo")
+        stash.rename_tag.assert_any_call("2", "Composition: Lesbian")
+        assert stash.rename_tag.call_count == 2
+
+    def test_skips_a_tag_not_present_in_stash(self) -> None:
+        stash = self._stash(["Category: Solo"])
+        args = SimpleNamespace(
+            config="config.ini", log_level="WARNING", stash_endpoint="http://stash:9999", dry_run=False
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+        ):
+            assert rename_tags(args) == 0
+
+        stash.rename_tag.assert_called_once_with("1", "Composition: Solo")
+
+    def test_skips_on_a_name_collision(self) -> None:
+        # Both the old and new name already exist as separate tags - renaming would collide,
+        # so this must be left for manual resolution in Stash rather than silently merged.
+        stash = self._stash(["Category: Solo", "Composition: Solo"])
+        args = SimpleNamespace(
+            config="config.ini", log_level="WARNING", stash_endpoint="http://stash:9999", dry_run=False
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+        ):
+            assert rename_tags(args) == 0
+
+        stash.rename_tag.assert_not_called()
 
 
 class TestBackfillIntegration:

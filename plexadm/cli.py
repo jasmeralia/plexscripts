@@ -1901,6 +1901,9 @@ def _build_stash_commands(sub: Any) -> None:
         backfill_tags as stash_backfill_tags,
     )
     from plexadm.stash_backfill_tags import (
+        rename_tags as stash_rename_tags,
+    )
+    from plexadm.stash_backfill_tags import (
         unmapped_tags as stash_unmapped_tags,
     )
 
@@ -2081,6 +2084,40 @@ def _build_stash_commands(sub: Any) -> None:
         help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
     )
     set_func(unmapped_tags_parser, stash_unmapped_tags)
+
+    rename_tags_parser = _make_sub(
+        stash_sub,
+        "rename-tags",
+        help="Rename the Stash tags backing the composition taxonomy (Solo, FFM, Lesbian, etc.).",
+        description=(
+            "Renames the Stash tags that classify_scene() reads for composition backfill\n"
+            "(e.g. 'Category: Solo' -> 'Composition: Solo') to match the new Plex taxonomy.\n"
+            "\n"
+            "This is a prerequisite for `plexadm collection rename-categories\n"
+            "--include-composition`: composition matching compares Stash tag names and\n"
+            "Plex-collection-derived tag names by exact string, so renaming the Plex\n"
+            "collections without also renaming these Stash tags breaks that matching.\n"
+            "Run this first, update GROUP_SINGLE_FEMALE/GROUP_MULTI_FEMALE_HEADCOUNT/\n"
+            "GROUP_MULTI_FEMALE_ACTIVITY in stash_backfill_tags.py to the new names in the\n"
+            "same change, then run rename-categories --include-composition."
+        ),
+        epilog="Example:\n  plexadm stash rename-tags --dry-run",
+    )
+    rename_tags_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config.",
+    )
+    rename_tags_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    set_func(rename_tags_parser, stash_rename_tags)
 
     apply_review_parser = _make_sub(
         stash_sub,

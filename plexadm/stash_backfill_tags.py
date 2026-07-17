@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from plexadm.cli import EXCLUDED_COMPOSITION_COLLECTIONS, EXCLUDED_HAIR_COLLECTIONS
+from plexadm.cli import EXCLUDED_COMPOSITION_COLLECTIONS, EXCLUDED_HAIR_COLLECTIONS, dry_run_note
 from plexadm.config import load_config
 from plexadm.console import info, ok, warn
 from plexadm.plex import PlexContext, add_items, reload_if_partial, remove_items
@@ -1000,6 +1000,19 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Trans MTF": "01: Attributes: Trans MTF",
 }
 
+# The subset of _EXISTING_CATEGORY_RENAMES that classify_scene() actually reads (the
+# GROUP_SINGLE_FEMALE/GROUP_MULTI_FEMALE_HEADCOUNT/GROUP_MULTI_FEMALE_ACTIVITY tags making up
+# COMPOSITION_TAGS) - derived rather than hand-duplicated so it can never drift from the Plex
+# side. Composition collections outside COMPOSITION_TAGS (FFT, Orgy) aren't read by
+# classify_scene() at all, so they don't need a Stash tag rename and are correctly excluded here
+# - only Plex-side renaming (via rename-categories --include-composition) applies to them.
+_COMPOSITION_TAG_RENAMES: dict[str, str] = {
+    tag: new_tag
+    for old_collection, new_collection in _EXISTING_CATEGORY_RENAMES.items()
+    if (tag := _collection_to_tag(old_collection)) in COMPOSITION_TAGS
+    and (new_tag := _collection_to_tag(new_collection)) is not None
+}
+
 # Existing "01: Category:" collections deliberately left out of _EXISTING_CATEGORY_RENAMES -
 # none of Cumshot/Composition/Prop/Activity/Theme/Attributes fit cleanly, for the reason noted
 # per entry.
@@ -1463,6 +1476,49 @@ def unmapped_tags(args: Any) -> int:
 
     print(ok(f"Unmapped tags: {len(unmapped)} of {len(tags)} total ({local_tag_count} local excluded)"))
     print(info(f"Report written to {report_path}"))
+    return 0
+
+
+def rename_tags(args: Any) -> int:
+    """Rename the Stash tags that back COMPOSITION_TAGS to their new taxonomy names.
+
+    This is the Stash-side counterpart to `plexadm collection rename-categories
+    --include-composition`: classify_scene() matches Stash tag names and Plex-collection-derived
+    tag names by exact string, so both sides must carry the new name before that flag is safe to
+    use. Renaming here does not by itself change matching behavior - GROUP_SINGLE_FEMALE /
+    GROUP_MULTI_FEMALE_HEADCOUNT / GROUP_MULTI_FEMALE_ACTIVITY (and therefore COMPOSITION_TAGS)
+    must be updated to the new names in the same change that this command is actually run for
+    real, or backfill-tags will stop finding any composition tags at all in the interim.
+    """
+    log_level = getattr(args, "log_level", "WARNING").upper()
+    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING), format="%(levelname)s: %(message)s")
+
+    cfg = load_config(args.config)
+    endpoint = getattr(args, "stash_endpoint", None) or cfg.stash_endpoint
+    if not endpoint:
+        raise ValueError(
+            "No Stash endpoint configured. Add stashEndpoint to your config file or pass --stash-endpoint."
+        )
+
+    stash = StashClient(endpoint)
+    existing = {str(tag["name"]): str(tag["id"]) for tag in stash.all_tags()}
+
+    renamed = 0
+    skipped_collisions = 0
+    for old_name, new_name in sorted(_COMPOSITION_TAG_RENAMES.items()):
+        if old_name == new_name or old_name not in existing:
+            continue
+        if new_name in existing:
+            print(warn(f"Skipping '{old_name}' -> '{new_name}': a tag named '{new_name}' already exists."))
+            skipped_collisions += 1
+            continue
+        print(warn(f"'{old_name}' needs to be renamed to '{new_name}'"))
+        if not args.dry_run:
+            stash.rename_tag(existing[old_name], new_name)
+        renamed += 1
+    print(info(f"{renamed} tags renamed.{dry_run_note(args)}"))
+    if skipped_collisions:
+        print(warn(f"{skipped_collisions} renames skipped due to a name collision - resolve manually in Stash."))
     return 0
 
 
