@@ -440,6 +440,34 @@ items whose title was chosen by hand from among several release names):
 plexadm collection lock-titles "00A: DUPES"
 ```
 
+### Rename Categories (one-time taxonomy migration)
+
+Renames existing `01: Category:` collections into the emerging Activity/Composition/Cumshot/
+Prop/Theme/Attributes taxonomy, per the hand-classified table in
+`plexadm.stash_backfill_tags._EXISTING_CATEGORY_RENAMES` (the same table
+`plexadm stash unmapped-tags`'s rename-suggestions section is built from). Only renames
+collections that actually exist; anything left unclassified (format tags, a likely studio name,
+etc.) is untouched.
+
+Composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) are skipped by default -
+`plexadm stash backfill-tags` matches these against Stash tags by exact name, and the Stash side
+isn't renamed by this command, so renaming them here would silently break that matching:
+
+```bash
+plexadm collection rename-categories --dry-run
+plexadm collection rename-categories
+```
+
+Pass `--include-composition` once the corresponding Stash tags have a matching rename in place.
+
+**This is a one-time migration, not part of `mass_process.sh`.** `scripts/rename_categories.sh`
+wraps it with logging (defaults to a dry-run preview; pass `--apply` to actually rename). Every
+other script that references a renamed collection by its old name
+(`set_tags_based_on_title.sh`, `copy_collections.sh`, `set_tags_based_on_writers.sh`,
+`mass_process.sh`) was updated to the new names in the same change that added this command - run
+the rename before the next `mass_process.sh` run, or those will fail to find their target
+collections.
+
 ## Studio Commands
 
 These commands update Plex studio fields immediately.
@@ -643,6 +671,7 @@ Important scripts:
 - `scripts/copy_collections.sh`: collection and studio propagation rules
 - `scripts/set_unrated.sh`: unrated collection sync with log output
 - `scripts/set_ppv.sh`: PPV filename-pattern collection sync with log output
+- `scripts/rename_categories.sh`: one-time taxonomy rename migration - NOT part of mass_process.sh
 - `scripts/top_*.sh`: convenience reports
 
 Run the full batch:

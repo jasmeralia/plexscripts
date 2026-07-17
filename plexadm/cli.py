@@ -43,6 +43,22 @@ LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION = "00D: Review: Lesbian Single-Writer"
 PPV_COLLECTION = "01: Category: PPV"
 PPV_FILENAME_PATTERN = "*- PPV *"
 
+# The "01: Category:" taxonomy is being split into narrower prefixes (see
+# `plexadm collection rename-categories` / stash_backfill_tags._EXISTING_CATEGORY_RENAMES).
+# Anything that used to recognize a collection as "a category" by checking for a literal
+# "01: Category:" substring needs to check this whole family instead, or it'll silently stop
+# seeing most collections once they're renamed. Deliberately excludes "01: Hair:" - hair is a
+# separate axis, not part of the category taxonomy, same as before the rename.
+CATEGORY_TAXONOMY_PREFIXES = (
+    "01: Category:",
+    "01: Activity:",
+    "01: Attributes:",
+    "01: Composition:",
+    "01: Cumshot:",
+    "01: Prop:",
+    "01: Theme:",
+)
+
 EXCLUDED_COMPOSITION_COLLECTIONS = [
     "01: Category: FFF+",
     "01: Category: FFFM",
@@ -75,7 +91,7 @@ EXCLUDED_HAIR_COLLECTIONS = [
 EXCLUDED_MONEYSHOT_COLLECTIONS = [
     "01: Category: Creampie",
     "01: Category: Cum Swap",
-    "01: Category: Facial",
+    "01: Cumshot: Facial",
     "01: Category: Internal",
     "01: Category: Non-Sexual",
     "01: Category: Swallow",
@@ -328,6 +344,36 @@ def lock_collection_titles(args: argparse.Namespace) -> int:
     return 0
 
 
+def rename_categories(args: argparse.Namespace) -> int:
+    # Local import: stash_backfill_tags imports EXCLUDED_COMPOSITION_COLLECTIONS/
+    # EXCLUDED_HAIR_COLLECTIONS from this module, so a top-level import here would be circular.
+    from plexadm.stash_backfill_tags import _EXISTING_CATEGORY_RENAMES, COMPOSITION_COLLECTIONS
+
+    ctx = build_context(args)
+    existing = {str(collection.title): collection for collection in ctx.section.collections()}
+    renamed = 0
+    skipped_composition = 0
+    for old, new in sorted(_EXISTING_CATEGORY_RENAMES.items()):
+        if old == new or old not in existing:
+            continue
+        if old in COMPOSITION_COLLECTIONS and not args.include_composition:
+            skipped_composition += 1
+            continue
+        print(warn(f"'{old}' needs to be renamed to '{new}'"))
+        rename_collection(existing[old], new, dry_run=args.dry_run)
+        renamed += 1
+    print(info(f"{renamed} collections renamed.{dry_run_note(args)}"))
+    if skipped_composition:
+        print(
+            warn(
+                f"{skipped_composition} composition collections skipped (Stash tags aren't renamed "
+                "yet, so backfill-tags matching would break - pass --include-composition once "
+                "that's handled)."
+            )
+        )
+    return 0
+
+
 def sync_lesbian_single_writer(args: argparse.Namespace) -> int:
     """Flag '01: Category: Lesbian' members with exactly one credited writer - a lone
     credited performer is a strong signal the 'Lesbian' tag is wrong, since lesbian
@@ -528,6 +574,10 @@ def list_special(args: argparse.Namespace) -> int:
             if not is_scene(video) and not getattr(video, "studio", None) and " - " in video.title
         ]
     elif args.kind == "multi-f-without-category":
+        # Deliberately still checks "01: Category:" specifically rather than the full
+        # CATEGORY_TAXONOMY_PREFIXES family: this is really asking "no composition tag yet"
+        # (Solo/FFM/MMF/etc.), and those are intentionally still "01: Category:" - see
+        # EXCLUDED_COMPOSITION_COLLECTIONS and rename_categories()'s composition deferral.
         videos = [
             video
             for video in ctx.all_videos(reload=True)
@@ -749,7 +799,7 @@ def print_top(args: argparse.Namespace) -> int:
     if args.source == "categories":
         rows = []
         for collection in ctx.section.collections():
-            if "01: Category: " in collection.title:
+            if any(prefix in collection.title for prefix in CATEGORY_TAXONOMY_PREFIXES):
                 reload_if_partial(collection)
                 rows.append((len(collection.items()), collection.title))
         for count, title in sorted(rows)[-args.limit :]:
@@ -863,7 +913,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "Examples:\n"
             "  plexadm list videos --collection '01: Category: Solo'\n"
-            "  plexadm collection add-search '01: Category: Oil' 'Oily'\n"
+            "  plexadm collection add-search '01: Prop: Oil' 'Oily'\n"
             "  plexadm studio rename 'Old Studio' 'New Studio'\n"
             "  plexadm smart-collections sync\n"
             "  plexadm top categories --limit 25\n"
@@ -1134,7 +1184,7 @@ def _build_collection_commands(sub: Any) -> None:
         epilog=(
             "Examples:\n"
             "  plexadm collection add-title '01: Category: Solo' 'masturbation' --skip-scenes\n"
-            "  plexadm collection add-search '01: Category: Oil' 'Oily'\n"
+            "  plexadm collection add-search '01: Prop: Oil' 'Oily'\n"
             "  plexadm collection copy 'Old Name' 'New Name'\n"
             "  plexadm collection sync-unrated"
         ),
@@ -1149,7 +1199,7 @@ def _build_collection_commands(sub: Any) -> None:
             "Walk every video and add the ones whose title contains PATTERN\n"
             "(case-insensitive substring match) to COLLECTION."
         ),
-        epilog="Example:\n  plexadm collection add-title '01: Category: Oil' 'oily' --skip-scenes",
+        epilog="Example:\n  plexadm collection add-title '01: Prop: Oil' 'oily' --skip-scenes",
     )
     add_title.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_title.add_argument("pattern", metavar="PATTERN", help="Substring to match in the video title.")
@@ -1174,7 +1224,7 @@ def _build_collection_commands(sub: Any) -> None:
             "are not already in COLLECTION. Faster than `add-title` for big libraries\n"
             "but matches per Plex's search semantics, not a pure substring."
         ),
-        epilog="Example:\n  plexadm collection add-search '01: Category: Fuck Machine' 'fuckmachine'",
+        epilog="Example:\n  plexadm collection add-search '01: Prop: Fuck Machine' 'fuckmachine'",
     )
     add_search.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_search.add_argument("pattern", metavar="PATTERN", help="Text passed to the Plex title search.")
@@ -1188,7 +1238,7 @@ def _build_collection_commands(sub: Any) -> None:
             "Walk every video and add the ones whose writer list contains an exact\n"
             "(case-insensitive) match for PATTERN to COLLECTION."
         ),
-        epilog="Example:\n  plexadm collection add-writer '01: Category: Extreme Throating' 'Tiptobase69'",
+        epilog="Example:\n  plexadm collection add-writer '01: Activity: Extreme Throating' 'Tiptobase69'",
     )
     add_writer.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_writer.add_argument("pattern", metavar="WRITER", help="Exact writer name to match (case-insensitive).")
@@ -1358,6 +1408,37 @@ def _build_collection_commands(sub: Any) -> None:
     )
     lock_titles_parser.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     set_func(lock_titles_parser, lock_collection_titles)
+
+    rename_categories_parser = _make_sub(
+        collection_sub,
+        "rename-categories",
+        help="Rename existing '01: Category:' collections into the Activity/Composition/"
+        "Cumshot/Prop/Theme/Attributes taxonomy.",
+        description=(
+            "Renames every real '01: Category:' collection per the hand-classified table in\n"
+            "plexadm.stash_backfill_tags._EXISTING_CATEGORY_RENAMES (the same table the\n"
+            "'plexadm stash unmapped-tags' report's rename-suggestions section is built from).\n"
+            "Only renames collections that actually exist today; anything left unclassified\n"
+            "(format tags, a likely studio name, etc.) is untouched.\n\n"
+            "Composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) are skipped by\n"
+            "default: 'plexadm stash backfill-tags' matches these against Stash tags by exact\n"
+            "name, and the Stash side isn't renamed by this command, so renaming them here\n"
+            "would silently break that matching. Pass --include-composition once the Stash\n"
+            "tags have a matching rename in place.\n\n"
+            "Run every other script that references a renamed collection by its old name\n"
+            "(set_tags_based_on_title.sh, copy_collections.sh, set_tags_based_on_writers.sh,\n"
+            "mass_process.sh) needs to already be updated before running this for real, or\n"
+            "they'll start failing to find their target collections."
+        ),
+        epilog="Example:\n  plexadm collection rename-categories --dry-run",
+    )
+    rename_categories_parser.add_argument(
+        "--include-composition",
+        action="store_true",
+        help="Also rename composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) - only "
+        "safe once the corresponding Stash tags have been renamed to match.",
+    )
+    set_func(rename_categories_parser, rename_categories)
 
     sync_lesbian_single_writer_parser = _make_sub(
         collection_sub,
@@ -1767,7 +1848,7 @@ def _build_stash_commands(sub: Any) -> None:
             "rating, play count) to each matched Stash scene.\n"
             "\n"
             "Only Plex collections prefixed '01: ' are mapped to Stash tags;\n"
-            "the prefix is stripped (e.g. '01: Category: Blowjob' → 'Category: Blowjob').\n"
+            "the prefix is stripped (e.g. '01: Activity: Blowjob' → 'Activity: Blowjob').\n"
             "\n"
             "Outputs a per-scene change log and exports a CSV listing scenes that\n"
             "still need enrichment (matched with no Plex data, or Stash scenes with\n"
