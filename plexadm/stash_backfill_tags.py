@@ -443,6 +443,8 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     # "Vaginal insertion is redundant with vaginal penetration" - same forward-declaration
     # pattern; neither is a real collection yet.
     "vaginal insertion": "01: Activity: Vaginal Penetration",
+    # "Collapse Titjob with Tit Fucking" - a real, already-existing collection.
+    "titjob": "01: Category: Tit Fucking",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
@@ -479,7 +481,9 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     "facial - pov": ["01: Category: Facial", "01: Theme: POV"],
     "handjob - pov": ["01: Category: Handjob", "01: Theme: POV"],
     "footjob - pov": ["01: Category: Footjob", "01: Theme: POV"],
-    "titjob - pov": ["01: Activity: Titjob", "01: Theme: POV"],
+    # Titjob collapses into the existing Tit Fucking collection (see _CATEGORY_MERGE_PHRASES) -
+    # a real, already-existing target, so this one only depends on POV to activate.
+    "titjob - pov": ["01: Category: Tit Fucking", "01: Theme: POV"],
     "doggy style - pov": ["01: Activity: Doggy Style", "01: Theme: POV"],
 }
 
@@ -716,7 +720,8 @@ _ACTIVITY_KEYWORDS = frozenset(
         "cowgirl",
         "missionary",
         "doggy",
-        "titjob",
+        # "titjob" deliberately not a keyword here - it collapses into the existing Tit
+        # Fucking collection instead, via _CATEGORY_MERGE_PHRASES.
     }
 )
 _THEME_KEYWORDS = frozenset(
@@ -943,7 +948,8 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Triple Anal": "01: Activity: Triple Anal",
     "01: Category: Vaginal Creampie": "01: Cumshot: Vaginal Creampie",
     "01: Category: Voyeurism": "01: Theme: Voyeurism",
-    "01: Category: Water": "01: Activity: Water",
+    # Confirmed by direct user correction: Water is a Prop, not an Activity.
+    "01: Category: Water": "01: Prop: Water",
     # New "01: Attributes:" bucket for performer/content attributes that don't fit any
     # act/object/theme bucket - confirmed by direct user request ("piercings, asian/ebony,
     # porcelain skin, etc.").

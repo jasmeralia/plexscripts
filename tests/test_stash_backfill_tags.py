@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from plexadm.stash import StashClient
 from plexadm.stash_backfill_tags import (
+    _EXISTING_CATEGORY_RENAMES,
     COMPOSITION_COLLECTIONS,
     COMPOSITION_TAGS,
     _has_existing_plex_match,
@@ -734,7 +735,7 @@ class TestFifthRoundMergesAndAttributes:
             "Facial - POV": "01: Category: Facial",
             "Handjob - POV": "01: Category: Handjob",
             "Footjob - POV": "01: Category: Footjob",
-            "Titjob - POV": "01: Activity: Titjob",
+            "Titjob - POV": "01: Category: Tit Fucking",
             "Doggy Style - POV": "01: Activity: Doggy Style",
         }
         for tag_name, act_target in cases.items():
@@ -743,6 +744,9 @@ class TestFifthRoundMergesAndAttributes:
     def test_act_pov_tags_fall_back_before_pov_exists(self) -> None:
         # "Blowjob - POV" has an established single-target fallback from an earlier round.
         assert _suggested_action("Blowjob - POV", {"01: Category: Blowjob"}) == "merge -> 01: Category: Blowjob"
+        # "Titjob - POV" gets one too now that Titjob collapses into the real Tit Fucking
+        # collection - a substring match via the bare "titjob" merge phrase.
+        assert _suggested_action("Titjob - POV", {"01: Category: Tit Fucking"}) == "merge -> 01: Category: Tit Fucking"
         # The others have no such fallback and stay "add" (with their own keyword suggestion).
         assert _suggested_action("Cowgirl - POV", set()) == "add"
         assert _suggest_new_collection_name("Cowgirl - POV") == "01: Activity: Cowgirl - POV"
@@ -767,6 +771,21 @@ class TestFifthRoundMergesAndAttributes:
         assert _suggest_new_collection_name("Breast Play") == "01: Category: Tit Play"
         assert _suggest_new_collection_name("Breast Squeezing") == "01: Activity: Tit Squeezing"
         assert _suggest_new_collection_name("Close Up Breasts") == "01: Attributes: Close Up Tits"
+
+    def test_titjob_collapses_into_tit_fucking(self) -> None:
+        target = "01: Category: Tit Fucking"
+        for tag_name in ("Titjob", "Titjob - POV"):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+        # No longer a keyword in its own right - stays "add" with no Tit Fucking collection
+        # present, rather than suggesting a standalone "01: Activity: Titjob".
+        assert _suggested_action("Titjob", set()) == "add"
+        assert _suggest_new_collection_name("Titjob") == "01: Category: Titjob"
+
+    def test_water_is_a_prop_not_an_activity(self) -> None:
+        assert _EXISTING_CATEGORY_RENAMES["01: Category: Water"] == "01: Prop: Water"
+        # "Sex in the Water" is a setting, not the same substance/prop concept - must stay
+        # unaffected.
+        assert _suggest_new_collection_name("Sex in the Water") == "01: Category: Sex in the Water"
 
 
 class TestCompositionNewCollectionOverrides:
