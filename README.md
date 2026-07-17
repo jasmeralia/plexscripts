@@ -414,6 +414,22 @@ The default collection is `00A: NO STUDIO`:
 plexadm collection sync-no-studio
 ```
 
+### Sync PPV Collection
+
+Add videos whose filename matches `*- PPV *` and remove videos that no longer match. Plex has no
+native filter for filename/file path, so the match happens in Python against each media part's
+filename rather than as a Plex search filter:
+
+```bash
+plexadm collection sync-ppv "01: Category: PPV"
+```
+
+The default collection is `01: Category: PPV`:
+
+```bash
+plexadm collection sync-ppv
+```
+
 ## Studio Commands
 
 These commands update Plex studio fields immediately.
@@ -616,6 +632,7 @@ Important scripts:
 - `scripts/set_tags_based_on_writers.sh`: writer-file tagging and independent content updates
 - `scripts/copy_collections.sh`: collection and studio propagation rules
 - `scripts/set_unrated.sh`: unrated collection sync with log output
+- `scripts/set_ppv.sh`: PPV filename-pattern collection sync with log output
 - `scripts/top_*.sh`: convenience reports
 
 Run the full batch:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import re
 import shutil
@@ -38,6 +39,8 @@ UNRATED_COLLECTION = "00C: Unrated"
 INDEPENDENT_STUDIO = "Independent Content"
 LESBIAN_COLLECTION = "01: Category: Lesbian"
 LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION = "00D: Review: Lesbian Single-Writer"
+PPV_COLLECTION = "01: Category: PPV"
+PPV_FILENAME_PATTERN = "*- PPV *"
 
 EXCLUDED_COMPOSITION_COLLECTIONS = [
     "01: Category: FFF+",
@@ -272,6 +275,32 @@ def sync_no_studio(args: argparse.Namespace) -> int:
     to_add = ctx.search(studio__exact="", sort="titleSort", reload=True)
     to_add = [video for video in to_add if not has_collection(video, collection.title)]
     to_remove = ctx.search(filters=and_filter({"studio!": ""}, {"collection=": collection.title}), reload=True)
+    for video in to_add:
+        print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
+    for video in to_remove:
+        print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
+    added = add_items(collection, to_add, dry_run=args.dry_run)
+    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
+    print(info(f"{added} collections added.{dry_run_note(args)}"))
+    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
+    return 0
+
+
+def _matches_ppv_filename(video: Any) -> bool:
+    """Plex has no native filter for filename/file path, only metadata fields - so unlike
+    the other sync-* commands, this check has to happen in Python against each media part's
+    filename rather than being expressible as a search filter."""
+    locations = list(getattr(video, "locations", None) or [])
+    return any(fnmatch.fnmatchcase(Path(location).name, PPV_FILENAME_PATTERN) for location in locations)
+
+
+def sync_ppv(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    collection = ctx.collection(args.collection)
+    to_add = ctx.search(filters=not_in_collection(collection.title), reload=True)
+    to_add = [video for video in to_add if _matches_ppv_filename(video)]
+    to_remove = ctx.search(filters=in_collection(collection.title), reload=True)
+    to_remove = [video for video in to_remove if not _matches_ppv_filename(video)]
     for video in to_add:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     for video in to_remove:
@@ -1278,6 +1307,27 @@ def _build_collection_commands(sub: Any) -> None:
         help=f"Target collection name (default: '{NO_STUDIO_COLLECTION}').",
     )
     set_func(sync_no_studio_parser, sync_no_studio)
+
+    sync_ppv_parser = _make_sub(
+        collection_sub,
+        "sync-ppv",
+        help=f"Keep COLLECTION in sync with filenames matching '{PPV_FILENAME_PATTERN}' (default: '{PPV_COLLECTION}').",
+        description=(
+            "Add every video whose filename matches "
+            f"'{PPV_FILENAME_PATTERN}' that is missing from COLLECTION, and remove every video in "
+            f"COLLECTION whose filename no longer matches. Defaults to '{PPV_COLLECTION}'. Plex has "
+            "no native filename filter, so matching happens in Python, not as a Plex search."
+        ),
+        epilog="Example:\n  plexadm collection sync-ppv",
+    )
+    sync_ppv_parser.add_argument(
+        "collection",
+        nargs="?",
+        default=PPV_COLLECTION,
+        metavar="COLLECTION",
+        help=f"Target collection name (default: '{PPV_COLLECTION}').",
+    )
+    set_func(sync_ppv_parser, sync_ppv)
 
     sync_lesbian_single_writer_parser = _make_sub(
         collection_sub,
