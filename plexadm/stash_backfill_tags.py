@@ -1044,6 +1044,11 @@ def _write_unmapped_tags_report(
         for tag, target in sorted(merge_rows, key=lambda pair: pair[1])
     )
 
+    # Covers both add-bucket tags waiting entirely on a pending collection, and merge-bucket
+    # tags that already merged somewhere but would upgrade to a fuller multi-target merge once
+    # a pending collection exists (e.g. "Anal Cowgirl - POV" merges into bare Anal today, but
+    # _potential_merge_targets still surfaces its full [Anal, POV] rule, so it's tracked here
+    # too instead of silently missing from this section).
     pending_targets: dict[str, list[str]] = defaultdict(list)
     for tag in add_rows:
         targets = _potential_merge_targets(str(tag["name"]))
@@ -1052,8 +1057,18 @@ def _write_unmapped_tags_report(
         for target in targets:
             if target not in existing_titles:
                 pending_targets[target].append(str(tag["name"]))
+    for tag, current_target in merge_rows:
+        targets = _potential_merge_targets(str(tag["name"]))
+        if not targets:
+            continue
+        for target in targets:
+            if target not in existing_titles:
+                pending_targets[target].append(f"{tag['name']} (currently -> {current_target})")
 
     if pending_targets:
+        # Sorted by impact (most tags unlocked first) rather than alphabetically, so it's clear
+        # which pending collection to create first if prioritizing.
+        ordered_targets = sorted(pending_targets, key=lambda target: (-len(pending_targets[target]), target))
         lines.extend(
             [
                 "",
@@ -1061,18 +1076,20 @@ def _write_unmapped_tags_report(
                 "",
                 "Tags below already have a merge rule pointed at a collection that doesn't exist "
                 "in Plex yet - once created, they'll show up under `## Merge` on the next run "
-                "instead of here. Creation order doesn't matter between different rows: each rule "
-                "only depends on its own listed target(s) existing, there's no dependency chain "
-                "between them.",
+                '(fully, for rows marked "currently -> X", which already merge into X today but '
+                "would upgrade to the fuller multi-target merge). Sorted by how many tags each "
+                "one unlocks, most first. Creation order doesn't otherwise matter between "
+                "different rows: each rule only depends on its own listed target(s) existing, "
+                "there's no dependency chain between them.",
                 "",
-                "| Suggested Collection | Tags waiting on it |",
-                "|---|---|",
+                "| Suggested Collection | Tags Unlocked | Tags waiting on it |",
+                "|---|---:|---|",
             ]
         )
         lines.extend(
-            f"| {_escape_markdown_table_cell(target)} | "
+            f"| {_escape_markdown_table_cell(target)} | {len(pending_targets[target])} | "
             f"{_escape_markdown_table_cell(', '.join(sorted(pending_targets[target])))} |"
-            for target in sorted(pending_targets)
+            for target in ordered_targets
         )
 
     lines.extend(["", "## Skip", "", "| Scenes | Tag | Source | Link |", "|---:|---|---|---|"])

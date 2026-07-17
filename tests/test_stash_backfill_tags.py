@@ -1063,6 +1063,55 @@ class TestUnmappedTags:
         assert report.index("### Category") < report.index("Masturbation") < report.index("### Prop")
         assert report.index("### Prop") < report.index("Pink Dildo")
 
+    def test_pending_collections_section_tracks_add_and_upgrade_candidates(self, tmp_path: Path) -> None:
+        tags = [
+            {
+                "id": "1",
+                "name": "Anal Cowgirl - POV",
+                "scene_count": 2,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "a"}],
+            },
+            {
+                "id": "2",
+                "name": "Cowgirl - POV",
+                "scene_count": 5,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "b"}],
+            },
+        ]
+        stash = MagicMock()
+        stash.all_tags.return_value = tags
+        stash.configured_stash_boxes.return_value = [{"name": "StashDB", "endpoint": "https://stashdb.org/graphql"}]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = [SimpleNamespace(title="01: Category: Anal")]
+        output = tmp_path / "unmapped.md"
+        args = SimpleNamespace(
+            config="config.ini",
+            log_level="WARNING",
+            output=output,
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert unmapped_tags(args) == 0
+
+        report = output.read_text(encoding="utf-8")
+        assert "## Pending Collections" in report
+        # "Anal Cowgirl - POV" already merges into bare Anal today (falls back since POV isn't
+        # real) - it must still show up here as an upgrade candidate, annotated with its current
+        # target, not just tags that are fully stuck in "add".
+        assert "Anal Cowgirl - POV (currently -> 01: Category: Anal)" in report
+        assert "Cowgirl - POV" in report
+        # "01: Theme: POV" is waited on by both tags (2), "01: Activity: Cowgirl" by only one (1)
+        # - sorted by impact, POV comes first. Table-cell-exact needles, since the substring
+        # "01: Activity: Cowgirl" also appears earlier as a prefix of the Add section's own
+        # "01: Activity: Cowgirl - POV" suggestion.
+        pending_section = report[report.index("## Pending Collections") :]
+        assert pending_section.index("| 01: Theme: POV |") < pending_section.index("| 01: Activity: Cowgirl |")
+
 
 class TestBackfillIntegration:
     def test_adds_are_applied_through_helper_with_dry_run(self, tmp_path: Path) -> None:
