@@ -24,6 +24,7 @@ from plexadm.plex import (
     collection_titles,
     create_smart_collection,
     has_collection,
+    lock_title_and_sort_title,
     reload_if_partial,
     remove_items,
     rename_collection,
@@ -309,6 +310,21 @@ def sync_ppv(args: argparse.Namespace) -> int:
     removed = remove_items(collection, to_remove, dry_run=args.dry_run)
     print(info(f"{added} collections added.{dry_run_note(args)}"))
     print(info(f"{removed} collections removed.{dry_run_note(args)}"))
+    return 0
+
+
+def lock_collection_titles(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    collection = ctx.collection(args.collection)
+    items = collection.items()
+    for video in items:
+        reload_if_partial(video, force=True)
+    locked = 0
+    for video in items:
+        print(warn(f"'{video.title}' needs title/sort title locked"))
+        if lock_title_and_sort_title(video, dry_run=args.dry_run):
+            locked += 1
+    print(info(f"{locked} of {len(items)} items had title/sort title locked.{dry_run_note(args)}"))
     return 0
 
 
@@ -1328,6 +1344,20 @@ def _build_collection_commands(sub: Any) -> None:
         help=f"Target collection name (default: '{PPV_COLLECTION}').",
     )
     set_func(sync_ppv_parser, sync_ppv)
+
+    lock_titles_parser = _make_sub(
+        collection_sub,
+        "lock-titles",
+        help="Lock title and sort title for every item in COLLECTION to their current values.",
+        description=(
+            "Lock the title and sort title fields for every item in COLLECTION, so agent\n"
+            "refresh/matching can't silently overwrite a manually-picked title (e.g. merged-\n"
+            "duplicate items whose title was chosen by hand from among several release names)."
+        ),
+        epilog="Example:\n  plexadm collection lock-titles '00A: DUPES'",
+    )
+    lock_titles_parser.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    set_func(lock_titles_parser, lock_collection_titles)
 
     sync_lesbian_single_writer_parser = _make_sub(
         collection_sub,
