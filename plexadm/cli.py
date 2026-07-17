@@ -40,6 +40,7 @@ UNRATED_COLLECTION = "00C: Unrated"
 INDEPENDENT_STUDIO = "Independent Content"
 LESBIAN_COLLECTION = "01: Category: Lesbian"
 LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION = "00D: Review: Lesbian Single-Writer"
+CUMSHOT_ABSENT_REVIEW_COLLECTION = "00D: Review: Cumshot Absent"
 PPV_COLLECTION = "01: Category: PPV"
 PPV_FILENAME_PATTERN = "*- PPV *"
 
@@ -390,6 +391,58 @@ def sync_lesbian_single_writer(args: argparse.Namespace) -> int:
     to_add = [video for video in matches if not has_collection(video, collection.title)]
     current_members = ctx.search(filters=in_collection(collection.title), reload=True)
     to_remove = [video for video in current_members if video.ratingKey not in match_keys]
+    for video in to_add:
+        print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
+    for video in to_remove:
+        print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
+    added = add_items(collection, to_add, dry_run=args.dry_run)
+    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
+    print(info(f"{added} collections added.{dry_run_note(args)}"))
+    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
+    return 0
+
+
+def _cumshot_absent_exclusion_names() -> set[str]:
+    # Local import: stash_backfill_tags imports EXCLUDED_COMPOSITION_COLLECTIONS/
+    # EXCLUDED_HAIR_COLLECTIONS from this module, so a top-level import here would be circular.
+    from plexadm.stash_backfill_tags import _EXISTING_CATEGORY_RENAMES
+
+    # Both the pre- and post-rename_categories() name for every Cumshot collection, so this
+    # works correctly whether or not that migration has run yet.
+    cumshot_names = {
+        name
+        for old, new in _EXISTING_CATEGORY_RENAMES.items()
+        if new.startswith("01: Cumshot: ")
+        for name in (old, new)
+    }
+    # "No male performer present" - a cumshot (in the sense this review collection cares
+    # about) structurally can't happen. Solo/Lesbian are real, populated collections today;
+    # FF Only/Female Only don't exist yet (no backfill logic populates them yet) but are
+    # included so this starts excluding them automatically once they do.
+    female_only_names = {
+        "01: Category: Solo",
+        "01: Category: Lesbian",
+        "01: Composition: Solo",
+        "01: Composition: Lesbian",
+        "01: Composition: FF Only",
+        "01: Composition: Female Only",
+    }
+    non_sexual_names = {"01: Category: Non-Sexual"}
+    return cumshot_names | female_only_names | non_sexual_names
+
+
+def sync_cumshot_absent(args: argparse.Namespace) -> int:
+    """Flag sexual, non-female-only videos with no Cumshot-collection membership for review -
+    likely either missing a cumshot tag entirely or a case the exclusions below should have
+    caught but didn't. This is a review/cataloging collection only: it never touches Cumshot
+    collection membership itself."""
+    excluded_names = _cumshot_absent_exclusion_names()
+    ctx = build_context(args)
+    collection = ctx.collection(args.collection)
+    exclusion_filters = [not_in_collection(name) for name in sorted(excluded_names)]
+    to_add = ctx.search(filters=and_filter(*exclusion_filters, not_in_collection(collection.title)), reload=True)
+    current_members = ctx.search(filters=in_collection(collection.title), reload=True)
+    to_remove = [video for video in current_members if collection_titles(video) & excluded_names]
     for video in to_add:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     for video in to_remove:
@@ -1465,6 +1518,34 @@ def _build_collection_commands(sub: Any) -> None:
         help=f"Target collection name (default: '{LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION}').",
     )
     set_func(sync_lesbian_single_writer_parser, sync_lesbian_single_writer)
+
+    sync_cumshot_absent_parser = _make_sub(
+        collection_sub,
+        "sync-cumshot-absent",
+        help=f"Flag sexual, non-female-only videos with no Cumshot collection in COLLECTION "
+        f"(default: '{CUMSHOT_ABSENT_REVIEW_COLLECTION}').",
+        description=(
+            "Add every video that isn't in any Cumshot collection (Facial, Bukkake, Cum In "
+            "Mouth, ...), isn't Solo/Lesbian/FF Only/Female Only (no male performer present, "
+            "so no cumshot to have), and isn't Non-Sexual, to COLLECTION - and remove anything "
+            "in COLLECTION that no longer matches. This is a review/cataloging collection "
+            "only - it never touches Cumshot collection membership itself.\n\n"
+            "Checks both the pre- and post-rename_categories() collection names, so this "
+            "works whether or not that migration has run yet. FF Only/Female Only aren't "
+            "populated by anything today, so the female-only exclusion currently only "
+            "actually excludes Solo/Lesbian.\n\n"
+            f"Defaults to '{CUMSHOT_ABSENT_REVIEW_COLLECTION}'."
+        ),
+        epilog="Example:\n  plexadm collection sync-cumshot-absent",
+    )
+    sync_cumshot_absent_parser.add_argument(
+        "collection",
+        nargs="?",
+        default=CUMSHOT_ABSENT_REVIEW_COLLECTION,
+        metavar="COLLECTION",
+        help=f"Target collection name (default: '{CUMSHOT_ABSENT_REVIEW_COLLECTION}').",
+    )
+    set_func(sync_cumshot_absent_parser, sync_cumshot_absent)
 
 
 def _build_studio_commands(sub: Any) -> None:

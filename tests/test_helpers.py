@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from plexadm.cli import _matches_ppv_filename
+from plexadm.cli import _cumshot_absent_exclusion_names, _matches_ppv_filename
 from plexadm.filters import and_filter, writer_any
 from plexadm.progress import count_digits, progress_prefix
 from plexadm.writers import writers_from_title
@@ -54,3 +54,22 @@ def test_matches_ppv_filename_checks_every_location() -> None:
 def test_matches_ppv_filename_handles_no_locations() -> None:
     assert _matches_ppv_filename(SimpleNamespace(locations=[])) is False
     assert _matches_ppv_filename(SimpleNamespace()) is False
+
+
+def test_cumshot_absent_exclusion_names_covers_both_pre_and_post_rename_forms() -> None:
+    names = _cumshot_absent_exclusion_names()
+    # A real Cumshot collection: both the pre- and post-rename_categories() name must be
+    # present, so this works whether or not that migration has run yet.
+    assert "01: Category: Facial" in names
+    assert "01: Cumshot: Facial" in names
+    # Female-only exclusions: the two real, populated ones today, plus the not-yet-existing
+    # ones so this starts excluding them automatically once they're created.
+    assert "01: Category: Solo" in names
+    assert "01: Category: Lesbian" in names
+    assert "01: Composition: FF Only" in names
+    assert "01: Composition: Female Only" in names
+    assert "01: Category: Non-Sexual" in names
+    # Collections that DO imply a male performer (and so should still be flagged if missing
+    # a cumshot tag) must not be excluded.
+    assert "01: Category: MF Only" not in names
+    assert "01: Category: MMF" not in names

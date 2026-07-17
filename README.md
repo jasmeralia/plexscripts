@@ -468,6 +468,24 @@ other script that references a renamed collection by its old name
 the rename before the next `mass_process.sh` run, or those will fail to find their target
 collections.
 
+### Sync Cumshot Absent Review Collection
+
+Add every sexual, non-female-only video with no Cumshot collection (Facial, Bukkake, Cum In
+Mouth, ...) to a review collection, and remove anything that no longer matches. "Non-female-only"
+excludes Solo/Lesbian/FF Only/Female Only - no male performer present, so no cumshot to have -
+and Non-Sexual content is excluded too. Checks both the pre- and post-`rename-categories` name
+for every Cumshot collection, so it works whether or not that migration has run yet:
+
+```bash
+plexadm collection sync-cumshot-absent "00D: Review: Cumshot Absent"
+```
+
+The default collection is `00D: Review: Cumshot Absent`:
+
+```bash
+plexadm collection sync-cumshot-absent
+```
+
 ## Studio Commands
 
 These commands update Plex studio fields immediately.
