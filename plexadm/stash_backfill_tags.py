@@ -130,6 +130,27 @@ def _tag_source(tag: dict[str, Any], stash_box_names: dict[str, str]) -> str:
     return ", ".join(sorted(sources))
 
 
+def _resolve_existing(name: str, existing_titles: set[str]) -> str | None:
+    """Return `name` if it's currently a real Plex collection, or its renamed form if THAT is
+    real instead (`rename_categories()` may have already renamed it) - or None if neither is.
+
+    Every merge-phrase target in this module (_CATEGORY_MERGE_PHRASES etc.) is written using
+    the pre-rename "01: Category: X" convention. Without this, the moment
+    `rename_categories()` actually renames a collection, every merge phrase targeting its old
+    name would silently stop firing, since that name no longer exists - this keeps them all
+    working correctly whether or not the rename has actually happened yet, without needing
+    every target string in this file updated in lockstep with each live rename. Case-sensitive,
+    matching this module's existing merge-phrase convention (unlike the case-insensitive
+    _has_existing_plex_match, which does its own equivalent lookup - see there for why).
+    """
+    if name in existing_titles:
+        return name
+    renamed = _EXISTING_CATEGORY_RENAMES.get(name)
+    if renamed and renamed in existing_titles:
+        return renamed
+    return None
+
+
 def _has_existing_plex_match(tag: dict[str, Any], existing_titles: set[str]) -> bool:
     """Check whether a Stash tag already corresponds to some existing Plex collection.
 
@@ -150,18 +171,27 @@ def _has_existing_plex_match(tag: dict[str, Any], existing_titles: set[str]) -> 
     ("Cum on Hands") was found on a live run that only differed from its matching
     collection ("01: Category: Cum On Hands") by case - a case-sensitive comparison
     wrongly reported that as a gap.
+
+    Also checks each "01: Category: X" candidate's renamed form (see _resolve_existing) -
+    otherwise, the moment `rename_categories()` renames a collection, every Stash tag that
+    used to match it directly would wrongly start reporting as an unmapped gap.
     """
     tag_name = str(tag["name"])
     existing_titles_lower = {title.lower() for title in existing_titles}
-    if _tag_to_collection(tag_name).lower() in existing_titles_lower:
+    renames_lower = {old.lower(): new.lower() for old, new in _EXISTING_CATEGORY_RENAMES.items()}
+
+    def _matches(candidate_lower: str) -> bool:
+        if candidate_lower in existing_titles_lower:
+            return True
+        renamed = renames_lower.get(candidate_lower)
+        return renamed is not None and renamed in existing_titles_lower
+
+    if _matches(_tag_to_collection(tag_name).lower()):
         return True
     is_local = not (tag.get("stash_ids") or [])
     if is_local or tag_name.startswith(("Category: ", "Hair: ")):
         return False
-    return (
-        f"01: category: {tag_name}".lower() in existing_titles_lower
-        or f"01: hair: {tag_name}".lower() in existing_titles_lower
-    )
+    return _matches(f"01: category: {tag_name}".lower()) or _matches(f"01: hair: {tag_name}".lower())
 
 
 _HAIR_MERGE_KEYWORDS: dict[str, str] = {
@@ -566,14 +596,20 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
     ):
         return "skip"
     exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
-    if exact_target and exact_target in existing_titles:
-        return f"merge -> {exact_target}"
+    if exact_target:
+        resolved = _resolve_existing(exact_target, existing_titles)
+        if resolved:
+            return f"merge -> {resolved}"
     for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
-        if phrase in lower_name and all(target in existing_titles for target in targets):
-            return f"merge -> {' + '.join(targets)}"
+        if phrase in lower_name:
+            resolved_targets = [_resolve_existing(target, existing_titles) for target in targets]
+            if all(resolved_targets):
+                return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
     for phrase, target in _CATEGORY_MERGE_PHRASES.items():
-        if phrase in lower_name and target in existing_titles:
-            return f"merge -> {target}"
+        if phrase in lower_name:
+            resolved = _resolve_existing(target, existing_titles)
+            if resolved:
+                return f"merge -> {resolved}"
     if words & _HAIR_CONTEXT_WORDS:
         for word in words:
             hair_target = _HAIR_MERGE_KEYWORDS.get(word)
@@ -861,7 +897,8 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Cum On Tits": "01: Cumshot: Cum On Tits",
     "01: Category: Cum On Vagina": "01: Cumshot: Cum On Vagina",
     "01: Category: Cum Play": "01: Cumshot: Cum Play",
-    "01: Category: Cum Swapping": "01: Cumshot: Cum Swapping",
+    # Confirmed by direct user correction: Cum Swapping is an activity, not a cumshot.
+    "01: Category: Cum Swapping": "01: Activity: Cum Swapping",
     # "Current" preserves the real (inconsistently-cased) Plex title; "Suggested" fixes the
     # casing to match the majority "Cum On X" convention used everywhere else in this cluster -
     # confirmed by direct user request for case consistency across the Cumshot group.
@@ -1055,20 +1092,24 @@ def _write_unmapped_tags_report(
     # a pending collection exists (e.g. "Anal Cowgirl - POV" merges into bare Anal today, but
     # _potential_merge_targets still surfaces its full [Anal, POV] rule, so it's tracked here
     # too instead of silently missing from this section).
+    # A target counts as pending only if it doesn't resolve under either its old or renamed
+    # name (see _resolve_existing) - otherwise a merge-phrase target written against a
+    # collection's pre-rename name would wrongly show as "pending" forever after
+    # rename_categories() actually renames it, even though it's fully real again.
     pending_targets: dict[str, list[str]] = defaultdict(list)
     for tag in add_rows:
         targets = _potential_merge_targets(str(tag["name"]))
         if not targets:
             continue
         for target in targets:
-            if target not in existing_titles:
+            if _resolve_existing(target, existing_titles) is None:
                 pending_targets[target].append(str(tag["name"]))
     for tag, current_target in merge_rows:
         targets = _potential_merge_targets(str(tag["name"]))
         if not targets:
             continue
         for target in targets:
-            if target not in existing_titles:
+            if _resolve_existing(target, existing_titles) is None:
                 pending_targets[target].append(f"{tag['name']} (currently -> {current_target})")
 
     if pending_targets:

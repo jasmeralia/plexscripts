@@ -12,6 +12,7 @@ from plexadm.stash_backfill_tags import (
     _has_existing_plex_match,
     _load_review,
     _plex_tags_in_scope,
+    _resolve_existing,
     _stash_tags_in_scope,
     _suggest_new_collection_name,
     _suggested_action,
@@ -288,6 +289,32 @@ class TestHasExistingPlexMatch:
         # "01: Category: Cum On Hands" by case.
         tag = {"name": "Cum on Hands", "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "x"}]}
         assert _has_existing_plex_match(tag, {"01: Category: Cum On Hands"}) is True
+
+    def test_direct_match_survives_rename_categories(self) -> None:
+        # Real regression found right after running `rename-categories` for real: a Stash tag
+        # that used to match "01: Category: Anal" directly wrongly started reporting as
+        # unmapped once that collection was actually renamed to "01: Activity: Anal".
+        tag = {"name": "Category: Anal", "stash_ids": []}
+        assert _has_existing_plex_match(tag, {"01: Activity: Anal"}) is True
+
+    def test_broader_check_survives_rename_categories(self) -> None:
+        tag = {"name": "Facial", "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "x"}]}
+        assert _has_existing_plex_match(tag, {"01: Cumshot: Facial"}) is True
+
+
+class TestResolveExisting:
+    def test_returns_the_name_itself_when_already_real(self) -> None:
+        assert _resolve_existing("01: Category: Anal", {"01: Category: Anal"}) == "01: Category: Anal"
+
+    def test_returns_the_renamed_form_when_that_is_what_is_real(self) -> None:
+        assert _resolve_existing("01: Category: Anal", {"01: Activity: Anal"}) == "01: Activity: Anal"
+
+    def test_returns_none_when_neither_form_exists(self) -> None:
+        assert _resolve_existing("01: Category: Anal", set()) is None
+
+    def test_returns_none_for_a_name_with_no_rename_entry_at_all(self) -> None:
+        # "01: Theme: POV" was never a "01: Category:" collection - not in the renames table.
+        assert _resolve_existing("01: Theme: POV", set()) is None
 
 
 class TestSuggestedAction:
