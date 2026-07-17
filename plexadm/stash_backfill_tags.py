@@ -199,6 +199,11 @@ _SKIP_GENERIC_BODY_WORDS = {"athletic", "slim", "average", "medium"}
 # review of the live report.
 _SKIP_EYE_COLOR_WORDS = {"eyes"}
 
+# Age references - the user doesn't want these tracked at all. Word-based since these terms
+# (unlike generic "middle"/"young" alone, which could plausibly appear elsewhere) are safely
+# specific to age brackets in the current tag set. Confirmed by direct user review.
+_SKIP_AGE_WORDS = {"teen", "milf", "dilf", "young", "younger", "older", "experienced", "aged"}
+
 # Whole-tag-name (not substring) skips: too broad to be a useful collection ("Cumshot",
 # "Threesome" - the specific variants like "Massive Cumshot" or "Threesome (BBG)" are still
 # useful and must NOT be caught by this), pure ethnicity/nationality descriptors the user
@@ -263,6 +268,26 @@ _SKIP_EXACT_TAG_NAMES = {
     # to watch/browse by.
     "prolapse",
     "armpit fetish",
+    "ass to mouth",
+    # Every scene in this library is already explicit - tracking "nude" as a collection is
+    # redundant. "Nude Stockings" (a stocking color/style) is a different, unrelated tag and
+    # is unaffected since this is an exact whole-name match, not a substring.
+    "nude",
+    # Bare number+"+" age brackets - the "+" isn't alphanumeric so these don't tokenize into a
+    # word _SKIP_AGE_WORDS could catch; exact-matched here instead.
+    "18+",
+    "20+",
+    "30+",
+    # "Drop licking, grinding, touching, and kissing variants" - foot/toe-related ones route to
+    # Foot Fetish instead (see the merge phrases below); everything else is dropped outright.
+    "licking",
+    "ball licking",
+    "breast licking",
+    "grinding",
+    "touching",
+    "breast touching",
+    "nipple touching",
+    "kissing",
 }
 
 _HAIR_CONTEXT_WORDS = {"hair", "haired"}
@@ -402,6 +427,22 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     "anal winking": "01: Category: Anal",
     "anal hooks": "01: Category: Anal",
     "anal stretching": "01: Category: Anal",
+    # Foot/toe-related "licking" variant, carved out of the general licking drop below.
+    "foot licking": "01: Category: Foot Fetish",
+    # "Grinding on face is redundant with face sitting" - the user's own description.
+    "grinding on face": "01: Category: Face Sitting",
+    # "Pussy Spanking already exists" - corrects the earlier "Ass Smacking only" merge, which
+    # missed that its Pussy-specific sibling has its own real collection to merge into instead
+    # of falling back to the generic "smacking" Activity keyword.
+    "pussy smacking": "01: Category: Pussy Spanking",
+    # "Anal fingering during sex feels totally redundant with anal fingering" - "Anal Fingering"
+    # itself isn't a real collection (it's only a suggested Activity name, not merged elsewhere
+    # per its own good specificity) - forward-declared the same way as the Masturbation-related
+    # entries above, so this activates once "01: Activity: Anal Fingering" is created.
+    "anal fingering during sex": "01: Activity: Anal Fingering",
+    # "Vaginal insertion is redundant with vaginal penetration" - same forward-declaration
+    # pattern; neither is a real collection yet.
+    "vaginal insertion": "01: Activity: Vaginal Penetration",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
@@ -421,6 +462,25 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     # automatically on a future run rather than needing to be re-added later.
     "anal masturbation": ["01: Category: Anal", "01: Category: Masturbation"],
     "self pussy fingering": ["01: Category: Masturbation", "01: Category: Fingering"],
+    # "Almost every POV should be split" (the his/hers gender-direction ones are the exception -
+    # see _SUGGESTED_NAME_OVERRIDES). "01: Theme: POV" doesn't exist yet, so none of these fire
+    # today - each forward-declares the split so it activates once POV is created. Order here
+    # matters: the more specific "anal X - pov" entries must be listed (and therefore matched)
+    # before their bare "X - pov" siblings, since phrase matching is substring-based and
+    # first-match-wins within this dict - "cowgirl - pov" is itself a substring of "anal cowgirl
+    # - pov" and of "reverse cowgirl - pov", so those must come first too.
+    "anal cowgirl - pov": ["01: Category: Anal", "01: Theme: POV"],
+    "anal doggy style - pov": ["01: Category: Anal", "01: Theme: POV"],
+    "anal missionary - pov": ["01: Category: Anal", "01: Theme: POV"],
+    "blowjob - pov": ["01: Category: Blowjob", "01: Theme: POV"],
+    "reverse cowgirl - pov": ["01: Activity: Reverse Cowgirl", "01: Theme: POV"],
+    "cowgirl - pov": ["01: Activity: Cowgirl", "01: Theme: POV"],
+    "missionary - pov": ["01: Activity: Missionary", "01: Theme: POV"],
+    "facial - pov": ["01: Category: Facial", "01: Theme: POV"],
+    "handjob - pov": ["01: Category: Handjob", "01: Theme: POV"],
+    "footjob - pov": ["01: Category: Footjob", "01: Theme: POV"],
+    "titjob - pov": ["01: Activity: Titjob", "01: Theme: POV"],
+    "doggy style - pov": ["01: Activity: Doggy Style", "01: Theme: POV"],
 }
 
 # Exact whole-tag-name (not substring) merges: "black" alone is too short/common a substring to
@@ -435,16 +495,31 @@ _EXACT_MATCH_MERGE_PHRASES: dict[str, str] = {
     "foursome": "01: Category: Orgy",
 }
 
-# New Composition collections the user wants (not yet real Plex collections, so these can't go
-# through the merge-phrase system above) for specific known StashDB tags that would otherwise
-# fall through to the generic "01: Composition: <name>" keyword suggestion using the tag's own
-# verbatim (and misleading) parenthetical name. "Leave Lesbian alone" - these are deliberately
-# routed elsewhere rather than expanding that collection's existing dual meaning.
-_COMPOSITION_NEW_COLLECTION_OVERRIDES: dict[str, str] = {
+# Exact-tag-name overrides for the suggested "add" collection name, used when the generic
+# keyword classifier would either pick the wrong bucket/wording or - for a bare "fuck" keyword -
+# would be too broad to add safely (it would sweep in "Hard Fuck"/"Deep Fuck", which weren't
+# confirmed). Checked first in _suggest_new_collection_name, before any keyword group.
+_SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
+    # New Composition collections (not yet real Plex collections) for specific known StashDB
+    # tags that would otherwise hit the generic "orgy"/"foursome" Composition keywords and
+    # suggest "01: Composition: Foursome (Lesbian)" verbatim - technically not wrong, but the
+    # user asked for these routed to new dedicated FF Only/Female Only collections instead.
+    # "Leave Lesbian alone" - not expanding that collection's existing dual meaning.
     "twosome (lesbian)": "01: Composition: FF Only",
     "foursome (lesbian)": "01: Composition: Female Only",
     "sixsome (lesbian)": "01: Composition: Female Only",
     "orgy (lesbian)": "01: Composition: Female Only",
+    # Respelled per direct user request ("facefuck (no space)").
+    "face fuck": "01: Activity: Facefuck",
+    "side fuck": "01: Activity: Side Fuck",
+    # "Almost every POV should be split... the only exception would be POV: His vs POV: Hers" -
+    # these three don't pair with a specific act, so they get their own dedicated collection
+    # instead of a multi-target split. "POV: Mixed" is this tool's own extrapolation of the same
+    # naming pattern for the one gender-direction tag that isn't strictly his/hers - flag if
+    # that's not what was intended.
+    "male - pov": "01: Theme: POV: His",
+    "female - pov": "01: Theme: POV: Hers",
+    "mixed - pov": "01: Theme: POV: Mixed",
 }
 
 
@@ -483,7 +558,7 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
     lower_name = tag_name.lower()
     words = set(re.findall(r"[a-z0-9]+", lower_name))
     if lower_name in _SKIP_EXACT_TAG_NAMES or words & (
-        _SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS | _SKIP_EYE_COLOR_WORDS
+        _SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS | _SKIP_EYE_COLOR_WORDS | _SKIP_AGE_WORDS
     ):
         return "skip"
     exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
@@ -501,6 +576,35 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
             if hair_target and hair_target in existing_titles:
                 return f"merge -> {hair_target}"
     return "add"
+
+
+def _potential_merge_targets(tag_name: str) -> list[str] | None:
+    """Return the merge target(s) a currently-"add" tag would get once every referenced
+    collection exists, ignoring the existence gate `_suggested_action` applies.
+
+    Mirrors `_suggested_action`'s matching order (skip check, then exact/multi/single-target
+    phrases) minus the `in existing_titles` checks, so it also surfaces forward-declared rules
+    that haven't activated yet. Used to build the report's "Pending Collections" section - "do
+    track the suggested adds now even if not present", per direct user request. Deliberately
+    doesn't include the hair-color path: that one is about existing hair collections specifically
+    and this tool never proposes creating a new one (see `_suggest_new_collection_name`).
+    """
+    lower_name = tag_name.lower()
+    words = set(re.findall(r"[a-z0-9]+", lower_name))
+    if lower_name in _SKIP_EXACT_TAG_NAMES or words & (
+        _SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS | _SKIP_EYE_COLOR_WORDS | _SKIP_AGE_WORDS
+    ):
+        return None
+    exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
+    if exact_target:
+        return [exact_target]
+    for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
+        if phrase in lower_name:
+            return targets
+    for phrase, target in _CATEGORY_MERGE_PHRASES.items():
+        if phrase in lower_name:
+            return [target]
+    return None
 
 
 _CUMSHOT_KEYWORDS = frozenset({"cum", "creampie", "bukkake", "facial", "swallow", "throatpie", "cumshot"})
@@ -571,7 +675,6 @@ _ACTIVITY_KEYWORDS = frozenset(
         "squirt",
         "massage",
         "choking",
-        "licking",
         "eating",
         "penetration",
         "throating",
@@ -581,22 +684,19 @@ _ACTIVITY_KEYWORDS = frozenset(
         "sitting",
         # Confirmed by direct user review of the live report: verb/gerund-shaped act tags that
         # were falling to the "01: Category:" fallback and belong here instead (e.g. "Kissing").
-        # Deliberately excludes named positions ("Cowgirl", "Missionary", "Doggy Style") and
-        # generic words too ambiguous to trust ("play", "holding", "spread") - those stay
-        # Category.
-        "kissing",
+        # "licking"/"grinding"/"touching"/"kissing" were removed from this set in a later round -
+        # see _SKIP_EXACT_TAG_NAMES, those are dropped outright now instead (except foot/toe-
+        # related and "Grinding on Face", which merge into Foot Fetish/Face Sitting).
         "riding",
         "sucking",
         "gagging",
         "rubbing",
         "spitting",
         "fondling",
-        "grinding",
         "humping",
         "smacking",
         "grabbing",
         "squeezing",
-        "touching",
         "pinching",
         "pulling",
         "insertion",
@@ -609,6 +709,14 @@ _ACTIVITY_KEYWORDS = frozenset(
         # (moved out of _COMPOSITION_KEYWORDS).
         "daisy",
         "chain",
+        # Confirmed by direct user correction: named positions are activities after all,
+        # reversing the earlier "named positions stay Category" call. "Face Fuck" and "Side
+        # Fuck" are handled via _SUGGESTED_NAME_OVERRIDES instead of a bare "fuck" keyword here
+        # - "fuck" alone would sweep in "Hard Fuck"/"Deep Fuck", which weren't part of this.
+        "cowgirl",
+        "missionary",
+        "doggy",
+        "titjob",
     }
 )
 _THEME_KEYWORDS = frozenset(
@@ -642,7 +750,23 @@ _THEME_KEYWORDS = frozenset(
 # since those are handled by the dedicated merge phrases above (targeting the two real
 # collections directly) - every other ethnicity/nationality word is skipped outright instead of
 # reaching this classifier at all.
-_ATTRIBUTES_KEYWORDS = frozenset({"piercing", "piercings", "skin", "tattoo", "tattoos", "tattooed"})
+_ATTRIBUTES_KEYWORDS = frozenset(
+    {
+        "piercing",
+        "piercings",
+        "skin",
+        "tattoo",
+        "tattoos",
+        "tattooed",
+        # Confirmed by direct user request: "Hairless Pussy is an attribute, as are natural
+        # tits, big tits, hairy pussy, big dick, long hair."
+        "hair",
+        "hairless",
+        "hairy",
+        "tits",
+        "dick",
+    }
+)
 
 # Checked in this order - some words plausibly fit more than one bucket (e.g. "throatpie" is
 # cum-related first, act-related second), so priority matters. Attributes is checked last since
@@ -660,21 +784,37 @@ _NEW_PREFIX_KEYWORD_GROUPS: list[tuple[str, frozenset[str]]] = [
 ]
 
 
+_BREASTS_WORD_PATTERN = re.compile(r"\bbreasts\b", re.IGNORECASE)
+_BREAST_WORD_PATTERN = re.compile(r"\bbreast\b", re.IGNORECASE)
+
+
+def _normalize_wording(tag_name: str) -> str:
+    """Use "tits" consistently rather than mixing it with "breast(s)" in suggested names.
+
+    Confirmed by direct user request ("mixing the two looks awkward") - "tits" is the more
+    prevalent wording in this taxonomy already (Tit Fucking, Big Tits, ...). Only affects the
+    suggested display name, not classification - no keyword currently depends on "breast".
+    """
+    tag_name = _BREASTS_WORD_PATTERN.sub("Tits", tag_name)
+    return _BREAST_WORD_PATTERN.sub("Tit", tag_name)
+
+
 def _suggest_new_collection_name(tag_name: str) -> str:
     """Suggest a "01: <Prefix>: <name>" collection name for a tag with no existing match.
 
-    Heuristic keyword classification into the emerging Cumshot/Composition/Prop/Activity/Theme
-    taxonomy, checked in that priority order. Falls back to "01: Category: <name>" - the
-    existing, safe default - when no keyword matches, rather than guessing into a specific new
-    bucket without a real signal. The tag's own name is used verbatim as the suggested
-    collection's suffix.
+    Heuristic keyword classification into the emerging Cumshot/Composition/Prop/Activity/Theme/
+    Attributes taxonomy, checked in that priority order. Falls back to "01: Category: <name>" -
+    the existing, safe default - when no keyword matches, rather than guessing into a specific
+    new bucket without a real signal. The tag's own name (after `_normalize_wording`) is used
+    verbatim as the suggested collection's suffix.
 
-    `_COMPOSITION_NEW_COLLECTION_OVERRIDES` is checked first: without it, a tag like "Foursome
-    (Lesbian)" would hit the generic "orgy"/"foursome" Composition keywords below and suggest
-    "01: Composition: Foursome (Lesbian)" verbatim - technically not wrong, but the user asked
-    for these routed to new dedicated FF Only/Female Only collections instead.
+    `_SUGGESTED_NAME_OVERRIDES` is checked first: without it, a tag like "Foursome (Lesbian)"
+    would hit the generic "orgy"/"foursome" Composition keywords below and suggest "01:
+    Composition: Foursome (Lesbian)" verbatim - technically not wrong, but the user asked for
+    these routed elsewhere (new dedicated collections, a respelling, or a different bucket).
     """
-    override = _COMPOSITION_NEW_COLLECTION_OVERRIDES.get(tag_name.lower())
+    tag_name = _normalize_wording(tag_name)
+    override = _SUGGESTED_NAME_OVERRIDES.get(tag_name.lower())
     if override:
         return override
     words = set(re.findall(r"[a-z0-9]+", tag_name.lower()))
@@ -717,9 +857,12 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Cum On Vagina": "01: Cumshot: Cum On Vagina",
     "01: Category: Cum Play": "01: Cumshot: Cum Play",
     "01: Category: Cum Swapping": "01: Cumshot: Cum Swapping",
-    "01: Category: Cum on Body": "01: Cumshot: Cum on Body",
-    "01: Category: Cum on Feet": "01: Cumshot: Cum on Feet",
-    "01: Category: Cum on Stomach": "01: Cumshot: Cum on Stomach",
+    # "Current" preserves the real (inconsistently-cased) Plex title; "Suggested" fixes the
+    # casing to match the majority "Cum On X" convention used everywhere else in this cluster -
+    # confirmed by direct user request for case consistency across the Cumshot group.
+    "01: Category: Cum on Body": "01: Cumshot: Cum On Body",
+    "01: Category: Cum on Feet": "01: Cumshot: Cum On Feet",
+    "01: Category: Cum on Stomach": "01: Cumshot: Cum On Stomach",
     "01: Category: Custom": "01: Theme: Custom",
     # Confirmed by direct user correction: Daisy Chain is an activity, not a composition.
     "01: Category: Daisy Chain": "01: Activity: Daisy Chain",
@@ -900,6 +1043,37 @@ def _write_unmapped_tags_report(
         f"[view]({web_base}/tags/{tag['id']}) |"
         for tag, target in sorted(merge_rows, key=lambda pair: pair[1])
     )
+
+    pending_targets: dict[str, list[str]] = defaultdict(list)
+    for tag in add_rows:
+        targets = _potential_merge_targets(str(tag["name"]))
+        if not targets:
+            continue
+        for target in targets:
+            if target not in existing_titles:
+                pending_targets[target].append(str(tag["name"]))
+
+    if pending_targets:
+        lines.extend(
+            [
+                "",
+                "## Pending Collections",
+                "",
+                "Tags below already have a merge rule pointed at a collection that doesn't exist "
+                "in Plex yet - once created, they'll show up under `## Merge` on the next run "
+                "instead of here. Creation order doesn't matter between different rows: each rule "
+                "only depends on its own listed target(s) existing, there's no dependency chain "
+                "between them.",
+                "",
+                "| Suggested Collection | Tags waiting on it |",
+                "|---|---|",
+            ]
+        )
+        lines.extend(
+            f"| {_escape_markdown_table_cell(target)} | "
+            f"{_escape_markdown_table_cell(', '.join(sorted(pending_targets[target])))} |"
+            for target in sorted(pending_targets)
+        )
 
     lines.extend(["", "## Skip", "", "| Scenes | Tag | Source | Link |", "|---:|---|---|---|"])
     lines.extend(

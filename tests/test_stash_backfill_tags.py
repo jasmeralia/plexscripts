@@ -646,6 +646,128 @@ class TestNewSkipsThisRound:
     def test_armpit_fetish_is_skipped(self) -> None:
         assert _suggested_action("Armpit Fetish", set()) == "skip"
 
+    def test_ass_to_mouth_is_skipped(self) -> None:
+        assert _suggested_action("Ass to Mouth", set()) == "skip"
+        # A different, unrelated tag containing "ass"/"mouth" separately must not be caught.
+        assert _suggested_action("Ass to Other's Mouth", set()) == "add"
+
+    def test_bare_nude_is_skipped_but_nude_stockings_is_not(self) -> None:
+        assert _suggested_action("Nude", set()) == "skip"
+        assert _suggested_action("Nude Stockings", set()) == "add"
+        assert _suggested_action("Non-Nude", set()) == "add"
+
+    def test_age_references_are_skipped(self) -> None:
+        for tag_name in (
+            "Teen Girl (18–22)",
+            "MILF (30+)",
+            "Young Woman (22–30)",
+            "Experienced Man (30–40)",
+            "Middle-aged Man (40–60)",
+            "Older Man / Younger Woman",
+            "DILF (30+)",
+            "18+",
+            "20+",
+            "30+",
+        ):
+            assert _suggested_action(tag_name, set()) == "skip"
+
+    def test_dropped_licking_grinding_touching_kissing_variants(self) -> None:
+        for tag_name in (
+            "Ball Licking",
+            "Breast Licking",
+            "Licking",
+            "Grinding",
+            "Breast Touching",
+            "Nipple Touching",
+            "Kissing",
+        ):
+            assert _suggested_action(tag_name, set()) == "skip"
+
+    def test_foot_licking_merges_into_foot_fetish_instead_of_being_dropped(self) -> None:
+        assert _suggested_action("Foot Licking", {"01: Category: Foot Fetish"}) == "merge -> 01: Category: Foot Fetish"
+
+    def test_grinding_on_face_merges_into_face_sitting(self) -> None:
+        assert (
+            _suggested_action("Grinding on Face", {"01: Category: Face Sitting"})
+            == "merge -> 01: Category: Face Sitting"
+        )
+
+
+class TestFifthRoundMergesAndAttributes:
+    def test_pussy_smacking_merges_into_pussy_spanking(self) -> None:
+        assert (
+            _suggested_action("Pussy Smacking", {"01: Category: Pussy Spanking"})
+            == "merge -> 01: Category: Pussy Spanking"
+        )
+
+    def test_anal_fingering_during_sex_forward_declares_into_anal_fingering(self) -> None:
+        target = "01: Activity: Anal Fingering"
+        assert _suggested_action("Anal Fingering During Sex", set()) == "add"
+        assert _suggested_action("Anal Fingering During Sex", {target}) == f"merge -> {target}"
+
+    def test_vaginal_insertion_forward_declares_into_vaginal_penetration(self) -> None:
+        target = "01: Activity: Vaginal Penetration"
+        assert _suggested_action("Vaginal Insertion", set()) == "add"
+        assert _suggested_action("Vaginal Insertion", {target}) == f"merge -> {target}"
+
+    def test_face_fuck_is_respelled_facefuck(self) -> None:
+        assert _suggest_new_collection_name("Face Fuck") == "01: Activity: Facefuck"
+
+    def test_side_fuck_is_activity_without_a_bare_fuck_keyword(self) -> None:
+        assert _suggest_new_collection_name("Side Fuck") == "01: Activity: Side Fuck"
+        # A bare "fuck" keyword would have wrongly swept these in too - confirms it wasn't added.
+        assert _suggest_new_collection_name("Hard Fuck") == "01: Category: Hard Fuck"
+        assert _suggest_new_collection_name("Deep Fuck") == "01: Category: Deep Fuck"
+
+    def test_pov_gender_direction_tags_get_dedicated_names(self) -> None:
+        assert _suggest_new_collection_name("Male - POV") == "01: Theme: POV: His"
+        assert _suggest_new_collection_name("Female - POV") == "01: Theme: POV: Hers"
+        assert _suggest_new_collection_name("Mixed - POV") == "01: Theme: POV: Mixed"
+
+    def test_act_pov_tags_split_once_pov_exists(self) -> None:
+        pov = "01: Theme: POV"
+        cases = {
+            "Blowjob - POV": "01: Category: Blowjob",
+            "Cowgirl - POV": "01: Activity: Cowgirl",
+            "Reverse Cowgirl - POV": "01: Activity: Reverse Cowgirl",
+            "Missionary - POV": "01: Activity: Missionary",
+            "Facial - POV": "01: Category: Facial",
+            "Handjob - POV": "01: Category: Handjob",
+            "Footjob - POV": "01: Category: Footjob",
+            "Titjob - POV": "01: Activity: Titjob",
+            "Doggy Style - POV": "01: Activity: Doggy Style",
+        }
+        for tag_name, act_target in cases.items():
+            assert _suggested_action(tag_name, {act_target, pov}) == f"merge -> {act_target} + {pov}"
+
+    def test_act_pov_tags_fall_back_before_pov_exists(self) -> None:
+        # "Blowjob - POV" has an established single-target fallback from an earlier round.
+        assert _suggested_action("Blowjob - POV", {"01: Category: Blowjob"}) == "merge -> 01: Category: Blowjob"
+        # The others have no such fallback and stay "add" (with their own keyword suggestion).
+        assert _suggested_action("Cowgirl - POV", set()) == "add"
+        assert _suggest_new_collection_name("Cowgirl - POV") == "01: Activity: Cowgirl - POV"
+
+    def test_anal_pov_variants_prefer_the_more_specific_split_over_the_bare_anal_merge(self) -> None:
+        anal = "01: Category: Anal"
+        pov = "01: Theme: POV"
+        for tag_name in ("Anal Cowgirl - POV", "Anal Doggy Style - POV", "Anal Missionary - POV"):
+            assert _suggested_action(tag_name, {anal, pov}) == f"merge -> {anal} + {pov}"
+            # Before POV exists, falls back to the plain bare-Anal merge from an earlier round.
+            assert _suggested_action(tag_name, {anal}) == f"merge -> {anal}"
+
+    def test_attributes_body_descriptors(self) -> None:
+        for tag_name in ("Hairless Pussy", "Natural Tits", "Big Tits", "Hairy Pussy", "Big Dick", "Long Hair"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Attributes: ")
+
+    def test_named_positions_are_activities(self) -> None:
+        for tag_name in ("Reverse Cowgirl", "Cowgirl", "Missionary"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Activity: ")
+
+    def test_tit_wording_is_normalized_from_breast(self) -> None:
+        assert _suggest_new_collection_name("Breast Play") == "01: Category: Tit Play"
+        assert _suggest_new_collection_name("Breast Squeezing") == "01: Activity: Tit Squeezing"
+        assert _suggest_new_collection_name("Close Up Breasts") == "01: Attributes: Close Up Tits"
+
 
 class TestCompositionNewCollectionOverrides:
     def test_lesbian_headcount_variants_route_to_new_dedicated_collections(self) -> None:
@@ -690,15 +812,16 @@ class TestSuggestNewCollectionName:
         assert _suggest_new_collection_name("Rough Anal") == "01: Activity: Rough Anal"
 
     def test_activity_keyword_covers_verb_shaped_act_tags(self) -> None:
-        # Found via direct user review: "Kissing" and similar verb/gerund act tags were
-        # wrongly falling to the "01: Category:" fallback.
-        for tag_name in ("Kissing", "Riding", "Ball Sucking", "Gagging", "Ass Worship", "Tickling"):
+        # Found via direct user review: verb/gerund act tags were wrongly falling to the
+        # "01: Category:" fallback. "Kissing" was the original flagged example, but is now
+        # dropped outright per a later round instead (see TestNewSkipsThisRound).
+        for tag_name in ("Riding", "Ball Sucking", "Gagging", "Ass Worship", "Tickling"):
             assert _suggest_new_collection_name(tag_name).startswith("01: Activity: ")
 
-    def test_named_positions_stay_category_not_activity(self) -> None:
-        # Named positions (proper nouns, not verbs) are deliberately left alone.
+    def test_named_positions_are_now_activities(self) -> None:
+        # Reversed by a later direct user correction: named positions are activities after all.
         for tag_name in ("Cowgirl", "Missionary", "Doggy Style"):
-            assert _suggest_new_collection_name(tag_name).startswith("01: Category: ")
+            assert _suggest_new_collection_name(tag_name).startswith("01: Activity: ")
 
     def test_theme_keyword(self) -> None:
         assert _suggest_new_collection_name("Hot Cosplay") == "01: Theme: Hot Cosplay"
@@ -896,7 +1019,7 @@ class TestUnmappedTags:
         tags = [
             {
                 "id": "1",
-                "name": "Kissing",
+                "name": "Gagging",
                 "scene_count": 5,
                 "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "a"}],
             },
@@ -936,7 +1059,7 @@ class TestUnmappedTags:
         report = output.read_text(encoding="utf-8")
         # Subsections are sorted alphabetically: Activity, then Category, then Prop.
         assert report.index("### Activity") < report.index("### Category") < report.index("### Prop")
-        assert report.index("### Activity") < report.index("Kissing")
+        assert report.index("### Activity") < report.index("Gagging")
         assert report.index("### Category") < report.index("Masturbation") < report.index("### Prop")
         assert report.index("### Prop") < report.index("Pink Dildo")
 
