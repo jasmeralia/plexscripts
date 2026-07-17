@@ -9,6 +9,7 @@ from plexadm.plex import (
     add_items,
     add_writer,
     create_smart_collection,
+    lock_title_and_sort_title,
     remove_items,
     rename_collection,
     set_studio,
@@ -20,6 +21,7 @@ def _video(**kwargs: object) -> SimpleNamespace:
         "title": "Test Video",
         "ratingKey": 42,
         "studio": None,
+        "titleSort": None,
         "collections": [],
         "edit": MagicMock(),
         "addWriter": MagicMock(),
@@ -211,6 +213,61 @@ class TestSetStudioAddWriterRenameCreate:
                 rating_key=video.ratingKey,
                 details={"writers": ["Alice", "Bob"]},
             )
+        )
+
+    def test_lock_title_and_sort_title_skips_locked_video(self) -> None:
+        video = _video(collections=[LOCKED_COLLECTION])
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert lock_title_and_sort_title(video) is False
+
+        video.edit.assert_not_called()
+        mock_log.assert_not_called()
+
+    def test_lock_title_and_sort_title_dry_run_makes_no_edit_but_logs_at_debug(self) -> None:
+        video = _video(title="My Title", titleSort="My Title")
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert lock_title_and_sort_title(video, dry_run=True) is True
+
+        video.edit.assert_not_called()
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="lock_title",
+                level="DEBUG",
+                title=video.title,
+                rating_key=video.ratingKey,
+                details={"title": "My Title", "sort_title": "My Title", "dry_run": True},
+            )
+        )
+
+    def test_lock_title_and_sort_title_edits_and_logs(self) -> None:
+        video = _video(title="My Title", titleSort="My Title")
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert lock_title_and_sort_title(video) is True
+
+        video.edit.assert_called_once_with(
+            **{"title.value": "My Title", "title.locked": 1, "titleSort.value": "My Title", "titleSort.locked": 1}
+        )
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="lock_title",
+                title=video.title,
+                rating_key=video.ratingKey,
+                details={"title": "My Title", "sort_title": "My Title"},
+            )
+        )
+
+    def test_lock_title_and_sort_title_falls_back_to_title_when_sort_title_missing(self) -> None:
+        # titleSort is None when Plex hasn't set an explicit sort title yet.
+        video = _video(title="My Title", titleSort=None)
+
+        with patch("plexadm.plex.log_event"):
+            assert lock_title_and_sort_title(video) is True
+
+        video.edit.assert_called_once_with(
+            **{"title.value": "My Title", "title.locked": 1, "titleSort.value": "My Title", "titleSort.locked": 1}
         )
 
     def test_rename_collection_dry_run_makes_no_edit_but_logs_at_debug(self) -> None:

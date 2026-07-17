@@ -149,6 +149,30 @@ def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
     return True
 
 
+def lock_title_and_sort_title(video: Any, *, dry_run: bool = False) -> bool:
+    """Lock title and sort title to their current values, so agent refresh/matching can't
+    silently overwrite manually-curated titles (e.g. merged-duplicate items whose title was
+    picked by hand from among several release names)."""
+    if has_collection(video, LOCKED_COLLECTION):
+        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
+        return False
+    title = str(video.title)
+    sort_title = str(getattr(video, "titleSort", None) or title)
+    if not dry_run:
+        video.edit(**{"title.value": title, "title.locked": 1, "titleSort.value": sort_title, "titleSort.locked": 1})
+    level, details = _mutation_level_and_details(dry_run, {"title": title, "sort_title": sort_title})
+    log_event(
+        AuditEvent(
+            action="lock_title",
+            level=level,
+            title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details=details,
+        )
+    )
+    return True
+
+
 def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) -> bool:
     if has_collection(video, LOCKED_COLLECTION):
         print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))

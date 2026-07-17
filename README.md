@@ -430,6 +430,16 @@ The default collection is `01: Category: PPV`:
 plexadm collection sync-ppv
 ```
 
+### Lock Titles
+
+Lock the title and sort title fields for every item in a collection to their current values, so
+agent refresh/matching can't silently overwrite a manually-picked title (e.g. merged-duplicate
+items whose title was chosen by hand from among several release names):
+
+```bash
+plexadm collection lock-titles "00A: DUPES"
+```
+
 ## Studio Commands
 
 These commands update Plex studio fields immediately.
