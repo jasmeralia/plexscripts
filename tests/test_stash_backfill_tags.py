@@ -480,6 +480,173 @@ class TestAdditionalCategorySynonyms:
             assert _suggested_action(tag_name, set()) == "skip"
 
 
+class TestQualifiedVariantsCollapseIntoTheBaseCollection:
+    # Confirmed by direct user review: "many of these are just '<adjective> <existing tag>'" -
+    # position/qualifier-prefixed or -suffixed variants of an already-tracked act collapse into
+    # it rather than becoming their own new suggested collection.
+    def test_blowjob_cluster(self) -> None:
+        target = "01: Category: Blowjob"
+        for tag_name in (
+            "Standing Blowjob",
+            "Sloppy Blowjob",
+            "Missionary Blowjob",
+            "Cowgirl Blowjob",
+            "Chipmunk Blowjob",
+            "Head Pushing Blowjob",
+            "Hands-free Blowjob",
+            "Inverted Blowjob",
+            "Triple Blowjob",
+            "Dildo Blowjob",
+            "Side Fuck Blowjob",
+            "Spooning Blowjob",
+            "Blowjob Only",
+            "Blowjob - POV",
+            "Blowjob Nose Pinch",
+            "Ball Sucking During Blowjob",
+            "Dick Licking",
+        ):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_rimming_cluster(self) -> None:
+        target = "01: Category: Rimming"
+        for tag_name in ("Rimming Her", "Rimming Him", "Rimming During Sex"):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_massage_cluster(self) -> None:
+        target = "01: Category: Massage"
+        for tag_name in ("Massage Table", "Massage Parlor"):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_69_cluster(self) -> None:
+        target = "01: Category: 69"
+        for tag_name in ("69 Breast Licking", "Standing 69"):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_lesbian_cluster(self) -> None:
+        target = "01: Category: Lesbian"
+        for tag_name in ("Lesbian Action", "Lesbian Character"):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_ass_smacking_merges_into_spanking(self) -> None:
+        assert _suggested_action("Ass Smacking", {"01: Category: Spanking"}) == "merge -> 01: Category: Spanking"
+
+    def test_pussy_smacking_is_unaffected_and_keeps_its_own_activity_suggestion(self) -> None:
+        # Only "Ass Smacking" was confirmed - "Pussy Smacking" wasn't mentioned and keeps
+        # going through the generic "smacking" Activity keyword instead.
+        assert _suggested_action("Pussy Smacking", {"01: Category: Spanking"}) == "add"
+
+    def test_double_x_cluster(self) -> None:
+        assert (
+            _suggested_action("Double Blowjob (2 Mouths)", {"01: Category: Double Blowjob"})
+            == "merge -> 01: Category: Double Blowjob"
+        )
+        assert (
+            _suggested_action("Double Blowjob (2 Penises)", {"01: Category: Double Blowjob"})
+            == "merge -> 01: Category: Double Blowjob"
+        )
+        for tag_name in ("Double Facial", "Double Facial (2 Penises)", "Double Facial (2 Targets)"):
+            assert _suggested_action(tag_name, {"01: Category: Facial"}) == "merge -> 01: Category: Facial"
+        assert (
+            _suggested_action("Double Vaginal Penetration (DVP)", {"01: Category: Double Vaginal"})
+            == "merge -> 01: Category: Double Vaginal"
+        )
+
+    def test_anal_cluster_merges_into_bare_anal(self) -> None:
+        target = "01: Category: Anal"
+        for tag_name in (
+            "All Anal",
+            "Anal Missionary",
+            "Anal Missionary - POV",
+            "Anal Gape",
+            "Anal Reverse Cowgirl",
+            "Anal Doggy Style",
+            "Anal Doggy Style - POV",
+            "Anal Cowgirl",
+            "Anal Cowgirl - POV",
+            "Anal Spooning",
+            "Anal Side Fuck",
+            "Anal Bulldog",
+            "Anal Full Nelson",
+            "Anal Orgasm",
+            "Anal Lazy Reverse Cowgirl",
+            "Anal Squatting Reverse Cowgirl",
+            "Anal Loophole",
+            "Anal Piledriver",
+            "Anal Spit Roast",
+            "Anal Winking",
+            "Anal Hooks",
+            "Anal Stretching",
+        ):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_anal_tags_with_their_own_good_suggestion_are_not_merged(self) -> None:
+        # These already get a specific Activity/Prop suggestion via keyword match - merging them
+        # into bare "Anal" would only lose that specificity, and wasn't part of what was
+        # confirmed.
+        for tag_name in ("Anal Fingering", "Anal Toys", "Anal Fisting", "Anal Squirting", "Anal Dildo"):
+            assert _suggested_action(tag_name, {"01: Category: Anal"}) == "add"
+
+    def test_multi_target_pairs(self) -> None:
+        assert (
+            _suggested_action("Rimming (Lesbian)", {"01: Category: Lesbian", "01: Category: Rimming"})
+            == "merge -> 01: Category: Lesbian + 01: Category: Rimming"
+        )
+        assert (
+            _suggested_action("Rimming During Blowjob", {"01: Category: Rimming", "01: Category: Blowjob"})
+            == "merge -> 01: Category: Rimming + 01: Category: Blowjob"
+        )
+        assert (
+            _suggested_action("Anal Prone Bone", {"01: Category: Anal", "01: Category: Prone Bone"})
+            == "merge -> 01: Category: Anal + 01: Category: Prone Bone"
+        )
+
+    def test_forward_declared_multi_targets_do_not_fire_until_masturbation_is_real(self) -> None:
+        # "Masturbation" isn't a real collection yet - these stay "add" until it is, then
+        # activate automatically on a future run.
+        assert _suggested_action("Anal Masturbation", {"01: Category: Anal"}) == "add"
+        assert _suggested_action("Self Pussy Fingering", {"01: Category: Fingering"}) == "add"
+        assert (
+            _suggested_action("Anal Masturbation", {"01: Category: Anal", "01: Category: Masturbation"})
+            == "merge -> 01: Category: Anal + 01: Category: Masturbation"
+        )
+        assert (
+            _suggested_action("Self Pussy Fingering", {"01: Category: Masturbation", "01: Category: Fingering"})
+            == "merge -> 01: Category: Masturbation + 01: Category: Fingering"
+        )
+        # Substring match also covers the "During Sex" sibling for free.
+        assert (
+            _suggested_action(
+                "Self Pussy Fingering During Sex", {"01: Category: Masturbation", "01: Category: Fingering"}
+            )
+            == "merge -> 01: Category: Masturbation + 01: Category: Fingering"
+        )
+
+    def test_bare_foursome_merges_into_orgy_without_catching_variants(self) -> None:
+        assert _suggested_action("Foursome", {"01: Category: Orgy"}) == "merge -> 01: Category: Orgy"
+        # Exact match only - the specific gender-ratio variants must not be caught by this.
+        assert _suggested_action("Foursome (BBGG)", {"01: Category: Orgy"}) == "merge -> 01: Category: Orgy"
+        # "Foursome (BBBG)" has its own target (Gangbang) - if only Orgy exists, it stays "add"
+        # rather than wrongly falling back to the bare "Foursome" -> Orgy rule.
+        assert _suggested_action("Foursome (BBBG)", {"01: Category: Orgy"}) == "add"
+
+
+class TestNewSkipsThisRound:
+    def test_prolapse_is_skipped_not_activity(self) -> None:
+        assert _suggested_action("Prolapse", set()) == "skip"
+
+    def test_award_winner_is_skipped_regardless_of_year(self) -> None:
+        for tag_name in (
+            "Award Winner (AVN Award 2016)",
+            "Award Winner (AVN Award 2025)",
+        ):
+            assert _suggested_action(tag_name, set()) == "skip"
+        # "Award Winning" is a different word/tag and wasn't asked to be excluded.
+        assert _suggested_action("Award Winning", set()) == "add"
+
+    def test_armpit_fetish_is_skipped(self) -> None:
+        assert _suggested_action("Armpit Fetish", set()) == "skip"
+
+
 class TestCompositionNewCollectionOverrides:
     def test_lesbian_headcount_variants_route_to_new_dedicated_collections(self) -> None:
         assert _suggest_new_collection_name("Twosome (Lesbian)") == "01: Composition: FF Only"
@@ -542,6 +709,17 @@ class TestSuggestNewCollectionName:
     def test_cumshot_takes_priority_over_other_matches(self) -> None:
         # Contains both a cumshot word ("creampie") and a composition word ("gangbang").
         assert _suggest_new_collection_name("Gangbang Creampie") == "01: Cumshot: Gangbang Creampie"
+
+    def test_attributes_keyword(self) -> None:
+        for tag_name in ("Navel Piercing", "Tattoos & Piercings", "Tanned Skin", "Heavily Tattooed"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Attributes: ")
+
+    def test_daisy_chain_is_activity_not_composition(self) -> None:
+        assert _suggest_new_collection_name("Daisy Chain") == "01: Activity: Daisy Chain"
+
+    def test_skirt_is_prop(self) -> None:
+        for tag_name in ("Plaid Skirt", "Short Skirt", "Pleated Skirt"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Prop: ")
 
 
 class TestUnmappedTags:

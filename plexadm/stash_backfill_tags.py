@@ -179,7 +179,10 @@ _HAIR_MERGE_KEYWORDS: dict[str, str] = {
     "white": "01: Hair: White",
 }
 
-_SKIP_MARKER_WORDS = {"4k", "8k", "1080p", "720p", "fps", "hdr", "vr", "available"}
+# "winner" (not "winning" - a different word/token) catches all the "Award Winner (AVN Award
+# YYYY)" variants regardless of year in one go, without catching "Award Winning" (which wasn't
+# asked to be excluded). Confirmed by direct user review of the live report.
+_SKIP_MARKER_WORDS = {"4k", "8k", "1080p", "720p", "fps", "hdr", "vr", "available", "winner"}
 
 # Generic body-type descriptors - not technical metadata like _SKIP_MARKER_WORDS, but equally
 # not worth a dedicated collection: the current taxonomy has no body-build or hair-length axis,
@@ -216,8 +219,8 @@ _SKIP_EXACT_TAG_NAMES = {
     "exclusive",
     "straight",
     # Furniture - the user doesn't care about tracking it as a collection. Exact-name only:
-    # "Massage Table" and "Countertop" describe a specific act/setting, not bare furniture, and
-    # weren't part of what was confirmed.
+    # "Countertop" describes a specific setting, not bare furniture, and wasn't part of what was
+    # confirmed. "Massage Table" is handled as a merge into Massage instead - see below.
     "bedroom",
     "chair",
     "couch",
@@ -256,6 +259,10 @@ _SKIP_EXACT_TAG_NAMES = {
     "venezuelan",
     "italian",
     "german",
+    # Confirmed by direct user review of the live report: not content the user is ever looking
+    # to watch/browse by.
+    "prolapse",
+    "armpit fetish",
 }
 
 _HAIR_CONTEXT_WORDS = {"hair", "haired"}
@@ -337,6 +344,64 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     "sixsome (bbbbgg)": "01: Category: Orgy",
     "asian woman": "01: Category: Asian",
     "black woman": "01: Category: Ebony",
+    # Position/qualifier-prefixed or -suffixed variants of an already-tracked act collapse into
+    # it - the position/qualifier itself isn't a distinct tracked axis. Confirmed by direct user
+    # review ("many of these are just '<adjective> <existing tag>'"): Blowjob, Rimming, Massage,
+    # and 69 clusters below. Substring matching deliberately covers the "- POV" siblings of each
+    # for free (e.g. "anal missionary" also matches "Anal Missionary - POV").
+    "standing blowjob": "01: Category: Blowjob",
+    "sloppy blowjob": "01: Category: Blowjob",
+    "missionary blowjob": "01: Category: Blowjob",
+    "cowgirl blowjob": "01: Category: Blowjob",
+    "chipmunk blowjob": "01: Category: Blowjob",
+    "head pushing blowjob": "01: Category: Blowjob",
+    "hands-free blowjob": "01: Category: Blowjob",
+    "inverted blowjob": "01: Category: Blowjob",
+    "triple blowjob": "01: Category: Blowjob",
+    "dildo blowjob": "01: Category: Blowjob",
+    "side fuck blowjob": "01: Category: Blowjob",
+    "spooning blowjob": "01: Category: Blowjob",
+    "blowjob only": "01: Category: Blowjob",
+    "blowjob - pov": "01: Category: Blowjob",
+    "blowjob nose pinch": "01: Category: Blowjob",
+    "ball sucking during blowjob": "01: Category: Blowjob",
+    "dick licking": "01: Category: Blowjob",
+    "rimming her": "01: Category: Rimming",
+    "rimming him": "01: Category: Rimming",
+    "rimming during sex": "01: Category: Rimming",
+    "massage table": "01: Category: Massage",
+    "massage parlor": "01: Category: Massage",
+    "69 breast licking": "01: Category: 69",
+    "standing 69": "01: Category: 69",
+    "lesbian action": "01: Category: Lesbian",
+    "lesbian character": "01: Category: Lesbian",
+    "ass smacking": "01: Category: Spanking",
+    "double blowjob": "01: Category: Double Blowjob",
+    "double facial": "01: Category: Facial",
+    "double vaginal penetration": "01: Category: Double Vaginal",
+    "all anal": "01: Category: Anal",
+    # "Anal X" where X isn't itself independently tracked - single-target merge into Anal.
+    # "Anal Fingering"/"Anal Toys"/"Anal Fisting"/etc. are deliberately excluded here since they
+    # already get a good, specific Activity/Prop suggestion instead - not part of what was
+    # confirmed, and merging them here would only lose that specificity.
+    "anal missionary": "01: Category: Anal",
+    "anal gape": "01: Category: Anal",
+    "anal reverse cowgirl": "01: Category: Anal",
+    "anal doggy style": "01: Category: Anal",
+    "anal cowgirl": "01: Category: Anal",
+    "anal spooning": "01: Category: Anal",
+    "anal side fuck": "01: Category: Anal",
+    "anal bulldog": "01: Category: Anal",
+    "anal full nelson": "01: Category: Anal",
+    "anal orgasm": "01: Category: Anal",
+    "anal lazy reverse cowgirl": "01: Category: Anal",
+    "anal squatting reverse cowgirl": "01: Category: Anal",
+    "anal loophole": "01: Category: Anal",
+    "anal piledriver": "01: Category: Anal",
+    "anal spit roast": "01: Category: Anal",
+    "anal winking": "01: Category: Anal",
+    "anal hooks": "01: Category: Anal",
+    "anal stretching": "01: Category: Anal",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
@@ -347,6 +412,15 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     "open mouth facial": ["01: Category: Cum In Mouth", "01: Category: Facial"],
     # "Blowbang would be Gangbang+Blowjob and likely Orgy" - the user's own description.
     "blowbang": ["01: Category: Gangbang", "01: Category: Blowjob", "01: Category: Orgy"],
+    "rimming (lesbian)": ["01: Category: Lesbian", "01: Category: Rimming"],
+    "rimming during blowjob": ["01: Category: Rimming", "01: Category: Blowjob"],
+    "anal prone bone": ["01: Category: Anal", "01: Category: Prone Bone"],
+    # These two targets don't exist yet ("Masturbation" is itself only a suggested new
+    # collection today - see the bare "Masturbation" Add row) - won't fire as a merge until it's
+    # created, since both targets are required to exist. Forward-declared anyway so it activates
+    # automatically on a future run rather than needing to be re-added later.
+    "anal masturbation": ["01: Category: Anal", "01: Category: Masturbation"],
+    "self pussy fingering": ["01: Category: Masturbation", "01: Category: Fingering"],
 }
 
 # Exact whole-tag-name (not substring) merges: "black" alone is too short/common a substring to
@@ -355,6 +429,10 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
 # checks. Confirmed by direct user review: Ebony and Asian are the only two ethnicities tracked.
 _EXACT_MATCH_MERGE_PHRASES: dict[str, str] = {
     "black": "01: Category: Ebony",
+    # Bare "Foursome" (no gender-ratio qualifier) - exact match, not substring, so it doesn't
+    # swallow the specific "Foursome (BBGG)"/"(BGGG)"/"(BBBG)"/"(Lesbian)" variants, which route
+    # elsewhere. Confirmed by direct user request.
+    "foursome": "01: Category: Orgy",
 }
 
 # New Composition collections the user wants (not yet real Plex collections, so these can't go
@@ -427,7 +505,7 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
 
 _CUMSHOT_KEYWORDS = frozenset({"cum", "creampie", "bukkake", "facial", "swallow", "throatpie", "cumshot"})
 _COMPOSITION_KEYWORDS = frozenset(
-    {"solo", "gangbang", "orgy", "threesome", "foursome", "mmf", "ffm", "fffm", "fff", "daisy", "chain", "trio"}
+    {"solo", "gangbang", "orgy", "threesome", "foursome", "mmf", "ffm", "fffm", "fff", "trio"}
 )
 _PROP_KEYWORDS = frozenset(
     {
@@ -472,6 +550,10 @@ _PROP_KEYWORDS = frozenset(
         "sybian",
         "gag",
         "gags",
+        # Confirmed by direct user correction (Plaid Miniskirt is a Prop, not a Theme) - worn
+        # clothing item, same reasoning as the fetish attire above.
+        "skirt",
+        "miniskirt",
     }
 )
 _ACTIVITY_KEYWORDS = frozenset(
@@ -518,12 +600,15 @@ _ACTIVITY_KEYWORDS = frozenset(
         "pinching",
         "pulling",
         "insertion",
-        "prolapse",
         "worship",
         "tickling",
         "flashing",
         "twerking",
         "gripping",
+        # Confirmed by direct user correction: Daisy Chain is an activity, not a composition
+        # (moved out of _COMPOSITION_KEYWORDS).
+        "daisy",
+        "chain",
     }
 )
 _THEME_KEYWORDS = frozenset(
@@ -551,17 +636,27 @@ _THEME_KEYWORDS = frozenset(
     }
 )
 
+# Performer/content attributes (ethnicity, piercings, skin tone, body art) - a descriptive
+# property of the content rather than an act, object, or theme. Confirmed by direct user
+# request ("piercings, asian/ebony, porcelain skin, etc."). "asian"/"ebony" aren't included here
+# since those are handled by the dedicated merge phrases above (targeting the two real
+# collections directly) - every other ethnicity/nationality word is skipped outright instead of
+# reaching this classifier at all.
+_ATTRIBUTES_KEYWORDS = frozenset({"piercing", "piercings", "skin", "tattoo", "tattoos", "tattooed"})
+
 # Checked in this order - some words plausibly fit more than one bucket (e.g. "throatpie" is
-# cum-related first, act-related second), so priority matters. "01: Hair:" is deliberately not
-# a target here: a tag reaching this function had no merge match against any existing hair
-# collection, and inventing a 12th hair-color collection from a keyword guess is a bigger claim
-# than this heuristic should make - left as a plain "add" with no special prefix instead.
+# cum-related first, act-related second), so priority matters. Attributes is checked last since
+# it's the most general/descriptive bucket. "01: Hair:" is deliberately not a target here: a tag
+# reaching this function had no merge match against any existing hair collection, and inventing
+# a 12th hair-color collection from a keyword guess is a bigger claim than this heuristic should
+# make - left as a plain "add" with no special prefix instead.
 _NEW_PREFIX_KEYWORD_GROUPS: list[tuple[str, frozenset[str]]] = [
     ("01: Cumshot: ", _CUMSHOT_KEYWORDS),
     ("01: Composition: ", _COMPOSITION_KEYWORDS),
     ("01: Prop: ", _PROP_KEYWORDS),
     ("01: Activity: ", _ACTIVITY_KEYWORDS),
     ("01: Theme: ", _THEME_KEYWORDS),
+    ("01: Attributes: ", _ATTRIBUTES_KEYWORDS),
 ]
 
 
@@ -626,7 +721,8 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Cum on Feet": "01: Cumshot: Cum on Feet",
     "01: Category: Cum on Stomach": "01: Cumshot: Cum on Stomach",
     "01: Category: Custom": "01: Theme: Custom",
-    "01: Category: Daisy Chain": "01: Composition: Daisy Chain",
+    # Confirmed by direct user correction: Daisy Chain is an activity, not a composition.
+    "01: Category: Daisy Chain": "01: Activity: Daisy Chain",
     "01: Category: Deepthroat": "01: Activity: Deepthroat",
     # Double Anal/Blowjob/Penetration/Vaginal describe an act performed on/by a specific
     # partner count, closer to Composition than plain Activity - but none of these are in the
@@ -678,7 +774,8 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Painal": "01: Activity: Painal",
     "01: Category: Panty Stuffing": "01: Prop: Panty Stuffing",
     "01: Category: Pee": "01: Activity: Pee",
-    "01: Category: Plaid Miniskirt": "01: Theme: Plaid Miniskirt",
+    # Confirmed by direct user correction: this is a worn item, i.e. a Prop, not a Theme.
+    "01: Category: Plaid Miniskirt": "01: Prop: Plaid Miniskirt",
     "01: Category: Prone Bone": "01: Activity: Prone Bone",
     "01: Category: Pussy Eating": "01: Activity: Pussy Eating",
     "01: Category: Pussy Spanking": "01: Activity: Pussy Spanking",
@@ -697,25 +794,30 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
     "01: Category: Teacher/Tutor": "01: Theme: Teacher/Student",
     "01: Category: Throatpie": "01: Cumshot: Throatpie",
     "01: Category: Tit Fucking": "01: Activity: Tit Fucking",
-    "01: Category: Trans MTF": "01: Composition: Trans MTF",
+    # Trans MTF deliberately has no entry here - confirmed by direct user correction that it
+    # stays plain Category, not Composition, so no rename is needed at all.
     "01: Category: Tribbing": "01: Activity: Tribbing",
     "01: Category: Triple Anal": "01: Activity: Triple Anal",
     "01: Category: Vaginal Creampie": "01: Cumshot: Vaginal Creampie",
     "01: Category: Voyeurism": "01: Theme: Voyeurism",
     "01: Category: Water": "01: Activity: Water",
+    # New "01: Attributes:" bucket for performer/content attributes that don't fit any
+    # act/object/theme bucket - confirmed by direct user request ("piercings, asian/ebony,
+    # porcelain skin, etc.").
+    "01: Category: Asian": "01: Attributes: Asian",
+    "01: Category: Ebony": "01: Attributes: Ebony",
+    "01: Category: Porcelain Skin": "01: Attributes: Porcelain Skin",
+    "01: Category: Pierced Nipples": "01: Attributes: Pierced Nipples",
+    "01: Category: Pierced Tongue": "01: Attributes: Pierced Tongue",
+    "01: Category: Pierced Vagina": "01: Attributes: Pierced Vagina",
 }
 
 # Existing "01: Category:" collections deliberately left out of _EXISTING_CATEGORY_RENAMES -
-# none of Cumshot/Composition/Prop/Activity/Theme fit cleanly, for the reason noted per entry.
+# none of Cumshot/Composition/Prop/Activity/Theme/Attributes fit cleanly, for the reason noted
+# per entry.
 _UNCLASSIFIED_CATEGORY_NOTES: dict[str, str] = {
-    "01: Category: Asian": "ethnicity descriptor, not a fit for any current bucket",
     "01: Category: Beautiful Agony": "looks like it may actually be a studio/brand name, not a content category - worth checking before any rename",
-    "01: Category: Ebony": "ethnicity descriptor, not a fit for any current bucket",
     "01: Category: Non-Sexual": "content-type flag (also appears in EXCLUDED_MONEYSHOT_COLLECTIONS for the same reason), not a content descriptor itself",
-    "01: Category: Pierced Nipples": "body modification, not a fit for any current bucket - possibly wants its own future prefix alongside Hair, e.g. Piercing",
-    "01: Category: Pierced Tongue": "body modification, same note as Pierced Nipples",
-    "01: Category: Pierced Vagina": "body modification, same note as Pierced Nipples",
-    "01: Category: Porcelain Skin": "skin complexion, similar situation to hair color but no existing bucket for it",
     "01: Category: Short Videos": "video format/length, not a content descriptor",
     "01: Category: Vertical Video": "video format/orientation, not a content descriptor",
 }
