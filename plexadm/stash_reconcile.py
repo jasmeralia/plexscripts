@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import csv
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -72,8 +73,14 @@ def reconcile(args: Any) -> int:
             "No Stash endpoint configured. Add stashEndpoint to your config file or pass --stash-endpoint."
         )
 
-    print(info("Connecting to Stash and building scene index..."))
     stash = StashClient(endpoint)
+
+    if not getattr(args, "skip_scan", False):
+        print(info("Scanning Stash library (with phash generation) before reconciling..."))
+        stash.scan()
+        print(ok("Stash scan complete."))
+
+    print(info("Connecting to Stash and building scene index..."))
     stash_index = stash.all_scenes()  # path -> scene dict
     stash_scenes_by_id: dict[str, dict[str, Any]] = {s["id"]: s for s in stash_index.values()}
     print(info(f"Stash: {len(stash_scenes_by_id)} scenes across {len(stash_index)} paths"))
@@ -86,9 +93,20 @@ def reconcile(args: Any) -> int:
     processed = 0
 
     print(info("Scanning Plex library..."))
-    for video in plex_ctx.all_videos():
+    videos = plex_ctx.all_videos()
+    total = len(videos)
+    last_progress_at = time.monotonic()
+    progress_interval = float(getattr(args, "progress_interval", 60) or 60)
+
+    for loop_index, video in enumerate(videos, start=1):
         if limit is not None and processed >= limit:
             break
+
+        now = time.monotonic()
+        if now - last_progress_at >= progress_interval:
+            percent = (loop_index / total * 100) if total else 0.0
+            print(info(f"{loop_index}/{total} - {percent:.1f}%"))
+            last_progress_at = now
 
         reload_if_partial(video)
         locations = list(getattr(video, "locations", None) or [])

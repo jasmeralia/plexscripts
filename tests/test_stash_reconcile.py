@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from plexadm.stash_reconcile import _collection_to_tag, _has_usable_metadata
+import pytest
+
+from plexadm import stash_reconcile
+from plexadm.stash_reconcile import _collection_to_tag, _has_usable_metadata, reconcile
 
 
 def _mock_video(**kwargs: object) -> SimpleNamespace:
@@ -121,6 +125,78 @@ class TestStashClientCaching:
         result = client.find_or_create_performer("New Star")
         assert result == "88"
         assert client._performer_cache["New Star"] == "88"
+
+
+class TestReconcileScanGating:
+    def _fake_args(self, tmp_path: Path, **overrides: object) -> SimpleNamespace:
+        defaults: dict[str, object] = {
+            "config": None,
+            "stash_endpoint": "http://stash.example.com",
+            "limit": None,
+            "path": None,
+            "log_level": "WARNING",
+            "csv_output": str(tmp_path / "scope.csv"),
+            "skip_scan": False,
+        }
+        defaults.update(overrides)
+        return SimpleNamespace(**defaults)
+
+    def _run(self, tmp_path: Path, **arg_overrides: object) -> MagicMock:
+        fake_stash = MagicMock()
+        fake_stash.all_scenes.return_value = {}
+        fake_plex_ctx = MagicMock()
+        fake_plex_ctx.all_videos.return_value = []
+
+        with (
+            patch.object(stash_reconcile, "load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch.object(stash_reconcile, "StashClient", return_value=fake_stash),
+            patch.object(stash_reconcile, "PlexContext", return_value=fake_plex_ctx),
+        ):
+            result = reconcile(self._fake_args(tmp_path, **arg_overrides))
+
+        assert result == 0
+        return fake_stash
+
+    def test_default_triggers_scan_before_indexing(self, tmp_path: Path) -> None:
+        fake_stash = self._run(tmp_path)
+        fake_stash.scan.assert_called_once_with()
+        fake_stash.all_scenes.assert_called_once_with()
+
+    def test_skip_scan_flag_bypasses_scan(self, tmp_path: Path) -> None:
+        fake_stash = self._run(tmp_path, skip_scan=True)
+        fake_stash.scan.assert_not_called()
+        fake_stash.all_scenes.assert_called_once_with()
+
+
+class TestReconcileProgress:
+    def test_prints_progress_at_time_intervals(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        fake_stash = MagicMock()
+        fake_stash.all_scenes.return_value = {}
+        fake_plex_ctx = MagicMock()
+        fake_plex_ctx.all_videos.return_value = [SimpleNamespace(title=f"Video {i}", locations=[]) for i in range(1, 4)]
+        args = SimpleNamespace(
+            config=None,
+            stash_endpoint="http://stash.example.com",
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            csv_output=str(tmp_path / "scope.csv"),
+            skip_scan=True,
+        )
+
+        with (
+            patch.object(stash_reconcile, "load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch.object(stash_reconcile, "StashClient", return_value=fake_stash),
+            patch.object(stash_reconcile, "PlexContext", return_value=fake_plex_ctx),
+            patch.object(stash_reconcile.time, "monotonic", side_effect=[0, 100, 110, 120]),
+        ):
+            result = reconcile(args)  # type: ignore[arg-type]
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "1/3 - 33.3%" in out
+        assert "2/3 -" not in out
+        assert "3/3 -" not in out
 
 
 class TestRatingConversion:

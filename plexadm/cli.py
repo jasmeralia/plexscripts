@@ -1763,6 +1763,11 @@ def _build_stash_commands(sub: Any) -> None:
             "still need enrichment (matched with no Plex data, or Stash scenes with\n"
             "no Plex match at all).\n"
             "\n"
+            "By default, triggers a Stash library scan (with phash generation) first\n"
+            "and waits for it to finish, so newly-added Plex content is guaranteed to\n"
+            "already be visible in Stash before matching starts. Use --skip-scan if\n"
+            "you already scanned Stash yourself and want a faster run.\n"
+            "\n"
             "Writes are applied immediately. Use --limit for a test run against a\n"
             "small subset before pointing this at the full library."
         ),
@@ -1770,7 +1775,8 @@ def _build_stash_commands(sub: Any) -> None:
             "Examples:\n"
             "  plexadm stash reconcile --limit 25\n"
             "  plexadm stash reconcile --log-level INFO\n"
-            "  plexadm stash reconcile --csv-output scope.csv"
+            "  plexadm stash reconcile --csv-output scope.csv\n"
+            "  plexadm stash reconcile --skip-scan"
         ),
     )
     reconcile_parser.add_argument(
@@ -1804,6 +1810,13 @@ def _build_stash_commands(sub: Any) -> None:
         default="stash_scope.csv",
         dest="csv_output",
         help="Path for the scope CSV export (default: stash_scope.csv).",
+    )
+    reconcile_parser.add_argument(
+        "--skip-scan",
+        action="store_true",
+        dest="skip_scan",
+        help="Skip the automatic Stash library scan (with phash generation) that normally "
+        "runs before reconciling. Use if you already scanned Stash yourself.",
     )
     set_func(reconcile_parser, stash_reconcile)
 
