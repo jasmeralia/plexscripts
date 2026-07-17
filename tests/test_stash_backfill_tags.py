@@ -42,76 +42,78 @@ def _mock_video(**kwargs: object) -> SimpleNamespace:
 
 class TestClassifyScene:
     def test_empty_stash_signal_returns_none(self) -> None:
-        assert classify_scene(set(), {"Category: Solo"}) is None
+        assert classify_scene(set(), {"Composition: Solo"}) is None
 
     def test_clean_single_group_signal_adds_missing_tag(self) -> None:
-        decision = classify_scene({"Category: Solo"}, set())
+        decision = classify_scene({"Composition: Solo"}, set())
 
         assert decision is not None
-        assert decision.adds == ["Category: Solo"]
+        assert decision.adds == ["Composition: Solo"]
         assert decision.remove_candidates == []
         assert decision.ambiguous_reason is None
 
     def test_solo_signal_flags_existing_lesbian_membership(self) -> None:
         decision = classify_scene(
-            {"Category: Solo"},
-            {"Category: Solo", "Category: Lesbian"},
+            {"Composition: Solo"},
+            {"Composition: Solo", "Composition: Lesbian"},
         )
 
         assert decision is not None
         assert decision.adds == []
-        assert decision.remove_candidates == ["Category: Lesbian"]
+        assert decision.remove_candidates == ["Composition: Lesbian"]
         assert decision.ambiguous_reason is None
 
     def test_ffm_and_lesbian_are_compatible(self) -> None:
         assert (
             classify_scene(
-                {"Category: FFM", "Category: Lesbian"},
-                {"Category: FFM", "Category: Lesbian"},
+                {"Composition: FFM", "Composition: Lesbian"},
+                {"Composition: FFM", "Composition: Lesbian"},
             )
             is None
         )
 
     def test_multiple_single_female_tags_are_ambiguous(self) -> None:
-        decision = classify_scene({"Category: Solo", "Category: MF Only"}, set())
+        decision = classify_scene({"Composition: Solo", "Composition: MF Only"}, set())
 
         assert decision is not None
         assert decision.adds == []
         assert decision.remove_candidates == []
-        assert decision.ambiguous_reason == ("multiple single-female tags: ['Category: MF Only', 'Category: Solo']")
+        assert decision.ambiguous_reason == (
+            "multiple single-female tags: ['Composition: MF Only', 'Composition: Solo']"
+        )
 
     def test_cross_axis_tags_are_ambiguous(self) -> None:
-        decision = classify_scene({"Category: Solo", "Category: FFM"}, set())
+        decision = classify_scene({"Composition: Solo", "Composition: FFM"}, set())
 
         assert decision is not None
         assert decision.adds == []
         assert decision.remove_candidates == []
-        assert decision.ambiguous_reason == "cross-axis: ['Category: Solo'] + ['Category: FFM']"
+        assert decision.ambiguous_reason == "cross-axis: ['Composition: Solo'] + ['Composition: FFM']"
 
     def test_multiple_headcount_tags_are_ambiguous(self) -> None:
-        decision = classify_scene({"Category: FFM", "Category: FFFM"}, set())
+        decision = classify_scene({"Composition: FFM", "Composition: FFFM"}, set())
 
         assert decision is not None
         assert decision.ambiguous_reason == (
-            "multiple multi-female headcount tags: ['Category: FFFM', 'Category: FFM']"
+            "multiple multi-female headcount tags: ['Composition: FFFM', 'Composition: FFM']"
         )
 
     def test_matching_stash_and_plex_tags_return_none(self) -> None:
-        assert classify_scene({"Category: MF Only"}, {"Category: MF Only"}) is None
+        assert classify_scene({"Composition: MF Only"}, {"Composition: MF Only"}) is None
 
     def test_lesbian_only_does_not_contradict_plex_headcount(self) -> None:
-        decision = classify_scene({"Category: Lesbian"}, {"Category: FFM"})
+        decision = classify_scene({"Composition: Lesbian"}, {"Composition: FFM"})
 
         assert decision is not None
-        assert decision.adds == ["Category: Lesbian"]
+        assert decision.adds == ["Composition: Lesbian"]
         assert decision.remove_candidates == []
 
     def test_headcount_signal_replaces_other_plex_headcount(self) -> None:
-        decision = classify_scene({"Category: FFM"}, {"Category: FFFM"})
+        decision = classify_scene({"Composition: FFM"}, {"Composition: FFFM"})
 
         assert decision is not None
-        assert decision.adds == ["Category: FFM"]
-        assert decision.remove_candidates == ["Category: FFFM"]
+        assert decision.adds == ["Composition: FFM"]
+        assert decision.remove_candidates == ["Composition: FFFM"]
 
 
 class TestTagCollectionMapping:
@@ -124,24 +126,25 @@ class TestTagCollectionMapping:
     def test_stash_tags_are_limited_to_composition_scope(self) -> None:
         scene = {
             "tags": [
-                {"id": "1", "name": "Category: Solo"},
+                {"id": "1", "name": "Composition: Solo"},
                 {"id": "2", "name": "Category: Blowjob"},
             ]
         }
 
-        assert _stash_tags_in_scope(scene, COMPOSITION_TAGS) == {"Category: Solo"}
+        assert _stash_tags_in_scope(scene, COMPOSITION_TAGS) == {"Composition: Solo"}
 
     def test_plex_collections_are_limited_to_composition_scope(self) -> None:
-        video = _mock_video(collections=["01: Category: Solo", "01: Category: Blowjob", "99: LOCKED"])
+        video = _mock_video(collections=["01: Composition: Solo", "01: Category: Blowjob", "99: LOCKED"])
 
-        assert _plex_tags_in_scope(video, COMPOSITION_TAGS) == {"Category: Solo"}
+        assert _plex_tags_in_scope(video, COMPOSITION_TAGS) == {"Composition: Solo"}
 
 
 class TestCompositionTagRenames:
     def test_covers_exactly_the_composition_tags_classify_scene_reads(self) -> None:
-        # Derived from _EXISTING_CATEGORY_RENAMES, restricted to COMPOSITION_TAGS - must never
-        # drift from the set classify_scene() actually intersects against.
-        assert set(_COMPOSITION_TAG_RENAMES) == COMPOSITION_TAGS
+        # Derived from _EXISTING_CATEGORY_RENAMES, restricted by the *new* name landing in
+        # COMPOSITION_TAGS - must never drift from the set classify_scene() actually intersects
+        # against.
+        assert set(_COMPOSITION_TAG_RENAMES.values()) == COMPOSITION_TAGS
 
     def test_excludes_composition_collections_outside_classify_scene_scope(self) -> None:
         # FFT and Orgy are deferred alongside the real composition tags in
@@ -1266,11 +1269,11 @@ class TestBackfillIntegration:
         scene = {
             "id": "7",
             "files": [{"path": path}],
-            "tags": [{"id": "1", "name": "Category: Solo"}],
+            "tags": [{"id": "1", "name": "Composition: Solo"}],
         }
         stash = MagicMock()
         stash.all_scenes.return_value = {path: scene}
-        collection = SimpleNamespace(title="01: Category: Solo")
+        collection = SimpleNamespace(title="01: Composition: Solo")
         plex_ctx = MagicMock()
         plex_ctx.all_videos.return_value = [video]
         plex_ctx.collection.return_value = collection
@@ -1297,19 +1300,19 @@ class TestBackfillIntegration:
         assert _load_review(args.review_output) == []
         report = args.report_output.read_text(encoding="utf-8")
         assert "Mode: DRY RUN (no Plex changes made)" in report
-        assert "| 01: Category: Solo | 1 |" in report
+        assert "| 01: Composition: Solo | 1 |" in report
         assert "_No ambiguous scenes this run._" in report
 
     def test_remove_candidates_are_only_written_to_review(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
         video = _mock_video(
             locations=[path],
-            collections=["01: Category: Solo", "01: Category: Lesbian"],
+            collections=["01: Composition: Solo", "01: Composition: Lesbian"],
         )
         scene = {
             "id": "7",
             "files": [{"path": path}],
-            "tags": [{"id": "1", "name": "Category: Solo"}],
+            "tags": [{"id": "1", "name": "Composition: Solo"}],
         }
         stash = MagicMock()
         stash.all_scenes.return_value = {path: scene}
@@ -1340,7 +1343,7 @@ class TestBackfillIntegration:
         review = _load_review(args.review_output)
         assert len(review) == 1
         assert review[0]["action"] == "remove_candidate"
-        assert review[0]["collection_to_remove"] == "01: Category: Lesbian"
+        assert review[0]["collection_to_remove"] == "01: Composition: Lesbian"
         report = args.report_output.read_text(encoding="utf-8")
         assert "Mode: APPLIED" in report
         assert "## Composition additions by collection" not in report
@@ -1353,8 +1356,8 @@ class TestBackfillIntegration:
             "id": "7",
             "files": [{"path": path}],
             "tags": [
-                {"id": "1", "name": "Category: Solo"},
-                {"id": "2", "name": "Category: FFM"},
+                {"id": "1", "name": "Composition: Solo"},
+                {"id": "2", "name": "Composition: FFM"},
             ],
         }
         stash = MagicMock()
@@ -1383,7 +1386,7 @@ class TestBackfillIntegration:
         add_items.assert_not_called()
         report = args.report_output.read_text(encoding="utf-8")
         assert "| Title | Reason |" in report
-        assert "| Scene \\| One | cross-axis: ['Category: Solo'] + ['Category: FFM'] |" in report
+        assert "| Scene \\| One | cross-axis: ['Composition: Solo'] + ['Composition: FFM'] |" in report
         assert "Ambiguous matches staged for review: 1" in report
 
     def test_apply_review_uses_remove_helper_with_dry_run(self, tmp_path: Path) -> None:

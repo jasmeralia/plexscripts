@@ -23,18 +23,18 @@ HAIR_COLLECTIONS = frozenset(EXCLUDED_HAIR_COLLECTIONS)
 HAIR_TAGS = frozenset(tag for collection in HAIR_COLLECTIONS if (tag := _collection_to_tag(collection)) is not None)
 
 GROUP_SINGLE_FEMALE = {
-    "Category: Solo",
-    "Category: MF Only",
-    "Category: MMF",
-    "Category: Gangbang",
+    "Composition: Solo",
+    "Composition: MF Only",
+    "Composition: MMF",
+    "Composition: Gangbang",
 }
 GROUP_MULTI_FEMALE_HEADCOUNT = {
-    "Category: FFM",
-    "Category: FFFM",
-    "Category: Reverse Gangbang",
-    "Category: FFF+",
+    "Composition: FFM",
+    "Composition: FFFM",
+    "Composition: Reverse Gangbang",
+    "Composition: FFF+",
 }
-GROUP_MULTI_FEMALE_ACTIVITY = {"Category: Lesbian"}
+GROUP_MULTI_FEMALE_ACTIVITY = {"Composition: Lesbian"}
 COMPOSITION_TAGS = frozenset(GROUP_SINGLE_FEMALE | GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY)
 
 
@@ -1006,11 +1006,15 @@ _EXISTING_CATEGORY_RENAMES: dict[str, str] = {
 # side. Composition collections outside COMPOSITION_TAGS (FFT, Orgy) aren't read by
 # classify_scene() at all, so they don't need a Stash tag rename and are correctly excluded here
 # - only Plex-side renaming (via rename-categories --include-composition) applies to them.
+#
+# Filters on the *new* (post-rename) tag being in COMPOSITION_TAGS, not the old one -
+# GROUP_SINGLE_FEMALE/etc. hold the new "Composition: X" names (classify_scene() only ever needs
+# to recognize live data), so filtering on the old name would find nothing.
 _COMPOSITION_TAG_RENAMES: dict[str, str] = {
     tag: new_tag
     for old_collection, new_collection in _EXISTING_CATEGORY_RENAMES.items()
-    if (tag := _collection_to_tag(old_collection)) in COMPOSITION_TAGS
-    and (new_tag := _collection_to_tag(new_collection)) is not None
+    if (tag := _collection_to_tag(old_collection)) is not None
+    and (new_tag := _collection_to_tag(new_collection)) in COMPOSITION_TAGS
 }
 
 # Existing "01: Category:" collections deliberately left out of _EXISTING_CATEGORY_RENAMES -

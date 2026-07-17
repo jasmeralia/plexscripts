@@ -38,7 +38,7 @@ from plexadm.writers import missing_title_writers, read_writer_file, writers_fro
 NO_STUDIO_COLLECTION = "00A: NO STUDIO"
 UNRATED_COLLECTION = "00C: Unrated"
 INDEPENDENT_STUDIO = "Independent Content"
-LESBIAN_COLLECTION = "01: Category: Lesbian"
+LESBIAN_COLLECTION = "01: Composition: Lesbian"
 LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION = "00D: Review: Lesbian Single-Writer"
 CUMSHOT_ABSENT_REVIEW_COLLECTION = "00D: Review: Cumshot Absent"
 PPV_COLLECTION = "01: Category: PPV"
@@ -375,12 +375,12 @@ def rename_categories(args: argparse.Namespace) -> int:
 
 
 def sync_lesbian_single_writer(args: argparse.Namespace) -> int:
-    """Flag '01: Category: Lesbian' members with exactly one credited writer - a lone
+    """Flag '01: Composition: Lesbian' members with exactly one credited writer - a lone
     credited performer is a strong signal the 'Lesbian' tag is wrong, since lesbian
     content normally credits two or more female performers in the title. Applies
     regardless of studio, including Independent Content: solo indie creators are
     exactly the kind of single-writer/no-partner case this should also catch. This is
-    a review/cataloging collection only: it never touches '01: Category: Lesbian'
+    a review/cataloging collection only: it never touches '01: Composition: Lesbian'
     membership itself."""
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
@@ -964,7 +964,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Examples:\n"
-            "  plexadm list videos --collection '01: Category: Solo'\n"
+            "  plexadm list videos --collection '01: Composition: Solo'\n"
             "  plexadm collection add-search '01: Prop: Oil' 'Oily'\n"
             "  plexadm studio rename 'Old Studio' 'New Studio'\n"
             "  plexadm smart-collections sync\n"
@@ -1007,7 +1007,7 @@ def _build_list_commands(sub: Any) -> None:
             "  plexadm list videos --title 'oil'\n"
             "  plexadm list collections '01: Category'\n"
             "  plexadm list studios\n"
-            "  plexadm list writers --collection '01: Category: Solo'\n"
+            "  plexadm list writers --collection '01: Composition: Solo'\n"
             "  plexadm list renames --script > rename.sh\n"
             "  plexadm list special uncategorized"
         ),
@@ -1028,7 +1028,7 @@ def _build_list_commands(sub: Any) -> None:
         ),
         epilog=(
             "Examples:\n"
-            "  plexadm list videos --collection '01: Category: Solo'\n"
+            "  plexadm list videos --collection '01: Composition: Solo'\n"
             "  plexadm list videos --studio 'Brazzers' --regex '(?i)\\bpov\\b'\n"
             "  plexadm list videos --writer 'Alice' --no-title-spaces"
         ),
@@ -1130,7 +1130,7 @@ def _build_list_commands(sub: Any) -> None:
             "By default this scans the whole library; restrict it to a single\n"
             "collection with --collection."
         ),
-        epilog="Example:\n  plexadm list writers --collection '01: Category: Solo'",
+        epilog="Example:\n  plexadm list writers --collection '01: Composition: Solo'",
     )
     writers.add_argument(
         "--collection",
@@ -1235,7 +1235,7 @@ def _build_collection_commands(sub: Any) -> None:
         ),
         epilog=(
             "Examples:\n"
-            "  plexadm collection add-title '01: Category: Solo' 'masturbation' --skip-scenes\n"
+            "  plexadm collection add-title '01: Composition: Solo' 'masturbation' --skip-scenes\n"
             "  plexadm collection add-search '01: Prop: Oil' 'Oily'\n"
             "  plexadm collection copy 'Old Name' 'New Name'\n"
             "  plexadm collection sync-unrated"
@@ -1338,7 +1338,7 @@ def _build_collection_commands(sub: Any) -> None:
         "remove-title",
         help="Remove videos whose title matches PATTERN from COLLECTION.",
         description="Walk COLLECTION and remove every video whose title contains PATTERN (case-insensitive).",
-        epilog="Example:\n  plexadm collection remove-title '01: Category: Solo' 'duo'",
+        epilog="Example:\n  plexadm collection remove-title '01: Composition: Solo' 'duo'",
     )
     remove_title.add_argument("collection", metavar="COLLECTION", help="Collection to remove from.")
     remove_title.add_argument("pattern", metavar="PATTERN", help="Substring to match in the video title.")
@@ -1366,7 +1366,7 @@ def _build_collection_commands(sub: Any) -> None:
         "add-orgy",
         help="Add videos with 4+ writers to COLLECTION.",
         description="Add every video with at least --min-writers writers to COLLECTION.",
-        epilog="Example:\n  plexadm collection add-orgy '01: Category: Orgy'",
+        epilog="Example:\n  plexadm collection add-orgy '01: Composition: Orgy'",
     )
     add_orgy.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_orgy.add_argument(
@@ -1502,7 +1502,7 @@ def _build_collection_commands(sub: Any) -> None:
         description=(
             f"Add every '{LESBIAN_COLLECTION}' member with exactly one credited writer to "
             "COLLECTION (any studio, including Independent Content), and remove anything in "
-            "COLLECTION that no longer matches (left '01: Category: Lesbian' or gained a second "
+            "COLLECTION that no longer matches (left '01: Composition: Lesbian' or gained a second "
             "writer). This is a review/cataloging collection only - it "
             f"never removes anything from '{LESBIAN_COLLECTION}' itself.\n"
             f"Defaults to '{LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION}'."
