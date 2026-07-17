@@ -459,6 +459,15 @@ plexadm collection rename-categories
 ```
 
 Pass `--include-composition` once the corresponding Stash tags have a matching rename in place.
+`plexadm stash rename-tags` renames the Stash side (`Category: Solo` → `Composition: Solo`, etc.)
+via GraphQL - run it, then update `GROUP_SINGLE_FEMALE`/`GROUP_MULTI_FEMALE_HEADCOUNT`/
+`GROUP_MULTI_FEMALE_ACTIVITY` in `stash_backfill_tags.py` to the new names in the same change,
+before passing `--include-composition` here:
+
+```bash
+plexadm stash rename-tags --dry-run
+plexadm stash rename-tags
+```
 
 **This is a one-time migration, not part of `mass_process.sh`.** `scripts/rename_categories.sh`
 wraps it with logging (defaults to a dry-run preview; pass `--apply` to actually rename). Every
