@@ -291,7 +291,12 @@ def sync_no_studio(args: argparse.Namespace) -> int:
     collection = ctx.collection(args.collection)
     to_add = ctx.search(studio__exact="", sort="titleSort", reload=True)
     to_add = [video for video in to_add if not has_collection(video, collection.title)]
-    to_remove = ctx.search(filters=and_filter({"studio!": ""}, {"collection=": collection.title}), reload=True)
+    # Plex's advanced dict-filter syntax ("studio!": "") silently returns zero results for this
+    # field, regardless of how many videos actually have a studio set - confirmed live against
+    # the real library (a kwarg-style studio__ne="" query correctly found real victims that the
+    # dict form missed). Use the kwarg form instead; it can be combined with the dict-style
+    # collection filter in the same search() call.
+    to_remove = ctx.search(filters={"collection=": collection.title}, studio__ne="", reload=True)
     for video in to_add:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     for video in to_remove:

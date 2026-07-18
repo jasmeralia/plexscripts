@@ -102,3 +102,35 @@ class TestMainTimingEvent:
         timings = _events_by_action(mock_log_event, "timing")
         assert len(timings) == 1
         assert timings[0].details["duration_seconds"] >= 0
+
+
+class TestSyncNoStudio:
+    def test_removal_query_uses_the_working_kwarg_filter_not_the_broken_dict_one(self) -> None:
+        # Real bug found on a live run: the dict-style advanced filter {"studio!": ""} silently
+        # returns zero results for every video regardless of whether studio is actually set -
+        # confirmed against the real library, where it missed real videos a studio__ne=""
+        # kwarg-style query correctly found. A video (Independent Content) sat in "00A: NO
+        # STUDIO" indefinitely because of this - sync_no_studio always reported "0 removed".
+        collection = MagicMock()
+        collection.title = "00A: NO STUDIO"
+        stale_member = MagicMock(title="Has A Studio Now")
+
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.side_effect = [[], [stale_member]]
+
+        args = argparse.Namespace(config=None, collection="00A: NO STUDIO", dry_run=False)
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "add_items", return_value=0) as mock_add_items,
+            patch.object(cli, "remove_items", return_value=1) as mock_remove_items,
+        ):
+            assert cli.sync_no_studio(args) == 0
+
+        removal_call = ctx.search.call_args_list[1]
+        assert removal_call.kwargs.get("studio__ne") == ""
+        assert removal_call.kwargs.get("filters") == {"collection=": "00A: NO STUDIO"}
+        assert "studio!" not in str(removal_call.kwargs.get("filters"))
+        mock_remove_items.assert_called_once_with(collection, [stale_member], dry_run=False)
+        mock_add_items.assert_called_once_with(collection, [], dry_run=False)
