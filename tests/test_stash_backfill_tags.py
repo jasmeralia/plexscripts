@@ -493,6 +493,39 @@ class TestSuggestedActionTagalong:
         )
 
 
+class TestDildoVariantsCollapseIntoTheSharedDildoCollection:
+    def test_bare_dildo_merges_into_dildo_and_sex_toys(self) -> None:
+        targets = {"01: Prop: Dildo", "01: Prop: Sex Toys"}
+        assert _suggested_action("Dildo", targets) == "merge -> 01: Prop: Dildo + 01: Prop: Sex Toys"
+
+    def test_qualified_variants_merge_into_the_same_shared_collection(self) -> None:
+        targets = {"01: Prop: Dildo", "01: Prop: Sex Toys"}
+        for tag_name in ("Glass Dildo", "Double Dildo", "Face Dildo", "Huge Dildo", "Strapless Dildo", "Suction Dildo"):
+            assert _suggested_action(tag_name, targets) == "merge -> 01: Prop: Dildo + 01: Prop: Sex Toys"
+
+    def test_anal_dildo_also_picks_up_the_anal_tagalong(self) -> None:
+        targets = {"01: Prop: Dildo", "01: Prop: Sex Toys", "01: Category: Anal"}
+        assert (
+            _suggested_action("Anal Dildo", targets)
+            == "merge -> 01: Prop: Dildo + 01: Category: Anal + 01: Prop: Sex Toys"
+        )
+        # Stays "add" until every one of the three targets is real, not just two of them.
+        assert _suggested_action("Anal Dildo", {"01: Prop: Dildo", "01: Prop: Sex Toys"}) == "add"
+
+    def test_dildo_blowjob_is_unaffected_by_the_generic_dildo_rule(self) -> None:
+        # "dildo blowjob" is checked first in _CATEGORY_MERGE_PHRASES - it must keep resolving
+        # to plain Blowjob, not get swallowed by the newer generic "dildo" phrase.
+        assert _suggested_action("Dildo Blowjob", {"01: Category: Blowjob"}) == "add"
+        assert (
+            _suggested_action("Dildo Blowjob", {"01: Category: Blowjob", "01: Prop: Sex Toys"})
+            == "merge -> 01: Category: Blowjob + 01: Prop: Sex Toys"
+        )
+
+    def test_add_display_name_is_consistent_with_the_eventual_merge_target(self) -> None:
+        for tag_name in ("Dildo", "Anal Dildo", "Glass Dildo", "Vaginal Dildo"):
+            assert _suggest_new_collection_name(tag_name) == "01: Prop: Dildo"
+
+
 class TestPotentialMergeTargetsTagalong:
     def test_returns_none_for_a_skip_tag_even_with_a_tagalong_word(self) -> None:
         # "4k" is a skip-marker word - the skip check must still win even though "dildo" would
@@ -966,7 +999,7 @@ class TestSuggestNewCollectionName:
         assert _suggest_new_collection_name("Backyard Gangbang") == "01: Composition: Backyard Gangbang"
 
     def test_prop_keyword(self) -> None:
-        assert _suggest_new_collection_name("Pink Dildo") == "01: Prop: Pink Dildo"
+        assert _suggest_new_collection_name("Pink Handcuffs") == "01: Prop: Pink Handcuffs"
 
     def test_prop_keyword_covers_worn_fetish_attire_and_bondage_gear(self) -> None:
         for tag_name in ("Black Stockings", "Woman's Heels", "Handcuffs", "Sybian", "Gags"):
@@ -1195,7 +1228,7 @@ class TestUnmappedTags:
             },
             {
                 "id": "3",
-                "name": "Pink Dildo",
+                "name": "Pink Handcuffs",
                 "scene_count": 1,
                 "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "c"}],
             },
@@ -1225,7 +1258,7 @@ class TestUnmappedTags:
         assert report.index("### Activity") < report.index("### Category") < report.index("### Prop")
         assert report.index("### Activity") < report.index("Gagging")
         assert report.index("### Category") < report.index("Beautiful Agony") < report.index("### Prop")
-        assert report.index("### Prop") < report.index("Pink Dildo")
+        assert report.index("### Prop") < report.index("Pink Handcuffs")
 
     def test_pending_collections_section_tracks_add_and_upgrade_candidates(self, tmp_path: Path) -> None:
         tags = [

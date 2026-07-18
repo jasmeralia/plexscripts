@@ -475,6 +475,14 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     "vaginal insertion": "01: Activity: Vaginal Penetration",
     # "Collapse Titjob with Tit Fucking" - a real, already-existing collection.
     "titjob": "01: Category: Tit Fucking",
+    # Confirmed by direct user correction: every "X Dildo" variant (Anal/Glass/Double/Face/
+    # Huge/Strapless/Suction/Vaginal/...) collapses into the single shared Dildo collection
+    # rather than each getting its own - combined with the automatic Sex Toys tag-along, and
+    # Anal too where applicable (e.g. "Anal Dildo" -> Activity: Anal + Prop: Dildo + Sex Toys).
+    # Must come after "dildo blowjob" above: phrase matching is substring-based and first-
+    # resolving-match-wins, so "Dildo Blowjob" needs to keep hitting its own specific rule
+    # rather than this generic one.
+    "dildo": "01: Prop: Dildo",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
@@ -569,6 +577,19 @@ _SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
     # keyword bucket - see _MULTI_TARGET_MERGE_PHRASES for the matching merge targets.
     "toy masturbation": "01: Activity: Masturbation",
     "toy penetration by partner": "01: Activity: Toy Penetration",
+    # Confirmed by direct user correction: every dildo variant shares the one Dildo collection
+    # (see _CATEGORY_MERGE_PHRASES for the actual merge rule) - these overrides just keep the
+    # interim "add" display name consistent with that instead of falling to the generic
+    # "01: Category: <verbatim name>" default now that "dildo" isn't a _PROP_KEYWORDS entry.
+    "dildo": "01: Prop: Dildo",
+    "anal dildo": "01: Prop: Dildo",
+    "double dildo": "01: Prop: Dildo",
+    "face dildo": "01: Prop: Dildo",
+    "glass dildo": "01: Prop: Dildo",
+    "huge dildo": "01: Prop: Dildo",
+    "strapless dildo": "01: Prop: Dildo",
+    "suction dildo": "01: Prop: Dildo",
+    "vaginal dildo": "01: Prop: Dildo",
     # Respelled per direct user request ("facefuck (no space)").
     "face fuck": "01: Activity: Facefuck",
     "side fuck": "01: Activity: Side Fuck",
@@ -729,7 +750,8 @@ _PROP_KEYWORDS = frozenset(
         "toy",
         "toys",
         "vibrator",
-        "dildo",
+        # "dildo" deliberately not a keyword here - every "X Dildo" variant collapses into the
+        # single shared Dildo collection instead, via _CATEGORY_MERGE_PHRASES.
         "plug",
         "machine",
         "clamp",
