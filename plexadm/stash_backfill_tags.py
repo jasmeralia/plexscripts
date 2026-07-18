@@ -590,6 +590,13 @@ _SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
     "strapless dildo": "01: Prop: Dildo",
     "suction dildo": "01: Prop: Dildo",
     "vaginal dildo": "01: Prop: Dildo",
+    # Confirmed by direct user correction: these are named positions too, but their individual
+    # words aren't safe standalone keywords ("split" also appears in the unrelated "Split
+    # Tongue", "down"/"ass"/"up"/"side"/"leaning"/"forward" are all too generic) - see
+    # _ACTIVITY_KEYWORDS for the ones that were safe on their own.
+    "face down ass up": "01: Activity: Face Down Ass Up",
+    "side winder": "01: Activity: Side Winder",
+    "split leaning forward": "01: Activity: Split Leaning Forward",
     # Respelled per direct user request ("facefuck (no space)").
     "face fuck": "01: Activity: Facefuck",
     "side fuck": "01: Activity: Side Fuck",
@@ -858,6 +865,23 @@ _ACTIVITY_KEYWORDS = frozenset(
         # it's an activity, and _CATEGORY_MERGE_PHRASES' "anal masturbation"/"self pussy
         # fingering" targets were updated to match.
         "masturbation",
+        # Confirmed by direct user correction: named positions (beyond the cowgirl/missionary/
+        # doggy cluster above) are activities too - these were falling to the "01: Category:"
+        # fallback. "roast" (Spit Roast), "carry" (Stand and Carry), "nelson" (Full Nelson), and
+        # "position" (Ballerina/Airplane Position) are specific enough on their own not to need
+        # the full multi-word phrase. "Face Down Ass Up"/"Side Winder"/"Split Leaning Forward"
+        # don't have a safe single-word signal (their individual words are too generic/collide
+        # with unrelated tags like "Split Tongue") - see _SUGGESTED_NAME_OVERRIDES instead.
+        "spooning",
+        "piledriver",
+        "roast",
+        "standing",
+        "position",
+        "squatting",
+        "pose",
+        "bulldog",
+        "carry",
+        "nelson",
     }
 )
 _THEME_KEYWORDS = frozenset(
@@ -906,6 +930,17 @@ _ATTRIBUTES_KEYWORDS = frozenset(
         "hairy",
         "tits",
         "dick",
+        # Confirmed by direct user correction: hairstyle (as opposed to hair color, which
+        # merges into the existing "01: Hair:" collections instead - see _HAIR_MERGE_KEYWORDS)
+        # is a performer attribute, same bucket as piercings/skin tone. "hair"/"hairless"/
+        # "hairy" above already catch anything with the literal word "hair" in it; these are
+        # the style-specific tags that don't.
+        "bald",
+        "bangs",
+        "braids",
+        "ponytail",
+        "dreadlocks",
+        "pigtails",
     }
 )
 

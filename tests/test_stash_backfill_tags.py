@@ -1020,6 +1020,42 @@ class TestSuggestNewCollectionName:
         for tag_name in ("Cowgirl", "Missionary", "Doggy Style"):
             assert _suggest_new_collection_name(tag_name).startswith("01: Activity: ")
 
+    def test_more_named_positions_are_activities(self) -> None:
+        # Confirmed by direct user correction: many more Category-catch-all tags were also
+        # named positions.
+        for tag_name in (
+            "Spooning",
+            "Piledriver",
+            "Reverse Piledriver",
+            "Spit Roast",
+            "Standing Sex",
+            "Standing Sex (DP)",
+            "Ballerina Position",
+            "Airplane Position",
+            "Squatting",
+            "The Pose",
+            "Bulldog",
+            "Stand and Carry",
+            "Stand and Carry (DP)",
+            "Full Nelson",
+        ):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Activity: ")
+
+    def test_position_overrides_for_words_too_generic_to_be_keywords(self) -> None:
+        # "split"/"down"/"ass"/"up"/"side"/"leaning"/"forward" are all too generic or already
+        # mean something else elsewhere (e.g. "split" also appears in "Split Tongue") to be safe
+        # standalone keywords - these need an explicit override instead.
+        assert _suggest_new_collection_name("Face Down Ass Up") == "01: Activity: Face Down Ass Up"
+        assert _suggest_new_collection_name("Side Winder") == "01: Activity: Side Winder"
+        assert _suggest_new_collection_name("Split Leaning Forward") == "01: Activity: Split Leaning Forward"
+        assert _suggest_new_collection_name("Split Tongue") != "01: Activity: Split Tongue"
+
+    def test_hairstyle_is_an_attribute_not_a_category(self) -> None:
+        # Confirmed by direct user correction: hairstyle (as opposed to hair color, which merges
+        # into the existing "01: Hair:" collections) is a performer attribute.
+        for tag_name in ("Bald Head", "Bangs", "Braids", "Ponytail", "Dreadlocks", "Pigtails"):
+            assert _suggest_new_collection_name(tag_name).startswith("01: Attributes: ")
+
     def test_theme_keyword(self) -> None:
         assert _suggest_new_collection_name("Hot Cosplay") == "01: Theme: Hot Cosplay"
 
