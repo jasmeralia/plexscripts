@@ -352,6 +352,23 @@ class TestResolveExisting:
         assert _resolve_existing("01: Theme: POV", set()) is None
 
 
+class TestAcceptedCumshotAndThemeSuggestions:
+    def test_accepted_suggestions_merge_once_the_collection_is_real(self) -> None:
+        # Confirmed by direct user request ("Accept the cumshot and theme add suggestions"):
+        # these were plain generic-keyword suggestions with no merge rule at all until wired up
+        # explicitly - otherwise creating the real collection wouldn't stop the report from
+        # suggesting "add" forever.
+        for tag_name, target in (
+            ("Male - POV", "01: Theme: POV: His"),
+            ("Creampie", "01: Cumshot: Creampie"),
+            ("Cum Swallowing", "01: Cumshot: Cum Swallowing"),
+            ("Public Sex", "01: Theme: Public Sex"),
+            ("Roleplay", "01: Theme: Roleplay"),
+        ):
+            assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+            assert _suggested_action(tag_name, set()) == "add"
+
+
 class TestSuggestedAction:
     def test_recommends_merge_when_hair_keyword_matches_existing_collection(self) -> None:
         assert _suggested_action("Red Hair (Male)", {"01: Hair: Red"}) == "merge -> 01: Hair: Red"

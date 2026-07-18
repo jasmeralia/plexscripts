@@ -1020,6 +1020,44 @@ _EXACT_MATCH_MERGE_PHRASES: dict[str, str] = {
     # swallow the specific "Foursome (BBGG)"/"(BGGG)"/"(BBBG)"/"(Lesbian)" variants, which route
     # elsewhere. Confirmed by direct user request.
     "foursome": "01: Category: Orgy",
+    # Confirmed by direct user request ("Accept the cumshot and theme add suggestions"): these
+    # were plain generic-keyword "add" suggestions with no merge rule at all, so creating the
+    # real collections alone wouldn't have stopped the report from suggesting "add" forever -
+    # wired up explicitly here, one rule per collection actually created.
+    "male - pov": "01: Theme: POV: His",
+    "female - pov": "01: Theme: POV: Hers",
+    "mixed - pov": "01: Theme: POV: Mixed",
+    "creampie": "01: Cumshot: Creampie",
+    "cum swallowing": "01: Cumshot: Cum Swallowing",
+    "cumshot clean-up": "01: Cumshot: Cumshot Clean-up",
+    "sucking after cumshot": "01: Cumshot: Sucking After Cumshot",
+    "cum kissing": "01: Cumshot: Cum Kissing",
+    "cum drip": "01: Cumshot: Cum Drip",
+    "spits cum out": "01: Cumshot: Spits Cum Out",
+    "cum in hair": "01: Cumshot: Cum in Hair",
+    "massive cumshot": "01: Cumshot: Massive Cumshot",
+    "public sex": "01: Theme: Public Sex",
+    "cum in eye": "01: Cumshot: Cum in Eye",
+    "cum on forehead": "01: Cumshot: Cum on Forehead",
+    "creampie eating": "01: Cumshot: Creampie Eating",
+    "fucking after cumshot": "01: Cumshot: Fucking After Cumshot",
+    "roleplay": "01: Theme: Roleplay",
+    "cum begging": "01: Cumshot: Cum Begging",
+    "smoking fetish": "01: Theme: Smoking Fetish",
+    "throbbing creampie": "01: Cumshot: Throbbing Creampie",
+    "ass fetish": "01: Theme: Ass Fetish",
+    "asking for creampie": "01: Cumshot: Asking for Creampie",
+    "cum countdown": "01: Cumshot: Cum Countdown",
+    "cum covered fucking": "01: Cumshot: Cum Covered Fucking",
+    "cum on food": "01: Cumshot: Cum on Food",
+    "cum on glasses": "01: Cumshot: Cum on Glasses",
+    "cum on legs": "01: Cumshot: Cum on Legs",
+    "fake cum": "01: Cumshot: Fake Cum",
+    "fucking after creampie": "01: Cumshot: Fucking After Creampie",
+    "multiple cum clean-up": "01: Cumshot: Multiple Cum Clean-up",
+    "split creampie": "01: Cumshot: Split Creampie",
+    "leg fetish": "01: Theme: Leg Fetish",
+    "public nudity": "01: Theme: Public Nudity",
 }
 
 # Exact-tag-name overrides for the suggested "add" collection name, used when the generic
