@@ -364,14 +364,15 @@ class TestSuggestedAction:
         # words alone match plenty of tags that have nothing to do with hair. "White Woman" is
         # excluded here since it's since been added to _SKIP_EXACT_TAG_NAMES (ethnicity, not
         # hair), and "Blue Eyes"/"Brown Eyes" since eye color is now skipped outright - both
-        # covered instead by TestSkipSignals.
+        # covered instead by TestSkipSignals. Synthetic (not real report tags) so a future bulk
+        # low-count skip-list pass doesn't collide with these again.
         targets = {
             "01: Hair: Blue",
             "01: Hair: Brunette",
             "01: Hair: Pink",
             "01: Hair: Red",
         }
-        for tag_name in ("Blue Bikini", "Brown Boots", "Pink Labia", "Red Lipstick"):
+        for tag_name in ("Blue Bikini", "Brown Boots", "Pink Wallpaper", "Red Curtain"):
             assert _suggested_action(tag_name, targets) == "add"
 
     def test_redhead_is_caught_via_the_curated_phrase_list(self) -> None:
@@ -560,16 +561,19 @@ class TestSkipSignals:
         for tag_name in ("Bedroom", "Chair", "Couch", "Table", "Blanket", "Ottoman", "Desk", "Lounger"):
             assert _suggested_action(tag_name, set()) == "skip"
         # Locations (not literal furniture) and the general bondage genre were confirmed as
-        # worth keeping, so they must not be caught by the furniture skip.
-        for tag_name in ("Bathroom", "Shower", "Poolside", "Bondage", "Massage Table", "Countertop"):
+        # worth keeping, so they must not be caught by the furniture skip. "Countertop" was
+        # deliberately excluded here after a later bulk pass legitimately skipped it for an
+        # unrelated reason (a real report tag with under 10 scenes) - see TestBulkLowCountSkip.
+        for tag_name in ("Bathroom", "Shower", "Poolside", "Bondage", "Massage Table"):
             assert _suggested_action(tag_name, set()) == "add"
 
     def test_eye_color_is_skipped(self) -> None:
         for tag_name in ("Blue Eyes", "Brown Eyes", "Green Eyes", "Grey Eyes", "Hazel Eyes"):
             assert _suggested_action(tag_name, set()) == "skip"
-        # "Eye"/"Eyebrow" as different words must not be caught.
-        assert _suggested_action("Eye Contact", set()) == "add"
-        assert _suggested_action("Eyebrow Piercing", set()) == "add"
+        # "Eye"/"Eyebrow" as different words must not be caught. Synthetic (not real report
+        # tags) so a future bulk low-count skip-list pass doesn't collide with these again.
+        assert _suggested_action("Eye Roll", set()) == "add"
+        assert _suggested_action("Eyebrow Threading", set()) == "add"
 
 
 class TestAdditionalCategorySynonyms:
@@ -828,7 +832,9 @@ class TestNewSkipsThisRound:
     def test_bare_nude_is_skipped_but_nude_stockings_is_not(self) -> None:
         assert _suggested_action("Nude", set()) == "skip"
         assert _suggested_action("Nude Stockings", set()) == "add"
-        assert _suggested_action("Non-Nude", set()) == "add"
+        # Synthetic (not a real report tag) so a future bulk low-count skip-list pass doesn't
+        # collide with this again - "Non-Nude" itself is now independently skipped that way.
+        assert _suggested_action("Semi-Nude", set()) == "add"
 
     def test_age_references_are_skipped(self) -> None:
         for tag_name in (
