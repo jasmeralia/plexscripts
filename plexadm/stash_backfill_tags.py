@@ -482,6 +482,28 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
 # review of the live report. Requires every listed target to already exist, same as the
 # single-target phrases above.
 _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
+    # Confirmed by direct user correction: FF Only is a subset of Female Only, not a separate
+    # bucket - anything tagged FF Only also belongs in Female Only. Combined, not collapsed:
+    # the dedicated "01: Composition: FF Only" suggested name (_SUGGESTED_NAME_OVERRIDES) is
+    # unchanged, this just adds Female Only as a second required target.
+    "twosome (lesbian)": ["01: Composition: FF Only", "01: Composition: Female Only"],
+    # Confirmed by direct user correction (revising the earlier single-target Female Only call):
+    # 3+ all-female headcounts route to all three of FFF+ (headcount), Female Only (umbrella),
+    # and Orgy (group-sex descriptor) - "twosome" is deliberately excluded since 2 people isn't
+    # an orgy.
+    "foursome (lesbian)": ["01: Category: FFF+", "01: Composition: Female Only", "01: Category: Orgy"],
+    "sixsome (lesbian)": ["01: Category: FFF+", "01: Composition: Female Only", "01: Category: Orgy"],
+    "orgy (lesbian)": ["01: Category: FFF+", "01: Composition: Female Only", "01: Category: Orgy"],
+    # Confirmed by direct user correction: this is two acts happening together, not just the
+    # generic "pussy licking" -> Pussy Eating merge.
+    "pussy licking doggy style": ["01: Category: Pussy Eating", "01: Activity: Doggy Style"],
+    # Confirmed by direct user correction: these are activities (not the generic Prop "toy"
+    # keyword bucket) - "Toy Masturbation" routes straight into the existing Masturbation
+    # activity (no separate "Toy Masturbation" collection), "Toy Penetration" gets its own
+    # activity. Both also need Sex Toys - see _SUGGESTED_NAME_OVERRIDES for the matching "add"
+    # display-name overrides while these targets are still pending.
+    "toy masturbation": ["01: Activity: Masturbation", "01: Prop: Sex Toys"],
+    "toy penetration": ["01: Activity: Toy Penetration", "01: Prop: Sex Toys"],
     "open mouth facial": ["01: Category: Cum In Mouth", "01: Category: Facial"],
     # "Blowbang would be Gangbang+Blowjob and likely Orgy" - the user's own description.
     "blowbang": ["01: Category: Gangbang", "01: Category: Blowjob", "01: Category: Orgy"],
@@ -492,8 +514,8 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     # collection today - see the bare "Masturbation" Add row) - won't fire as a merge until it's
     # created, since both targets are required to exist. Forward-declared anyway so it activates
     # automatically on a future run rather than needing to be re-added later.
-    "anal masturbation": ["01: Category: Anal", "01: Category: Masturbation"],
-    "self pussy fingering": ["01: Category: Masturbation", "01: Category: Fingering"],
+    "anal masturbation": ["01: Category: Anal", "01: Activity: Masturbation"],
+    "self pussy fingering": ["01: Activity: Masturbation", "01: Category: Fingering"],
     # "Almost every POV should be split" (the his/hers gender-direction ones are the exception -
     # see _SUGGESTED_NAME_OVERRIDES). "01: Theme: POV" doesn't exist yet, so none of these fire
     # today - each forward-declares the split so it activates once POV is created. Order here
@@ -543,6 +565,10 @@ _SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
     "foursome (lesbian)": "01: Composition: Female Only",
     "sixsome (lesbian)": "01: Composition: Female Only",
     "orgy (lesbian)": "01: Composition: Female Only",
+    # Confirmed by direct user correction: these are activities, not the generic Prop "toy"
+    # keyword bucket - see _MULTI_TARGET_MERGE_PHRASES for the matching merge targets.
+    "toy masturbation": "01: Activity: Masturbation",
+    "toy penetration by partner": "01: Activity: Toy Penetration",
     # Respelled per direct user request ("facefuck (no space)").
     "face fuck": "01: Activity: Facefuck",
     "side fuck": "01: Activity: Side Fuck",
@@ -555,6 +581,36 @@ _SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
     "female - pov": "01: Theme: POV: Hers",
     "mixed - pov": "01: Theme: POV: Mixed",
 }
+
+# Confirmed by direct user request: "anal anything also needs the anal activity tag" - every
+# tag with "anal" as a whole word also belongs in the base Anal collection, on top of whatever
+# specific classification already applies (combined, not collapsed - same pattern as the FF
+# Only/Female Only merge below). "Most of the props also need to be flagged with sex toys, too
+# ... dildos, sybian, anything flagged as toys should [be] - clothing and generic objects
+# don't": word-based rather than an exhaustive per-tag list so it also catches future StashDB
+# toy tags automatically; clothing/generic-object tags naturally never contain these words.
+_ANAL_TAGALONG_TARGET = "01: Category: Anal"
+_TOY_TAGALONG_TARGET = "01: Prop: Sex Toys"
+_TOY_TAGALONG_WORDS = frozenset({"dildo", "toy", "toys", "sybian"})
+
+
+def _tagalong_targets(tag_name: str) -> list[str]:
+    """Extra collection(s) a tag should *also* land in, beyond its normal classification."""
+    words = set(re.findall(r"[a-z0-9]+", tag_name.lower()))
+    extra: list[str] = []
+    if "anal" in words:
+        extra.append(_ANAL_TAGALONG_TARGET)
+    if words & _TOY_TAGALONG_WORDS:
+        extra.append(_TOY_TAGALONG_TARGET)
+    return extra
+
+
+def _with_tagalong(tag_name: str, targets: list[str]) -> list[str]:
+    combined = list(targets)
+    for extra in _tagalong_targets(tag_name):
+        if extra not in combined:
+            combined.append(extra)
+    return combined
 
 
 def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
@@ -597,24 +653,37 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
         return "skip"
     exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
     if exact_target:
-        resolved = _resolve_existing(exact_target, existing_titles)
-        if resolved:
-            return f"merge -> {resolved}"
+        full_targets = _with_tagalong(tag_name, [exact_target])
+        resolved_targets = [_resolve_existing(target, existing_titles) for target in full_targets]
+        if all(resolved_targets):
+            return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
     for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
         if phrase in lower_name:
-            resolved_targets = [_resolve_existing(target, existing_titles) for target in targets]
+            full_targets = _with_tagalong(tag_name, targets)
+            resolved_targets = [_resolve_existing(target, existing_titles) for target in full_targets]
             if all(resolved_targets):
                 return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
     for phrase, target in _CATEGORY_MERGE_PHRASES.items():
         if phrase in lower_name:
-            resolved = _resolve_existing(target, existing_titles)
-            if resolved:
-                return f"merge -> {resolved}"
+            full_targets = _with_tagalong(tag_name, [target])
+            resolved_targets = [_resolve_existing(t, existing_titles) for t in full_targets]
+            if all(resolved_targets):
+                return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
     if words & _HAIR_CONTEXT_WORDS:
         for word in words:
             hair_target = _HAIR_MERGE_KEYWORDS.get(word)
             if hair_target and hair_target in existing_titles:
                 return f"merge -> {hair_target}"
+    # No explicit merge rule matched - a tag-along-eligible tag (anal/toy) still needs tracking:
+    # treat its own generic suggested name as an implicit single-target rule so it stays "add"
+    # until real, then correctly upgrades to a full multi-target merge, same as every other
+    # forward-declared rule above.
+    tagalong = _tagalong_targets(tag_name)
+    if tagalong:
+        full_targets = _with_tagalong(tag_name, [_suggest_new_collection_name(tag_name)])
+        resolved_targets = [_resolve_existing(t, existing_titles) for t in full_targets]
+        if all(resolved_targets):
+            return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
     return "add"
 
 
@@ -623,11 +692,12 @@ def _potential_merge_targets(tag_name: str) -> list[str] | None:
     collection exists, ignoring the existence gate `_suggested_action` applies.
 
     Mirrors `_suggested_action`'s matching order (skip check, then exact/multi/single-target
-    phrases) minus the `in existing_titles` checks, so it also surfaces forward-declared rules
-    that haven't activated yet. Used to build the report's "Pending Collections" section - "do
-    track the suggested adds now even if not present", per direct user request. Deliberately
-    doesn't include the hair-color path: that one is about existing hair collections specifically
-    and this tool never proposes creating a new one (see `_suggest_new_collection_name`).
+    phrases, then the tag-along-only fallback) minus the `in existing_titles` checks, so it also
+    surfaces forward-declared rules that haven't activated yet. Used to build the report's
+    "Pending Collections" section - "do track the suggested adds now even if not present", per
+    direct user request. Deliberately doesn't include the hair-color path: that one is about
+    existing hair collections specifically and this tool never proposes creating a new one (see
+    `_suggest_new_collection_name`).
     """
     lower_name = tag_name.lower()
     words = set(re.findall(r"[a-z0-9]+", lower_name))
@@ -637,13 +707,16 @@ def _potential_merge_targets(tag_name: str) -> list[str] | None:
         return None
     exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
     if exact_target:
-        return [exact_target]
+        return _with_tagalong(tag_name, [exact_target])
     for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
         if phrase in lower_name:
-            return targets
+            return _with_tagalong(tag_name, targets)
     for phrase, target in _CATEGORY_MERGE_PHRASES.items():
         if phrase in lower_name:
-            return [target]
+            return _with_tagalong(tag_name, [target])
+    tagalong = _tagalong_targets(tag_name)
+    if tagalong:
+        return _with_tagalong(tag_name, [_suggest_new_collection_name(tag_name)])
     return None
 
 
@@ -758,6 +831,11 @@ _ACTIVITY_KEYWORDS = frozenset(
         "doggy",
         # "titjob" deliberately not a keyword here - it collapses into the existing Tit
         # Fucking collection instead, via _CATEGORY_MERGE_PHRASES.
+        # Confirmed by direct user correction: bare "Masturbation" was falling to the "01:
+        # Category:" fallback (no keyword matched it) rather than a deliberate classification -
+        # it's an activity, and _CATEGORY_MERGE_PHRASES' "anal masturbation"/"self pussy
+        # fingering" targets were updated to match.
+        "masturbation",
     }
 )
 _THEME_KEYWORDS = frozenset(

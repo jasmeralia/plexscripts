@@ -13,12 +13,15 @@ from plexadm.stash_backfill_tags import (
     _has_existing_plex_match,
     _load_review,
     _plex_tags_in_scope,
+    _potential_merge_targets,
     _resolve_existing,
     _stash_tags_in_scope,
     _suggest_new_collection_name,
     _suggested_action,
     _tag_source,
     _tag_to_collection,
+    _tagalong_targets,
+    _with_tagalong,
     _write_review,
     apply_review,
     backfill_tags,
@@ -434,6 +437,76 @@ class TestSuggestedAction:
         assert _suggested_action("Open Mouth Facial", {"01: Category: Facial"}) == "add"
 
 
+class TestTagalongTargets:
+    def test_anal_word_adds_anal_target(self) -> None:
+        assert _tagalong_targets("Anal Fisting") == ["01: Category: Anal"]
+
+    def test_toy_words_add_sex_toys_target(self) -> None:
+        assert _tagalong_targets("Sybian") == ["01: Prop: Sex Toys"]
+        assert _tagalong_targets("Glass Dildo") == ["01: Prop: Sex Toys"]
+        assert _tagalong_targets("Nipple Toys") == ["01: Prop: Sex Toys"]
+
+    def test_both_can_apply_at_once(self) -> None:
+        assert _tagalong_targets("Anal Dildo") == ["01: Category: Anal", "01: Prop: Sex Toys"]
+
+    def test_clothing_and_generic_objects_get_no_tagalong(self) -> None:
+        for tag_name in ("Lingerie", "Stockings", "Skirt", "Mirror", "Handcuffs", "Whip"):
+            assert _tagalong_targets(tag_name) == []
+
+    def test_with_tagalong_does_not_duplicate_an_already_present_target(self) -> None:
+        assert _with_tagalong("Anal Missionary", ["01: Category: Anal"]) == ["01: Category: Anal"]
+
+    def test_with_tagalong_appends_after_existing_targets(self) -> None:
+        assert _with_tagalong("Anal Dildo", ["01: Prop: Anal Dildo"]) == [
+            "01: Prop: Anal Dildo",
+            "01: Category: Anal",
+            "01: Prop: Sex Toys",
+        ]
+
+
+class TestSuggestedActionTagalong:
+    def test_stays_add_until_both_primary_and_tagalong_exist(self) -> None:
+        # "Sybian" has no explicit merge-phrase entry at all - its own generic Prop suggestion
+        # ("01: Prop: Sybian") is the implicit primary target.
+        assert _suggested_action("Sybian", set()) == "add"
+        assert _suggested_action("Sybian", {"01: Prop: Sybian"}) == "add"
+        assert (
+            _suggested_action("Sybian", {"01: Prop: Sybian", "01: Prop: Sex Toys"})
+            == "merge -> 01: Prop: Sybian + 01: Prop: Sex Toys"
+        )
+
+    def test_pure_tagalong_tag_with_no_toy_or_anal_word_is_unaffected(self) -> None:
+        assert _suggested_action("Lingerie", set()) == "add"
+
+    def test_toy_masturbation_merges_into_masturbation_and_sex_toys(self) -> None:
+        targets = {"01: Activity: Masturbation", "01: Prop: Sex Toys"}
+        assert (
+            _suggested_action("Toy Masturbation", targets) == "merge -> 01: Activity: Masturbation + 01: Prop: Sex Toys"
+        )
+        assert _suggested_action("Toy Masturbation", {"01: Activity: Masturbation"}) == "add"
+
+    def test_toy_penetration_by_partner_merges_into_toy_penetration_and_sex_toys(self) -> None:
+        targets = {"01: Activity: Toy Penetration", "01: Prop: Sex Toys"}
+        assert (
+            _suggested_action("Toy Penetration by Partner", targets)
+            == "merge -> 01: Activity: Toy Penetration + 01: Prop: Sex Toys"
+        )
+
+
+class TestPotentialMergeTargetsTagalong:
+    def test_returns_none_for_a_skip_tag_even_with_a_tagalong_word(self) -> None:
+        # "4k" is a skip-marker word - the skip check must still win even though "dildo" would
+        # otherwise make this tagalong-eligible.
+        assert _suggested_action("4K Dildo", set()) == "skip"
+        assert _potential_merge_targets("4K Dildo") is None
+
+    def test_surfaces_the_implicit_primary_plus_tagalong_for_an_unclassified_toy_tag(self) -> None:
+        assert _potential_merge_targets("Sybian") == ["01: Prop: Sybian", "01: Prop: Sex Toys"]
+
+    def test_returns_none_for_a_tag_with_no_tagalong_word_and_no_merge_rule(self) -> None:
+        assert _potential_merge_targets("Lingerie") is None
+
+
 class TestSkipSignals:
     def test_exact_tag_names_are_skipped(self) -> None:
         for tag_name in ("Hardcore", "Indoors", "European", "White Woman", "Bed", "Russian", "Gonzo", "Exclusive"):
@@ -556,7 +629,6 @@ class TestQualifiedVariantsCollapseIntoTheBaseCollection:
             "Hands-free Blowjob",
             "Inverted Blowjob",
             "Triple Blowjob",
-            "Dildo Blowjob",
             "Side Fuck Blowjob",
             "Spooning Blowjob",
             "Blowjob Only",
@@ -566,6 +638,15 @@ class TestQualifiedVariantsCollapseIntoTheBaseCollection:
             "Dick Licking",
         ):
             assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_dildo_blowjob_also_needs_sex_toys(self) -> None:
+        # "Dildo Blowjob" contains the toy tag-along word "dildo" - it must also require
+        # "01: Prop: Sex Toys" before it fires as a merge, unlike its plain Blowjob siblings.
+        assert _suggested_action("Dildo Blowjob", {"01: Category: Blowjob"}) == "add"
+        assert (
+            _suggested_action("Dildo Blowjob", {"01: Category: Blowjob", "01: Prop: Sex Toys"})
+            == "merge -> 01: Category: Blowjob + 01: Prop: Sex Toys"
+        )
 
     def test_rimming_cluster(self) -> None:
         target = "01: Category: Rimming"
@@ -666,19 +747,19 @@ class TestQualifiedVariantsCollapseIntoTheBaseCollection:
         assert _suggested_action("Anal Masturbation", {"01: Category: Anal"}) == "add"
         assert _suggested_action("Self Pussy Fingering", {"01: Category: Fingering"}) == "add"
         assert (
-            _suggested_action("Anal Masturbation", {"01: Category: Anal", "01: Category: Masturbation"})
-            == "merge -> 01: Category: Anal + 01: Category: Masturbation"
+            _suggested_action("Anal Masturbation", {"01: Category: Anal", "01: Activity: Masturbation"})
+            == "merge -> 01: Category: Anal + 01: Activity: Masturbation"
         )
         assert (
-            _suggested_action("Self Pussy Fingering", {"01: Category: Masturbation", "01: Category: Fingering"})
-            == "merge -> 01: Category: Masturbation + 01: Category: Fingering"
+            _suggested_action("Self Pussy Fingering", {"01: Activity: Masturbation", "01: Category: Fingering"})
+            == "merge -> 01: Activity: Masturbation + 01: Category: Fingering"
         )
         # Substring match also covers the "During Sex" sibling for free.
         assert (
             _suggested_action(
-                "Self Pussy Fingering During Sex", {"01: Category: Masturbation", "01: Category: Fingering"}
+                "Self Pussy Fingering During Sex", {"01: Activity: Masturbation", "01: Category: Fingering"}
             )
-            == "merge -> 01: Category: Masturbation + 01: Category: Fingering"
+            == "merge -> 01: Activity: Masturbation + 01: Category: Fingering"
         )
 
     def test_bare_foursome_merges_into_orgy_without_catching_variants(self) -> None:
@@ -763,7 +844,12 @@ class TestFifthRoundMergesAndAttributes:
     def test_anal_fingering_during_sex_forward_declares_into_anal_fingering(self) -> None:
         target = "01: Activity: Anal Fingering"
         assert _suggested_action("Anal Fingering During Sex", set()) == "add"
-        assert _suggested_action("Anal Fingering During Sex", {target}) == f"merge -> {target}"
+        # Also needs the anal tag-along target before it fires as a merge.
+        assert _suggested_action("Anal Fingering During Sex", {target}) == "add"
+        assert (
+            _suggested_action("Anal Fingering During Sex", {target, "01: Category: Anal"})
+            == f"merge -> {target} + 01: Category: Anal"
+        )
 
     def test_vaginal_insertion_forward_declares_into_vaginal_penetration(self) -> None:
         target = "01: Activity: Vaginal Penetration"
@@ -905,7 +991,7 @@ class TestSuggestNewCollectionName:
         assert _suggest_new_collection_name("Hot Cosplay") == "01: Theme: Hot Cosplay"
 
     def test_falls_back_to_category_when_no_keyword_matches(self) -> None:
-        assert _suggest_new_collection_name("Masturbation") == "01: Category: Masturbation"
+        assert _suggest_new_collection_name("Beautiful Agony") == "01: Category: Beautiful Agony"
 
     def test_cumshot_takes_priority_over_other_matches(self) -> None:
         # Contains both a cumshot word ("creampie") and a composition word ("gangbang").
@@ -1103,7 +1189,7 @@ class TestUnmappedTags:
             },
             {
                 "id": "2",
-                "name": "Masturbation",
+                "name": "Beautiful Agony",
                 "scene_count": 3,
                 "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "b"}],
             },
@@ -1138,7 +1224,7 @@ class TestUnmappedTags:
         # Subsections are sorted alphabetically: Activity, then Category, then Prop.
         assert report.index("### Activity") < report.index("### Category") < report.index("### Prop")
         assert report.index("### Activity") < report.index("Gagging")
-        assert report.index("### Category") < report.index("Masturbation") < report.index("### Prop")
+        assert report.index("### Category") < report.index("Beautiful Agony") < report.index("### Prop")
         assert report.index("### Prop") < report.index("Pink Dildo")
 
     def test_pending_collections_section_tracks_add_and_upgrade_candidates(self, tmp_path: Path) -> None:
