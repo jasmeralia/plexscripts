@@ -42,6 +42,7 @@ def _collection(title: str = "01: Category: Test") -> SimpleNamespace:
         addItems=MagicMock(),
         removeItems=MagicMock(),
         editTitle=MagicMock(),
+        editSortTitle=MagicMock(),
     )
 
 
@@ -283,6 +284,7 @@ class TestSetStudioAddWriterRenameCreate:
             rename_collection(collection, "New Title", dry_run=True)
 
         collection.editTitle.assert_not_called()
+        collection.editSortTitle.assert_not_called()
         mock_log.assert_called_once_with(
             AuditEvent(
                 action="rename_collection",
@@ -302,6 +304,17 @@ class TestSetStudioAddWriterRenameCreate:
         mock_log.assert_called_once_with(
             AuditEvent(action="rename_collection", title="New Title", details={"old_title": "Old Title"})
         )
+
+    def test_rename_collection_also_syncs_the_sort_title(self) -> None:
+        # Real bug found live: the taxonomy migration's bulk rename only called editTitle(),
+        # leaving titleSort stale (e.g. "01: Activity: Anal" still sorting as "01: Category:
+        # Anal") - a rename always means title and sort title move together.
+        collection = _collection("Old Title")
+
+        with patch("plexadm.plex.log_event"):
+            rename_collection(collection, "New Title")
+
+        collection.editSortTitle.assert_called_once_with("New Title")
 
     def test_create_smart_collection_dry_run_makes_no_call_but_logs_at_debug(self) -> None:
         section = SimpleNamespace(createCollection=MagicMock())

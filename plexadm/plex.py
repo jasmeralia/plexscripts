@@ -193,9 +193,18 @@ def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) ->
 
 
 def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False) -> None:
+    """Rename a collection's title AND sort title together.
+
+    Real bug found live: the taxonomy migration's bulk rename only ever called editTitle(),
+    leaving every renamed collection's titleSort pointing at its old name - e.g. "01: Activity:
+    Anal" sorted as "01: Category: Anal", grouping it with collections it no longer belongs
+    with. A rename with no sort_title override always means "this is now called X", so title and
+    sort title should always move together unless a caller explicitly wants something else.
+    """
     old_title = str(collection.title)
     if not dry_run:
         collection.editTitle(new_title)
+        collection.editSortTitle(new_title)
     level, details = _mutation_level_and_details(dry_run, {"old_title": old_title})
     log_event(AuditEvent(action="rename_collection", level=level, title=new_title, details=details))
 
