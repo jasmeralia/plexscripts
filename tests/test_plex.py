@@ -3,6 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from plexadm.audit import AuditEvent
 from plexadm.plex import (
     LOCKED_COLLECTION,
@@ -14,6 +16,10 @@ from plexadm.plex import (
     rename_collection,
     set_studio,
 )
+
+
+def _filter_choice(title: str, key: str) -> SimpleNamespace:
+    return SimpleNamespace(title=title, key=key)
 
 
 def _video(**kwargs: object) -> SimpleNamespace:
@@ -332,4 +338,92 @@ class TestSetStudioAddWriterRenameCreate:
         )
         mock_log.assert_called_once_with(
             AuditEvent(action="create_collection", title="Smart", details={"filters": filters})
+        )
+
+    def test_create_smart_collection_resolves_a_collection_title_to_its_filter_choice_id(self) -> None:
+        # Real bug found on a live run: the collection's own .ratingKey is a *different* ID
+        # space from what the "collection" smart-filter parameter expects - passing .ratingKey
+        # doesn't error, it silently matches a different, unrelated collection instead. Callers
+        # must be able to just pass the title, the same way "writer"/"studio" already take plain
+        # names - this is what makes that safe.
+        section = SimpleNamespace(
+            createCollection=MagicMock(),
+            listFilterChoices=MagicMock(
+                return_value=[_filter_choice("01: Activity: Anal", "27385"), _filter_choice("Other", "1")]
+            ),
+        )
+
+        with patch("plexadm.plex.log_event"):
+            create_smart_collection(
+                section,
+                title="00C: Anal Favorite Models (Alice)",
+                sort="viewCount:desc",
+                filters={"collection": "01: Activity: Anal", "writer": "Alice"},
+            )
+
+        section.listFilterChoices.assert_called_once_with("collection")
+        section.createCollection.assert_called_once_with(
+            title="00C: Anal Favorite Models (Alice)",
+            smart=True,
+            sort="viewCount:desc",
+            filters={"collection": "27385", "writer": "Alice"},
+        )
+
+    def test_create_smart_collection_leaves_an_already_resolved_int_untouched(self) -> None:
+        section = SimpleNamespace(createCollection=MagicMock(), listFilterChoices=MagicMock())
+
+        with patch("plexadm.plex.log_event"):
+            create_smart_collection(
+                section, title="Smart", sort="titleSort:asc", filters={"collection": 27385, "writer": "Alice"}
+            )
+
+        section.listFilterChoices.assert_not_called()
+        section.createCollection.assert_called_once_with(
+            title="Smart", smart=True, sort="titleSort:asc", filters={"collection": 27385, "writer": "Alice"}
+        )
+
+    def test_create_smart_collection_raises_when_the_collection_title_does_not_match(self) -> None:
+        section = SimpleNamespace(createCollection=MagicMock(), listFilterChoices=MagicMock(return_value=[]))
+
+        with patch("plexadm.plex.log_event"), pytest.raises(ValueError, match="No collection filter choice"):
+            create_smart_collection(
+                section, title="Smart", sort="titleSort:asc", filters={"collection": "Does Not Exist"}
+            )
+
+        section.createCollection.assert_not_called()
+
+    def test_create_smart_collection_raises_on_an_ambiguous_collection_title(self) -> None:
+        section = SimpleNamespace(
+            createCollection=MagicMock(),
+            listFilterChoices=MagicMock(return_value=[_filter_choice("Dup", "1"), _filter_choice("Dup", "2")]),
+        )
+
+        with patch("plexadm.plex.log_event"), pytest.raises(ValueError, match="Multiple collection filter choices"):
+            create_smart_collection(section, title="Smart", sort="titleSort:asc", filters={"collection": "Dup"})
+
+        section.createCollection.assert_not_called()
+
+    def test_create_smart_collection_resolution_also_applies_to_dry_run(self) -> None:
+        section = SimpleNamespace(
+            createCollection=MagicMock(),
+            listFilterChoices=MagicMock(return_value=[_filter_choice("01: Activity: Anal", "27385")]),
+        )
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            create_smart_collection(
+                section,
+                title="Smart",
+                sort="viewCount:desc",
+                filters={"collection": "01: Activity: Anal"},
+                dry_run=True,
+            )
+
+        section.createCollection.assert_not_called()
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="create_collection",
+                level="DEBUG",
+                title="Smart",
+                details={"filters": {"collection": "27385"}, "dry_run": True},
+            )
         )
