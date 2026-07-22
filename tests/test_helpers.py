@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from plexadm.cli import _cumshot_absent_exclusion_names, _matches_ppv_filename
+from plexadm.cli import _cumshot_absent_exclusion_names, _filters_reference_collection, _matches_ppv_filename
 from plexadm.filters import and_filter, writer_any
 from plexadm.progress import count_digits, progress_prefix
 from plexadm.writers import writers_from_title
@@ -73,3 +73,17 @@ def test_cumshot_absent_exclusion_names_covers_both_pre_and_post_rename_forms() 
     # a cumshot tag) must not be excluded.
     assert "01: Category: MF Only" not in names
     assert "01: Category: MMF" not in names
+
+
+def test_filters_reference_collection_matches_a_top_level_condition() -> None:
+    assert _filters_reference_collection({"collection": "169711"}, "169711") is True
+
+
+def test_filters_reference_collection_matches_nested_inside_and_or() -> None:
+    node = {"and": [{"collection!": "126256"}, {"or": [{"collection": "169711"}, {"writer": "130688"}]}]}
+    assert _filters_reference_collection(node, "169711") is True
+
+
+def test_filters_reference_collection_returns_false_when_absent() -> None:
+    node = {"and": [{"collection": "72220"}, {"writer": "130688"}]}
+    assert _filters_reference_collection(node, "169711") is False

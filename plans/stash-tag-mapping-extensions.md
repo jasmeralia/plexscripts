@@ -188,7 +188,7 @@ Mode: DRY RUN (no Plex changes made)
 
 | Title | Reason |
 |---|---|
-| 00 Rin - Post - 2023-01-16... | cross-axis: ['Category: Solo'] + ['Category: Lesbian'] |
+| Example Writer - Post - 2023-01-16... | cross-axis: ['Category: Solo'] + ['Category: Lesbian'] |
 ```
 
 `Mode:` line reads `Mode: DRY RUN (no Plex changes made)` when `args.dry_run` else `Mode: APPLIED`. Omit the "Composition additions by collection" / "Hair additions by collection" tables entirely (not an empty table) when their respective dict is empty; same for the ambiguous-scenes table when there are zero ambiguous entries — print a plain `_No ambiguous scenes this run._` line instead of an empty table, matching how the review file already treats zero-entries as a legitimate outcome. Escape `|` in titles and reasons the same way as the unmapped-tags report.

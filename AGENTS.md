@@ -30,6 +30,12 @@ Always run `scripts/mass_process.sh` in the background (e.g. `bash scripts/mass_
 
 Tasks, bugs, and follow-ups for this repository are filed in Odoo under the project **Plex Management** (`project.project` id `6`). This is the default project for anything filed from this repo — use it unless explicitly told otherwise for a specific task.
 
+## No indie performer/writer names in git
+
+Never commit a real indie/independent performer or writer name anywhere in this repo - source code, docstrings, help/epilog text, test fixtures, commit messages, docs, plan files, or any other tracked file. Use a generic placeholder instead (e.g. "WRITER NAME", "Example Writer", "00A: Star (PPVs)").
+
+Industry (studio-affiliated) performer names are fine to use as real examples - this rule is specifically about indie/self-published creators, who are more personally identifying. Plex's `Independent Content` studio tag (`INDEPENDENT_STUDIO` in `plexadm/cli.py`) is *not* a reliable signal for this by itself - some writers tagged that way are actually industry performers whose content is just sold direct-download rather than through a mainstream studio site. Judge by whether the person is a genuinely self-published/amateur creator, not by which Plex studio field a video happens to carry.
+
 ## Git Workflow
 
 - Never push commits directly to `master`. Always open a pull request from a feature/fix branch.

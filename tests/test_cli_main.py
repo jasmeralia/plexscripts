@@ -134,3 +134,49 @@ class TestSyncNoStudio:
         assert "studio!" not in str(removal_call.kwargs.get("filters"))
         mock_remove_items.assert_called_once_with(collection, [stale_member], dry_run=False)
         mock_add_items.assert_called_once_with(collection, [], dry_run=False)
+
+
+class TestRetargetWriterPpv:
+    def test_resolves_old_collection_filter_key_before_emptying_it(self) -> None:
+        # Real bug found live: resolving OLD's smart-filter ID via collection_filter_key()
+        # AFTER remove_items() had already emptied OLD failed outright - Plex stops offering an
+        # empty collection as a "collection" filter choice at all, so a smart collection
+        # referencing OLD could never be retargeted once OLD had already been drained mid-run.
+        # The fix resolves the key first, while OLD still has members.
+        call_order: list[str] = []
+
+        old = MagicMock(title="01: Rin PPV")
+        new = MagicMock(title="01: Category: PPV")
+        video = MagicMock(title="00 Rin - Example", collections=[])
+        old.items.return_value = [video]
+
+        ctx = MagicMock()
+        ctx.collection.side_effect = lambda name: old if name == "01: Rin PPV" else new
+        ctx.section.collections.return_value = []
+
+        def fake_collection_filter_key(_section: object, title: str) -> str:
+            call_order.append(f"resolve:{title}")
+            return "169711"
+
+        def fake_remove_items(_collection: object, items: list[object], *, dry_run: bool = False) -> int:
+            call_order.append("remove")
+            return len(list(items))
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            writer="00 Rin",
+            old_collection="01: Rin PPV",
+            new_collection="01: Category: PPV",
+            name_contains="Rin",
+        )
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "add_items", return_value=0),
+            patch.object(cli, "remove_items", side_effect=fake_remove_items),
+            patch.object(cli, "collection_filter_key", side_effect=fake_collection_filter_key),
+        ):
+            assert cli.retarget_writer_ppv(args) == 0
+
+        assert call_order == ["resolve:01: Rin PPV", "remove"]

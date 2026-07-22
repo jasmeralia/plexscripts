@@ -11,10 +11,12 @@ from plexadm.plex import (
     add_items,
     add_writer,
     create_smart_collection,
+    delete_collection,
     lock_title_and_sort_title,
     remove_items,
     rename_collection,
     set_studio,
+    update_smart_collection_filters,
 )
 
 
@@ -43,6 +45,7 @@ def _collection(title: str = "01: Category: Test") -> SimpleNamespace:
         removeItems=MagicMock(),
         editTitle=MagicMock(),
         editSortTitle=MagicMock(),
+        delete=MagicMock(),
     )
 
 
@@ -316,6 +319,26 @@ class TestSetStudioAddWriterRenameCreate:
 
         collection.editSortTitle.assert_called_once_with("New Title")
 
+    def test_delete_collection_deletes_and_logs(self) -> None:
+        collection = _collection("00A: Rin (PPVs)")
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            delete_collection(collection)
+
+        collection.delete.assert_called_once_with()
+        mock_log.assert_called_once_with(AuditEvent(action="delete_collection", title="00A: Rin (PPVs)", details={}))
+
+    def test_delete_collection_dry_run_makes_no_call_but_logs_at_debug(self) -> None:
+        collection = _collection("00A: Rin (PPVs)")
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            delete_collection(collection, dry_run=True)
+
+        collection.delete.assert_not_called()
+        mock_log.assert_called_once_with(
+            AuditEvent(action="delete_collection", level="DEBUG", title="00A: Rin (PPVs)", details={"dry_run": True})
+        )
+
     def test_create_smart_collection_dry_run_makes_no_call_but_logs_at_debug(self) -> None:
         section = SimpleNamespace(createCollection=MagicMock())
         filters = {"writer": "Alice"}
@@ -440,3 +463,63 @@ class TestSetStudioAddWriterRenameCreate:
                 details={"filters": {"collection": "27385"}, "dry_run": True},
             )
         )
+
+    def test_update_smart_collection_filters_deletes_and_recreates(self) -> None:
+        # Real bug found live: plexapi's Collection.updateFilters() can leave an existing smart
+        # collection's cached membership index stuck at 0 items even though the new filter is
+        # valid - survives both collection.refresh() and a full Plex server restart. Delete +
+        # recreate is what actually fixed it, since a freshly created smart collection builds
+        # its index at creation time like every other one already does.
+        section = SimpleNamespace(createCollection=MagicMock())
+        collection = SimpleNamespace(title="00A: Star (PPVs)", delete=MagicMock())
+        filters = {"and": [{"collection": "01: Category: PPV"}, {"writer": "Star"}]}
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            update_smart_collection_filters(collection, section=section, sort="viewCount:desc", filters=filters)
+
+        collection.delete.assert_called_once_with()
+        section.createCollection.assert_called_once_with(
+            title="00A: Star (PPVs)", smart=True, sort="viewCount:desc", filters=filters
+        )
+        events = [call.args[0] for call in mock_log.call_args_list]
+        assert events == [
+            AuditEvent(action="delete_collection", title="00A: Star (PPVs)", details={}),
+            AuditEvent(action="create_collection", title="00A: Star (PPVs)", details={"filters": filters}),
+        ]
+
+    def test_update_smart_collection_filters_resolves_a_top_level_collection_title_on_recreate(self) -> None:
+        section = SimpleNamespace(
+            createCollection=MagicMock(),
+            listFilterChoices=MagicMock(return_value=[_filter_choice("01: Category: PPV", "226728")]),
+        )
+        collection = SimpleNamespace(title="Smart", delete=MagicMock())
+
+        with patch("plexadm.plex.log_event"):
+            update_smart_collection_filters(
+                collection, section=section, sort=None, filters={"collection": "01: Category: PPV"}
+            )
+
+        section.createCollection.assert_called_once_with(
+            title="Smart", smart=True, sort=None, filters={"collection": "226728"}
+        )
+
+    def test_update_smart_collection_filters_dry_run_makes_no_calls_but_logs_at_debug(self) -> None:
+        section = SimpleNamespace(createCollection=MagicMock())
+        collection = SimpleNamespace(title="Smart", delete=MagicMock())
+        filters = {"writer": "Alice"}
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            update_smart_collection_filters(collection, section=section, sort=None, filters=filters, dry_run=True)
+
+        collection.delete.assert_not_called()
+        section.createCollection.assert_not_called()
+        events = [call.args[0] for call in mock_log.call_args_list]
+        assert events == [
+            AuditEvent(action="delete_collection", level="DEBUG", title="Smart", details={"dry_run": True}),
+            AuditEvent(
+                action="create_collection",
+                level="DEBUG",
+                title="Smart",
+                details={"filters": filters, "dry_run": True},
+            ),
+        ]

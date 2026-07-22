@@ -21,6 +21,7 @@ from plexadm.plex import (
     PlexContext,
     add_items,
     add_writer,
+    collection_filter_key,
     collection_titles,
     create_smart_collection,
     has_collection,
@@ -29,6 +30,7 @@ from plexadm.plex import (
     remove_items,
     rename_collection,
     set_studio,
+    update_smart_collection_filters,
 )
 from plexadm.progress import progress_prefix
 from plexadm.stash_reconcile import reconcile as stash_reconcile
@@ -706,6 +708,71 @@ def sync_smart_collections(args: argparse.Namespace) -> int:
 def set_writers_and_sync(args: argparse.Namespace) -> int:
     set_writers_from_titles(args)
     return sync_smart_collections(args)
+
+
+def _filters_reference_collection(node: Any, target_key: str) -> bool:
+    """Recursively check whether a smart collection's parsed filter tree (as returned by
+    plexapi's `Collection.filters()`) contains a "collection" condition matching target_key,
+    however deep it's nested inside "and"/"or" groups."""
+    if isinstance(node, dict):
+        if str(node.get("collection")) == target_key:
+            return True
+        return any(_filters_reference_collection(value, target_key) for value in node.values())
+    if isinstance(node, list):
+        return any(_filters_reference_collection(item, target_key) for item in node)
+    return False
+
+
+def retarget_writer_ppv(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    old = ctx.collection(args.old_collection)
+    new = ctx.collection(args.new_collection)
+
+    # Resolve OLD's smart-filter ID before mutating anything below. Plex stops offering an
+    # empty collection as a "collection" filter choice at all - confirmed live: emptying "01:
+    # Rin PPV" via the removal step further down made this same lookup fail immediately
+    # afterward with "No collection filter choice found". Resolving it first, while OLD still
+    # has members, is what makes the later smart-collection retarget step possible at all.
+    old_key = collection_filter_key(ctx.section, old.title)
+
+    items = list(old.items())
+    to_add = [video for video in items if not has_collection(video, new.title)]
+    for video in to_add:
+        print(warn(f"'{video.title}' needs to be added to '{new.title}'"))
+    added = add_items(new, to_add, dry_run=args.dry_run)
+    for video in items:
+        print(warn(f"'{video.title}' needs to be removed from '{old.title}'"))
+    removed = remove_items(old, items, dry_run=args.dry_run)
+    print(
+        info(f"{added} videos added to '{new.title}', {removed} videos removed from '{old.title}'.{dry_run_note(args)}")
+    )
+
+    name_needle = args.name_contains.lower()
+    retargeted = 0
+    for collection in ctx.section.collections():
+        reload_if_partial(collection)
+        if not collection.smart or name_needle not in str(collection.title).lower():
+            continue
+        spec = collection.filters()
+        conditions = spec.get("filters", {})
+        if not _filters_reference_collection(conditions, old_key):
+            continue
+        if set(conditions.keys()) != {"collection"}:
+            print(
+                warn(
+                    f"'{collection.title}' filter references '{old.title}' but has other "
+                    "conditions too - skipping, retarget it by hand."
+                )
+            )
+            continue
+        new_filters = {"and": [{"collection": new.title}, {"writer": args.writer}]}
+        print(warn(f"Retargeting '{collection.title}' to '{new.title}' + writer '{args.writer}'"))
+        update_smart_collection_filters(
+            collection, section=ctx.section, sort=spec.get("sort"), filters=new_filters, dry_run=args.dry_run
+        )
+        retargeted += 1
+    print(info(f"{retargeted} smart collections retargeted.{dry_run_note(args)}"))
+    return 0
 
 
 def rename_collections(args: argparse.Namespace) -> int:
@@ -1722,6 +1789,41 @@ def _build_smart_collection_commands(sub: Any) -> None:
     )
     set_func(rename_collection_parser, rename_collections)
 
+    retarget_ppv_parser = _make_sub(
+        smart_sub,
+        "retarget-ppv",
+        help="Retire a writer-specific PPV collection in favor of a shared PPV collection.",
+        description=(
+            "Move every video in --old-collection into --new-collection (skipping ones\n"
+            "already there, then removing them all from --old-collection). Then find\n"
+            "every smart collection whose title contains --name-contains and whose filter\n"
+            "is exactly 'collection = OLD', and repoint it at\n"
+            "'collection = NEW AND writer = WRITER'. Smart collections that reference\n"
+            "OLD alongside other conditions are left alone and reported for manual review."
+        ),
+        epilog=(
+            "Example:\n"
+            "  plexadm smart-collections retarget-ppv --writer 'WRITER NAME' "
+            f"--old-collection 'WRITER PPV COLLECTION' --new-collection '{PPV_COLLECTION}' --name-contains 'WRITER'"
+        ),
+    )
+    retarget_ppv_parser.add_argument(
+        "--writer", required=True, metavar="WRITER", help="Writer name to combine with NEW in the retargeted filter."
+    )
+    retarget_ppv_parser.add_argument(
+        "--old-collection", required=True, metavar="OLD", help="Writer-specific PPV collection to retire."
+    )
+    retarget_ppv_parser.add_argument(
+        "--new-collection", required=True, metavar="NEW", help="Shared PPV collection to move videos into."
+    )
+    retarget_ppv_parser.add_argument(
+        "--name-contains",
+        required=True,
+        metavar="TEXT",
+        help="Only retarget smart collections whose title contains this text (case-insensitive).",
+    )
+    set_func(retarget_ppv_parser, retarget_writer_ppv)
+
 
 def _build_tools_commands(sub: Any) -> None:
     tools = _make_sub(
@@ -1967,7 +2069,7 @@ def _build_stash_commands(sub: Any) -> None:
     reconcile_parser.add_argument(
         "--path",
         metavar="PREFIX",
-        help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/00 Rin).",
+        help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/Studio Name).",
     )
     reconcile_parser.add_argument(
         "--log-level",

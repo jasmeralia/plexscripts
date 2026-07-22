@@ -209,34 +209,47 @@ def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False)
     log_event(AuditEvent(action="rename_collection", level=level, title=new_title, details=details))
 
 
-def _resolve_collection_filter(section: Any, filters: dict[str, Any]) -> dict[str, Any]:
-    """Resolve a "collection" smart-filter value given as a title string to the ID Plex's smart
-    filter query language actually expects.
+def delete_collection(collection: Any, *, dry_run: bool = False) -> None:
+    title = str(collection.title)
+    if not dry_run:
+        collection.delete()
+    level, details = _mutation_level_and_details(dry_run, {})
+    log_event(AuditEvent(action="delete_collection", level=level, title=title, details=details))
+
+
+def collection_filter_key(section: Any, title: str) -> str:
+    """Resolve a collection's title to the ID Plex's smart filter query language expects.
 
     That ID comes from `section.listFilterChoices("collection")` - a *different* ID space from
     the collection's own `.ratingKey`. Confirmed live: passing `.ratingKey` doesn't error, it
     silently matches a different, unrelated collection instead (a 5-item one instead of the
-    intended 1985-item one), which is a much worse failure mode than a clear error. Callers
-    should always pass the collection's title as a plain string here, the same way "writer" and
-    "studio" filters already take plain name strings elsewhere in this file - if a caller passes
-    an int, it's trusted as already-resolved and left untouched.
+    intended 1985-item one), which is a much worse failure mode than a clear error.
     """
-    if "collection" not in filters or not isinstance(filters["collection"], str):
-        return filters
-    title = filters["collection"]
     matches = [choice.key for choice in section.listFilterChoices("collection") if choice.title == title]
     if not matches:
         raise ValueError(f"No collection filter choice found for {title!r} - check the title is exact.")
     if len(matches) > 1:
         raise ValueError(f"Multiple collection filter choices found for {title!r} - expected exactly one.")
-    return {**filters, "collection": matches[0]}
+    return matches[0]
+
+
+def _resolve_collection_filter(section: Any, filters: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a top-level "collection" smart-filter value given as a title string via
+    `collection_filter_key`. Callers should always pass the collection's title as a plain
+    string here, the same way "writer" and "studio" filters already take plain name strings
+    elsewhere in this file - if a caller passes an int, it's trusted as already-resolved and
+    left untouched.
+    """
+    if "collection" not in filters or not isinstance(filters["collection"], str):
+        return filters
+    return {**filters, "collection": collection_filter_key(section, filters["collection"])}
 
 
 def create_smart_collection(
     section: Any,
     *,
     title: str,
-    sort: str,
+    sort: Any,
     filters: dict[str, Any],
     dry_run: bool = False,
 ) -> None:
@@ -245,3 +258,29 @@ def create_smart_collection(
         section.createCollection(title=title, smart=True, sort=sort, filters=filters)
     level, details = _mutation_level_and_details(dry_run, {"filters": filters})
     log_event(AuditEvent(action="create_collection", level=level, title=title, details=details))
+
+
+def update_smart_collection_filters(
+    collection: Any,
+    *,
+    section: Any,
+    sort: Any,
+    filters: dict[str, Any],
+    dry_run: bool = False,
+) -> None:
+    """Replace an existing smart collection's filters (and sort) by deleting and recreating it.
+
+    Real bug found live: plexapi's `Collection.updateFilters()` can leave the collection's
+    cached membership index permanently stuck at 0 items, even though the new filter is valid
+    (the identical query run fresh via `section.search()` returns the correct results) - and
+    this survives both `collection.refresh()` and a full Plex container restart. Deleting and
+    recreating the collection with the same title/sort/filters reliably fixes it, since a
+    freshly created smart collection builds its index at creation time - the same code path
+    every other smart collection already relies on. This loses the collection's ratingKey and
+    any hand-set custom artwork, but every smart collection in this codebase is looked up by
+    title (never a stored ratingKey) and is auto-managed/derived rather than hand-curated, so
+    neither loss matters here.
+    """
+    title = str(collection.title)
+    delete_collection(collection, dry_run=dry_run)
+    create_smart_collection(section, title=title, sort=sort, filters=filters, dry_run=dry_run)
