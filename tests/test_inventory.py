@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from plexadm.config import InventoryConfig
-from plexadm.inventory import diff_snapshots, take_snapshot
+from plexadm.inventory import _fetch_run_ids, diff_snapshots, take_snapshot
 
 
 def _video(**kwargs: object) -> SimpleNamespace:
@@ -54,6 +54,32 @@ class TestTakeSnapshot:
 
         assert count == 1
         mock_bulk.assert_not_called()
+
+
+class TestFetchRunIds:
+    def test_reads_key_as_string_not_key(self) -> None:
+        # Real bug found live: run_id is an ISO8601 string, but OpenSearch's dynamic mapping
+        # date-detects it as a `date` field rather than text/keyword - so aggregation buckets
+        # come back keyed by epoch-millis `key`, with the ISO string only in `key_as_string`.
+        # Reading `key` directly against a real cluster silently returned a query that matched
+        # nothing downstream, since real run_id values were never epoch-millis integers.
+        mock_client = MagicMock()
+        mock_client.search.return_value = {
+            "aggregations": {
+                "runs": {
+                    "buckets": [
+                        {"key": 1784808910000, "key_as_string": "2026-07-23T12:15:10.000Z"},
+                        {"key": 1784807643000, "key_as_string": "2026-07-23T11:54:03.000Z"},
+                    ]
+                }
+            }
+        }
+        config = InventoryConfig(url="http://localhost:9200")
+
+        with patch("plexadm.inventory._client", return_value=mock_client):
+            run_ids = _fetch_run_ids(config)
+
+        assert run_ids == ["2026-07-23T12:15:10.000Z", "2026-07-23T11:54:03.000Z"]
 
 
 class TestDiffSnapshots:

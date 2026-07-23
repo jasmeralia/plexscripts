@@ -52,20 +52,25 @@ def take_snapshot(ctx: PlexContext, config: InventoryConfig, *, dry_run: bool = 
 
 
 def _fetch_run_ids(config: InventoryConfig, *, size: int = 2) -> list[str]:
+    # run_id is an ISO8601 string, but OpenSearch's dynamic mapping date-detects it as a `date`
+    # field rather than `text`/`keyword` - so there's no `.keyword` sub-field to aggregate on.
+    # Querying the field directly still works for exact match/terms aggs (date fields support
+    # both), and keeping it date-typed rather than forcing keyword is deliberate: diff_snapshots
+    # reuses run_id values as a time range when cross-checking the audit trail.
     response = _client(config).search(
         index=config.index,
         body={
             "size": 0,
-            "aggs": {"runs": {"terms": {"field": "run_id.keyword", "order": {"_key": "desc"}, "size": size}}},
+            "aggs": {"runs": {"terms": {"field": "run_id", "order": {"_key": "desc"}, "size": size}}},
         },
     )
-    return [bucket["key"] for bucket in response["aggregations"]["runs"]["buckets"]]
+    return [bucket["key_as_string"] for bucket in response["aggregations"]["runs"]["buckets"]]
 
 
 def _fetch_run(config: InventoryConfig, run_id: str) -> dict[int, dict[str, Any]]:
     from opensearchpy.helpers import scan
 
-    docs = scan(_client(config), index=config.index, query={"query": {"term": {"run_id.keyword": run_id}}})
+    docs = scan(_client(config), index=config.index, query={"query": {"term": {"run_id": run_id}}})
     return {doc["_source"]["rating_key"]: doc["_source"] for doc in docs}
 
 
