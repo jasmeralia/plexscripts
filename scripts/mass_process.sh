@@ -42,7 +42,7 @@ date; time "$PLEXADM" collection sync-cumshot-absent
 # Flag long indie videos with no Live Stream tag for review - often a livestream recording
 # that's missing the tag
 date; time "$PLEXADM" collection add-duration "00D: Review: Potential Live Streams" \
-  --min-duration-ms 3600000 \
+  --min-duration-ms 5400000 \
   --filters '{"studio": "Independent Content", "collection!": "01: Theme: Live Stream"}'
 
 END_DATE=$(date)
