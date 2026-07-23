@@ -71,8 +71,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 "$PLEXADM" collection add-search "01: Prop: Sex Toys" "jessky"
 "$PLEXADM" collection add-search "01: Prop: Sex Toys" "strap"
 "$PLEXADM" collection add-search "01: Prop: Sex Toys" "toy"
-"$PLEXADM" collection add-search "01: Composition: Solo" "herself"
-"$PLEXADM" collection add-search "01: Composition: Solo" "myself"
+# Excludes every other composition tag: a title match for "herself"/"myself" is not reliable
+# enough to override a video already confidently tagged as multi-performer content. Prefix-based
+# so newly added "01: Composition:" collections are covered automatically.
+"$PLEXADM" collection add-search "01: Composition: Solo" "herself" --exclude-collection-prefix "01: Composition:"
+"$PLEXADM" collection add-search "01: Composition: Solo" "myself" --exclude-collection-prefix "01: Composition:"
 "$PLEXADM" collection add-search "01: Prop: Strap On" "strap"
 "$PLEXADM" collection add-search "01: Theme: Teacher/Student" "Teacher"
 "$PLEXADM" collection add-search "01: Prop: Water" "shower"

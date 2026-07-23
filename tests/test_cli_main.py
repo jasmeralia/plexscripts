@@ -207,6 +207,59 @@ class TestAddDurationCollection:
         assert {"duration>>": 3_600_000} in used
 
 
+class TestAddSearchResults:
+    def test_exclude_collection_adds_plex_side_filters(self) -> None:
+        collection = MagicMock(title="01: Composition: Solo")
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = []
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            collection="01: Composition: Solo",
+            pattern="myself",
+            exclude_collection=["01: Composition: MF Only"],
+            exclude_collection_prefix=None,
+        )
+
+        with patch.object(cli, "build_context", return_value=ctx), patch.object(cli, "add_items", return_value=0):
+            assert cli.add_search_results(args) == 0
+
+        used = ctx.search.call_args.kwargs["filters"]["and"]
+        assert {"collection!": "01: Composition: MF Only"} in used
+
+    def test_exclude_collection_prefix_filters_client_side(self) -> None:
+        # Real bug found live: a title match for "myself" added a video already tagged
+        # '01: Composition: MF Only' to Solo - Plex's filter DSL can only exclude one exact
+        # collection at a time, so a whole-family exclusion has to happen after the search,
+        # against each video's already-reloaded collection list.
+        collection = MagicMock(title="01: Composition: Solo")
+        mf_only_video = MagicMock(title="Serika - Want Him All To Myself", collections=["01: Composition: MF Only"])
+        clean_video = MagicMock(title="Someone - By Myself", collections=[])
+
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = [mf_only_video, clean_video]
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            collection="01: Composition: Solo",
+            pattern="myself",
+            exclude_collection=None,
+            exclude_collection_prefix=["01: Composition:"],
+        )
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "add_items", return_value=1) as mock_add_items,
+        ):
+            assert cli.add_search_results(args) == 0
+
+        mock_add_items.assert_called_once_with(collection, [clean_video], dry_run=False)
+
+
 class TestAddPpv:
     def test_only_adds_never_removes(self) -> None:
         # Real bug found live: filename-based removal was dropping genuinely valid PPV videos

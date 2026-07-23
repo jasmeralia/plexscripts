@@ -138,9 +138,18 @@ def add_matching_titles(args: argparse.Namespace) -> int:
 def add_search_results(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
-    filters = and_filter(not_in_collection(collection.title), title_contains(args.pattern))
+    exclusions = [not_in_collection(name) for name in args.exclude_collection or []]
+    filters = and_filter(not_in_collection(collection.title), title_contains(args.pattern), *exclusions)
     print(info(f"Search filters: {filters}"))
     results = ctx.search(filters=filters, reload=True)
+    prefixes = tuple(args.exclude_collection_prefix or [])
+    if prefixes:
+        # Plex's smart-filter DSL matches one specific collection at a time, not a text prefix -
+        # there's no "collection! " filter that works across a whole family at once, so this has
+        # to happen client-side against each video's already-reloaded collection list.
+        results = [
+            video for video in results if not any(title.startswith(prefixes) for title in collection_titles(video))
+        ]
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{collection.title}'"))
     added = add_items(collection, results, dry_run=args.dry_run)
@@ -1348,6 +1357,23 @@ def _build_collection_commands(sub: Any) -> None:
     )
     add_search.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_search.add_argument("pattern", metavar="PATTERN", help="Text passed to the Plex title search.")
+    add_search.add_argument(
+        "--exclude-collection",
+        action="append",
+        metavar="COLLECTION",
+        help="Skip matches already in COLLECTION (repeatable). Use for keyword matches that "
+        "would otherwise conflict with an existing, more reliable tag - e.g. a title-text match "
+        "for Solo should not override a video already tagged '01: Composition: MF Only'.",
+    )
+    add_search.add_argument(
+        "--exclude-collection-prefix",
+        action="append",
+        metavar="PREFIX",
+        help="Skip matches already in any collection whose title starts with PREFIX (repeatable, "
+        "checked client-side). Use to exclude a whole family at once - e.g. "
+        "--exclude-collection-prefix '01: Composition:' for Solo, instead of listing every "
+        "individual composition collection with --exclude-collection.",
+    )
     set_func(add_search, add_search_results)
 
     add_writer = _make_sub(
