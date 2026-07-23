@@ -324,16 +324,22 @@ This is what `scripts/set_tags_based_on_title.sh` uses.
 Scan titles for a writer pattern, confirm the Plex writer exactly matches, then add to a collection:
 
 ```bash
-plexadm collection add-writer "01: Category: Solo" "Writer Name"
+plexadm collection add-writer "01: Composition: Solo" "Writer Name"
 ```
 
 Add all videos matching any writer in a file:
 
 ```bash
-plexadm collection add-writers "01: Category: Solo" reference/writers_solo.txt
+plexadm collection add-writers "01: Composition: Solo" reference/writers_solo.txt
 ```
 
-Writer files are newline-delimited.
+Writer files are newline-delimited. Pass `--single-writer-only` to skip videos with more than one
+credited writer - use this for Solo, so a listed performer co-starring in someone else's scene
+doesn't get that scene tagged Solo too:
+
+```bash
+plexadm collection add-writers --single-writer-only "01: Composition: Solo" reference/writers_solo.txt
+```
 
 ### Copy Between Collections
 
@@ -411,20 +417,21 @@ The default collection is `00A: NO STUDIO`:
 plexadm collection sync-no-studio
 ```
 
-### Sync PPV Collection
+### Add PPV Collection
 
-Add videos whose filename matches `*- PPV *` and remove videos that no longer match. Plex has no
-native filter for filename/file path, so the match happens in Python against each media part's
-filename rather than as a Plex search filter:
+Add videos whose filename matches `*- PPV *`. Plex has no native filter for filename/file path, so
+the match happens in Python against each media part's filename rather than as a Plex search
+filter. Add-only: a filename no longer matching the pattern (e.g. after a manual rename) doesn't
+mean the video stopped being valid PPV content, so existing members are never removed:
 
 ```bash
-plexadm collection sync-ppv "01: Category: PPV"
+plexadm collection add-ppv "01: Category: PPV"
 ```
 
 The default collection is `01: Category: PPV`:
 
 ```bash
-plexadm collection sync-ppv
+plexadm collection add-ppv
 ```
 
 ### Lock Titles

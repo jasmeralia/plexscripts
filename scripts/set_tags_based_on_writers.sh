@@ -7,7 +7,7 @@ REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-/usr/local/share/plexadm/reference}
 
 "$PLEXADM" studio bulk-independent "${REFERENCE_DIR}/writers_indie.txt"
 
-"$PLEXADM" collection add-writers '01: Composition: Solo' "${REFERENCE_DIR}/writers_solo.txt"
+"$PLEXADM" collection add-writers --single-writer-only '01: Composition: Solo' "${REFERENCE_DIR}/writers_solo.txt"
 "$PLEXADM" collection add-writers '01: Attributes: Asian' "${REFERENCE_DIR}/writers_asian.txt"
 "$PLEXADM" collection add-writers '01: Attributes: Pierced Nipples' "${REFERENCE_DIR}/writers_pierced_nipples.txt"
 "$PLEXADM" collection add-writers '01: Attributes: Pierced Vagina' "${REFERENCE_DIR}/writers_pierced_vagina.txt"
@@ -20,4 +20,5 @@ REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-/usr/local/share/plexadm/reference}
 "$PLEXADM" collection add-writers '01: Hair: Brunette' "${REFERENCE_DIR}/writers_brunette.txt"
 "$PLEXADM" collection add-writers '01: Hair: Red' "${REFERENCE_DIR}/writers_redhead.txt"
 
+"$PLEXADM" collection add-writers '01: Activity: Completely Throated' "${REFERENCE_DIR}/writers_completely_throated.txt"
 "$PLEXADM" collection add-writer '01: Activity: Extreme Throating' "Tiptobase69"

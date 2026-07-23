@@ -207,6 +207,95 @@ class TestAddDurationCollection:
         assert {"duration>>": 3_600_000} in used
 
 
+class TestAddPpv:
+    def test_only_adds_never_removes(self) -> None:
+        # Real bug found live: filename-based removal was dropping genuinely valid PPV videos
+        # whose files had since been renamed away from the raw platform export naming (e.g. to
+        # a cleaner descriptive title), even though the content itself was still PPV. Fixed to
+        # be add-only - a filename no longer matching never removes an existing member.
+        collection = MagicMock(title="01: Category: PPV")
+        matching = MagicMock(
+            title="Some Writer - PPV - 123456_789012_2020-01-01",
+            locations=["/media/Some Writer - PPV - 123456_789012_2020-01-01.mp4"],
+        )
+        non_matching = MagicMock(
+            title="Some Writer - Renamed Title", locations=["/media/Some Writer - Renamed Title.mp4"]
+        )
+
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = [matching, non_matching]
+
+        args = argparse.Namespace(config=None, collection="01: Category: PPV", dry_run=False)
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "add_items", return_value=1) as mock_add_items,
+            patch.object(cli, "remove_items") as mock_remove_items,
+        ):
+            assert cli.add_ppv(args) == 0
+
+        assert ctx.search.call_count == 1
+        mock_add_items.assert_called_once_with(collection, [matching], dry_run=False)
+        mock_remove_items.assert_not_called()
+
+
+class TestAddWritersFile:
+    def test_single_writer_only_skips_multi_writer_matches(self) -> None:
+        # Real bug found live: a listed Solo performer co-starring in someone else's scene
+        # got that multi-writer scene tagged Solo too, since add-writers only checks whether
+        # any listed writer matches, not how many writers the video has in total.
+        collection = MagicMock(title="01: Composition: Solo")
+        solo_video = MagicMock(title="00 Rin - Eve", writers=["00 Rin"])
+        multi_writer_video = MagicMock(title="00 Rin, Nixy - Second Breakfast #2", writers=["00 Rin", "Nixy"])
+
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = [solo_video, multi_writer_video]
+
+        args = argparse.Namespace(
+            config=None,
+            collection="01: Composition: Solo",
+            file="writers_solo.txt",
+            single_writer_only=True,
+            dry_run=False,
+        )
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "read_writer_file", return_value=["00 Rin"]),
+            patch.object(cli, "add_items", return_value=1) as mock_add_items,
+        ):
+            assert cli.add_writers_file(args) == 0
+
+        mock_add_items.assert_called_once_with(collection, [solo_video], dry_run=False)
+
+    def test_single_writer_only_false_keeps_multi_writer_matches(self) -> None:
+        collection = MagicMock(title="01: Attributes: Asian")
+        multi_writer_video = MagicMock(title="Writer A, Writer B - Scene", writers=["Writer A", "Writer B"])
+
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = [multi_writer_video]
+
+        args = argparse.Namespace(
+            config=None,
+            collection="01: Attributes: Asian",
+            file="writers_asian.txt",
+            single_writer_only=False,
+            dry_run=False,
+        )
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "read_writer_file", return_value=["Writer A"]),
+            patch.object(cli, "add_items", return_value=1) as mock_add_items,
+        ):
+            assert cli.add_writers_file(args) == 0
+
+        mock_add_items.assert_called_once_with(collection, [multi_writer_video], dry_run=False)
+
+
 class TestRetargetWriterPpv:
     def test_resolves_old_collection_filter_key_before_emptying_it(self) -> None:
         # Real bug found live: resolving OLD's smart-filter ID via collection_filter_key()

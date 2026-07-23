@@ -85,6 +85,28 @@ class TestAddRemoveItems:
         assert count == 1
         collection.removeItems.assert_called_once_with([locked])
 
+    @pytest.mark.parametrize(
+        "bypass_title",
+        [
+            "01: Category: Short Videos",
+            "01: Category: Vertical Video",
+            "00C: Unrated",
+            "00A: NO STUDIO",
+        ],
+    )
+    def test_add_and_remove_bypass_lock_for_format_collections(self, bypass_title: str) -> None:
+        # These describe a fact about the file itself (duration, orientation, rating, studio
+        # presence), not a content judgment call, so locked videos should still get tagged.
+        collection = _collection(bypass_title)
+        locked = _video(collections=[LOCKED_COLLECTION])
+
+        with patch("plexadm.plex.log_event"):
+            assert add_items(collection, [locked]) == 1
+            assert remove_items(collection, [locked]) == 1
+
+        collection.addItems.assert_called_once_with([locked])
+        collection.removeItems.assert_called_once_with([locked])
+
     def test_dry_run_makes_no_api_calls_but_logs_at_debug(self) -> None:
         collection = _collection()
         video = _video()
@@ -345,6 +367,15 @@ class TestSetStudioAddWriterRenameCreate:
             create_collection(section, title="00D: Review: New", items=[locked, unlocked])
 
         section.createCollection.assert_called_once_with(title="00D: Review: New", items=[unlocked])
+
+    def test_create_collection_bypasses_lock_for_format_collections(self) -> None:
+        section = SimpleNamespace(createCollection=MagicMock())
+        locked = _video(title="Locked Video", ratingKey=1, collections=[LOCKED_COLLECTION])
+
+        with patch("plexadm.plex.log_event"):
+            create_collection(section, title="01: Category: Vertical Video", items=[locked])
+
+        section.createCollection.assert_called_once_with(title="01: Category: Vertical Video", items=[locked])
 
     def test_create_collection_dry_run_makes_no_call_but_logs_at_debug(self) -> None:
         section = SimpleNamespace(createCollection=MagicMock())

@@ -11,6 +11,24 @@ from plexadm.console import warn
 
 LOCKED_COLLECTION = "99: LOCKED"
 
+# Format/technical-metadata collections, not content descriptors - membership here reflects a
+# fact about the file itself (duration, orientation, rating, studio presence), not a judgment
+# call about the content, so '99: LOCKED' videos should still get tagged into them like any
+# other video. Distinct from every other collection, where LOCKED means "never touch this
+# video's membership, full stop."
+LOCK_BYPASS_COLLECTIONS = frozenset(
+    {
+        "01: Category: Short Videos",
+        "01: Category: Vertical Video",
+        "00C: Unrated",
+        "00A: NO STUDIO",
+    }
+)
+
+# LOCKED_COLLECTION itself is exempt too - toggling '99: LOCKED' membership is how a video's
+# lock gets set/unset in the first place, so it can't be subject to its own guard.
+_LOCK_GUARD_EXEMPT = LOCK_BYPASS_COLLECTIONS | {LOCKED_COLLECTION}
+
 
 class PlexContext:
     def __init__(self, config: PlexConfig):
@@ -87,7 +105,7 @@ def _mutation_level_and_details(dry_run: bool, details: dict[str, Any]) -> tuple
 
 def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
-    if str(collection.title) != LOCKED_COLLECTION:
+    if str(collection.title) not in _LOCK_GUARD_EXEMPT:
         item_list = _drop_locked(item_list)
     if item_list:
         if not dry_run:
@@ -109,7 +127,7 @@ def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -
 
 def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
-    if str(collection.title) != LOCKED_COLLECTION:
+    if str(collection.title) not in _LOCK_GUARD_EXEMPT:
         item_list = _drop_locked(item_list)
     if item_list:
         if not dry_run:
@@ -218,7 +236,7 @@ def create_collection(section: Any, *, title: str, items: Iterable[Any], dry_run
     the audit trail after the fact.
     """
     item_list = list(items)
-    if title != LOCKED_COLLECTION:
+    if title not in _LOCK_GUARD_EXEMPT:
         item_list = _drop_locked(item_list)
     if not dry_run:
         section.createCollection(title=title, items=item_list)

@@ -173,6 +173,11 @@ def add_writers_file(args: argparse.Namespace) -> int:
     filters = and_filter(not_in_collection(collection.title), not_in_collection(LOCKED_COLLECTION), writer_any(writers))
     print(info(f"Search filters: {filters}"))
     results = ctx.search(filters=filters, reload=True)
+    if args.single_writer_only:
+        # Plex has no "writer count" smart filter, so a listed writer (e.g. a Solo performer)
+        # who happens to co-star in a multi-writer scene would otherwise get that scene tagged
+        # Solo too - filter it out here in Python instead.
+        results = [video for video in results if len(getattr(video, "writers", None) or []) == 1]
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{collection.title}'"))
     added = add_items(collection, results, dry_run=args.dry_run)
@@ -322,21 +327,20 @@ def _matches_ppv_filename(video: Any) -> bool:
     return any(fnmatch.fnmatchcase(Path(location).name, PPV_FILENAME_PATTERN) for location in locations)
 
 
-def sync_ppv(args: argparse.Namespace) -> int:
+def add_ppv(args: argparse.Namespace) -> int:
+    """Add-only: a filename that stops matching the PPV pattern (e.g. after a manual rename
+    away from a platform's raw export name) does not mean the content stopped being valid PPV
+    content - some legitimate PPV sources (e.g. MFC) just don't get exported with that naming
+    convention. Removing on filename-mismatch alone was flagging real PPV videos for removal,
+    so this only ever adds, never removes."""
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
     to_add = ctx.search(filters=not_in_collection(collection.title), reload=True)
     to_add = [video for video in to_add if _matches_ppv_filename(video)]
-    to_remove = ctx.search(filters=in_collection(collection.title), reload=True)
-    to_remove = [video for video in to_remove if not _matches_ppv_filename(video)]
     for video in to_add:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
-    for video in to_remove:
-        print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
     added = add_items(collection, to_add, dry_run=args.dry_run)
-    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
     print(info(f"{added} collections added.{dry_run_note(args)}"))
-    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
     return 0
 
 
@@ -1373,6 +1377,12 @@ def _build_collection_commands(sub: Any) -> None:
     )
     add_writers.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_writers.add_argument("file", metavar="FILE", help="Path to a writer-list file (one name per line).")
+    add_writers.add_argument(
+        "--single-writer-only",
+        action="store_true",
+        help="Skip videos with more than one credited writer (e.g. for Solo, where a listed "
+        "performer co-starring in a multi-writer scene should not tag that scene Solo).",
+    )
     set_func(add_writers, add_writers_file)
 
     copy = _make_sub(
@@ -1518,26 +1528,27 @@ def _build_collection_commands(sub: Any) -> None:
     )
     set_func(sync_no_studio_parser, sync_no_studio)
 
-    sync_ppv_parser = _make_sub(
+    add_ppv_parser = _make_sub(
         collection_sub,
-        "sync-ppv",
-        help=f"Keep COLLECTION in sync with filenames matching '{PPV_FILENAME_PATTERN}' (default: '{PPV_COLLECTION}').",
+        "add-ppv",
+        help=f"Add videos whose filename matches '{PPV_FILENAME_PATTERN}' to COLLECTION (default: '{PPV_COLLECTION}').",
         description=(
             "Add every video whose filename matches "
-            f"'{PPV_FILENAME_PATTERN}' that is missing from COLLECTION, and remove every video in "
-            f"COLLECTION whose filename no longer matches. Defaults to '{PPV_COLLECTION}'. Plex has "
-            "no native filename filter, so matching happens in Python, not as a Plex search."
+            f"'{PPV_FILENAME_PATTERN}' that is missing from COLLECTION. Defaults to '{PPV_COLLECTION}'. Plex has "
+            "no native filename filter, so matching happens in Python, not as a Plex search. Add-only: a "
+            "filename no longer matching the pattern (e.g. after a manual rename) doesn't mean the video "
+            "stopped being valid PPV content, so this never removes existing members."
         ),
-        epilog="Example:\n  plexadm collection sync-ppv",
+        epilog="Example:\n  plexadm collection add-ppv",
     )
-    sync_ppv_parser.add_argument(
+    add_ppv_parser.add_argument(
         "collection",
         nargs="?",
         default=PPV_COLLECTION,
         metavar="COLLECTION",
         help=f"Target collection name (default: '{PPV_COLLECTION}').",
     )
-    set_func(sync_ppv_parser, sync_ppv)
+    set_func(add_ppv_parser, add_ppv)
 
     lock_titles_parser = _make_sub(
         collection_sub,
