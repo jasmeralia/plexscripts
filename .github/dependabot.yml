@@ -4,7 +4,6 @@ updates:
   directory: /
   schedule:
     interval: weekly
-  auto-merge: enable
   groups:
     python-dependencies:
       patterns:
@@ -15,13 +14,11 @@ updates:
   directory: /
   schedule:
     interval: weekly
-  auto-merge: enable
   reviewers:
   - jasmeralia
 - package-ecosystem: github-actions
   directory: /
   schedule:
     interval: weekly
-  auto-merge: enable
   reviewers:
   - jasmeralia
