@@ -92,6 +92,7 @@ class TestAddRemoveItems:
             "01: Category: Vertical Video",
             "00C: Unrated",
             "00A: NO STUDIO",
+            "01: Category: PPV",
         ],
     )
     def test_add_and_remove_bypass_lock_for_format_collections(self, bypass_title: str) -> None:

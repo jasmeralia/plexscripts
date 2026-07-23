@@ -12,9 +12,9 @@ from plexadm.console import warn
 LOCKED_COLLECTION = "99: LOCKED"
 
 # Format/technical-metadata collections, not content descriptors - membership here reflects a
-# fact about the file itself (duration, orientation, rating, studio presence), not a judgment
-# call about the content, so '99: LOCKED' videos should still get tagged into them like any
-# other video. Distinct from every other collection, where LOCKED means "never touch this
+# fact about the file itself (duration, orientation, rating, studio presence, filename), not a
+# judgment call about the content, so '99: LOCKED' videos should still get tagged into them like
+# any other video. Distinct from every other collection, where LOCKED means "never touch this
 # video's membership, full stop."
 LOCK_BYPASS_COLLECTIONS = frozenset(
     {
@@ -22,6 +22,7 @@ LOCK_BYPASS_COLLECTIONS = frozenset(
         "01: Category: Vertical Video",
         "00C: Unrated",
         "00A: NO STUDIO",
+        "01: Category: PPV",
     }
 )
 
