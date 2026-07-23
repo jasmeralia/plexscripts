@@ -52,6 +52,26 @@ For remote syslog, set `address = host:port`; Docker containers generally do not
 
 Every audit event carries a `level` (`INFO`, `WARNING`, or `ERROR`), which is mapped to the matching native severity on the syslog and journal sinks (e.g. an `ERROR` event reaches syslog at the `err` priority, not `info`). Plex mutations are logged at `INFO`. In addition to mutations, plexadm logs two non-mutation event types to the same sink: any uncaught exception during a command is logged at `ERROR` (`action = "error"`), and a `Ctrl-C` interrupt is logged at `WARNING` (`action = "interrupted"`) — both so a crashed or aborted run leaves a trace instead of only a stderr message.
 
+### Inventory (`plexadm inventory`)
+
+Distinct from audit logging, which only records what plexadm itself did: `plexadm inventory snapshot` records what the library's collection membership actually looks like right now, regardless of what changed it. `plexadm inventory diff` compares two snapshots and reports every video whose collections changed, cross-checking the audit trail (when it's on the `opensearch` sink) for a matching event - a change with none is flagged `UNATTRIBUTED`, meaning something other than plexadm changed it (a stray Plex Web edit, an agent, etc.).
+
+Requires its own `[inventory]` section, independent of the `[logging]` sink choice:
+
+```ini
+[inventory]
+url = https://opensearch.example.com:9200
+index = plexadm-inventory
+username = plexadm
+password = your-password
+verify_tls = true
+```
+
+```bash
+plexadm inventory snapshot
+plexadm inventory diff
+```
+
 ## Install
 
 Install local development dependencies into `.venv/`:

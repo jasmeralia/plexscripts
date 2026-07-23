@@ -24,6 +24,10 @@ Every real, non-dry-run Plex mutation must go through the centralized helpers in
 
 Every `AuditEvent` carries a `level` (`INFO`/`WARNING`/`ERROR`), which is dispatched through the matching Python `logging` level so syslog/journal severity reflects it natively. Mutations are `INFO`. `plexadm.cli.main` also logs uncaught command exceptions (`audit.log_error`, `ERROR`) and `Ctrl-C` interrupts (`WARNING`) to the same sink, so a crashed or aborted run is traceable, not just a mutation history.
 
+## Inventory snapshots (`plexadm.inventory`)
+
+Audit logging only ever records what plexadm itself did - it cannot show drift from any other source (a stray Plex Web edit, a metadata agent, anything outside this repo). `plexadm inventory snapshot` closes that gap by recording one document per video with its full current collection membership to a dedicated OpenSearch index (`[inventory]` config section, independent of the `[logging]` sink choice). `plexadm inventory diff` compares two snapshots and, when an OpenSearch audit sink is configured, cross-checks each changed video's audit trail in that window - a change with no matching event is flagged `UNATTRIBUTED`. This pairing (periodic ground-truth snapshot + existing audit trail) is what should be reached for first when investigating unexplained collection membership, rather than reconstructing it from Plex server logs after the fact.
+
 ## Running Scripts
 
 Always run `scripts/mass_process.sh` in the background (e.g. `bash scripts/mass_process.sh &> /tmp/mass_process.log &`). It takes several minutes and should not block the terminal.

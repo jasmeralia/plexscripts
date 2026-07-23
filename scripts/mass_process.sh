@@ -45,6 +45,10 @@ date; time "$PLEXADM" collection add-duration "00D: Review: Potential Live Strea
   --min-duration-ms 5400000 \
   --filters '{"studio": "Independent Content", "collection!": "01: Theme: Live Stream"}'
 
+# Record every video's current full collection membership, so drift from any source (not just
+# plexadm's own mutations) can be pinpointed by diffing snapshots later.
+date; time "$PLEXADM" inventory snapshot
+
 END_DATE=$(date)
 echo "Start date: ${START_DATE}"
 echo "  End date: ${END_DATE}"

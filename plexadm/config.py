@@ -60,6 +60,15 @@ class LoggingConfig:
     opensearch: OpenSearchSinkConfig | None = None
 
 
+@dataclass(frozen=True)
+class InventoryConfig:
+    url: str
+    index: str = "plexadm-inventory"
+    username: str | None = None
+    password: str | None = None
+    verify_tls: bool = True
+
+
 def default_config_path() -> Path:
     return Path(os.environ.get("PLEXADM_CONFIG", Path.home() / ".plexconfig.ini")).expanduser()
 
@@ -126,4 +135,26 @@ def load_logging_config(path: str | Path | None = None) -> LoggingConfig:
         ),
         journal=JournalSinkConfig(identifier=parser.get("logging.journal", "identifier", fallback="plexadm")),
         opensearch=opensearch_cfg,
+    )
+
+
+def load_inventory_config(path: str | Path | None = None) -> InventoryConfig | None:
+    """Independent of the [logging] sink choice - audit logging can stay on file/syslog/journal
+    while inventory snapshots still go to OpenSearch (or vice versa), since they answer different
+    questions: audit is "what did plexadm do", inventory is "what does the state actually look
+    like right now, regardless of what changed it"."""
+    config_path = Path(path).expanduser() if path else default_config_path()
+    parser = configparser.ConfigParser()
+    parser.read(config_path)
+    if not parser.has_section("inventory"):
+        return None
+    section = parser["inventory"]
+    if "url" not in section:
+        raise KeyError("[inventory] section requires 'url'")
+    return InventoryConfig(
+        url=section["url"],
+        index=section.get("index", "plexadm-inventory"),
+        username=section.get("username"),
+        password=section.get("password"),
+        verify_tls=section.getboolean("verify_tls", fallback=True),
     )

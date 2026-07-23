@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from plexadm import __version__, audit
-from plexadm.config import load_logging_config
+from plexadm.config import load_inventory_config, load_logging_config
 from plexadm.console import fail, info, ok, warn
 from plexadm.filters import and_filter, in_collection, not_in_collection, rated, title_contains, unrated, writer_any
 from plexadm.plex import (
@@ -720,6 +720,53 @@ def set_writers_and_sync(args: argparse.Namespace) -> int:
     return sync_smart_collections(args)
 
 
+def _require_inventory_config(args: argparse.Namespace) -> Any:
+    config = load_inventory_config(args.config)
+    if config is None:
+        raise ValueError(
+            "No [inventory] section configured. Add an [inventory] section with at least "
+            "'url' to the config file to use inventory commands."
+        )
+    return config
+
+
+def inventory_snapshot(args: argparse.Namespace) -> int:
+    from plexadm.inventory import take_snapshot
+
+    ctx = build_context(args)
+    config = _require_inventory_config(args)
+    count = take_snapshot(ctx, config, dry_run=args.dry_run)
+    print(ok(f"{count} video snapshots written to '{config.index}'.{dry_run_note(args)}"))
+    return 0
+
+
+def inventory_diff(args: argparse.Namespace) -> int:
+    from plexadm.inventory import diff_snapshots
+
+    config = _require_inventory_config(args)
+    audit_index = None
+    if not args.no_attribution:
+        logging_config = load_logging_config(args.config)
+        if logging_config.sink == "opensearch" and logging_config.opensearch is not None:
+            audit_index = logging_config.opensearch.index
+
+    run_a, run_b, changes = diff_snapshots(config, run_a=args.run_a, run_b=args.run_b, audit_index=audit_index)
+    print(info(f"Comparing snapshot '{run_a}' -> '{run_b}'"))
+    if not changes:
+        print(ok("No collection membership changes between these snapshots."))
+        return 0
+
+    for change in sorted(changes, key=lambda c: c.title):
+        marker = "" if change.attributed else " [UNATTRIBUTED - no matching plexadm-audit event]"
+        if change.added:
+            print(warn(f"'{change.title}' gained: {', '.join(change.added)}{marker}"))
+        if change.removed:
+            print(warn(f"'{change.title}' lost: {', '.join(change.removed)}{marker}"))
+    unattributed = sum(1 for change in changes if not change.attributed)
+    print(info(f"{len(changes)} videos changed, {unattributed} with at least one unattributed change."))
+    return 0
+
+
 def _filters_reference_collection(node: Any, target_key: str) -> bool:
     """Recursively check whether a smart collection's parsed filter tree (as returned by
     plexapi's `Collection.filters()`) contains a "collection" condition matching target_key,
@@ -1071,6 +1118,7 @@ def build_parser() -> argparse.ArgumentParser:
     _build_tools_commands(sub)
     _build_top_command(sub)
     _build_stash_commands(sub)
+    _build_inventory_commands(sub)
 
     return parser
 
@@ -2346,6 +2394,59 @@ def _build_stash_commands(sub: Any) -> None:
         help="Override the Stash base URL from config.",
     )
     set_func(sync_tags_parser, stash_sync_tags)
+
+
+def _build_inventory_commands(sub: Any) -> None:
+    inventory_parser = _make_sub(
+        sub,
+        "inventory",
+        help="Snapshot and diff every video's full collection membership over time.",
+        description=(
+            "Distinct from plexadm's own audit trail (which only records what plexadm itself\n"
+            "did): this records what the state actually looks like right now, regardless of\n"
+            "what changed it - so drift from any source (a stray Plex Web edit, an agent, "
+            "anything) can be pinpointed by diffing snapshots, rather than reconstructed after\n"
+            "the fact from server logs. Requires an [inventory] section (at least 'url') in\n"
+            "the config file, pointing at an OpenSearch cluster."
+        ),
+        epilog=("Examples:\n  plexadm inventory snapshot\n  plexadm inventory diff"),
+    )
+    inventory_sub = _add_subparsers(inventory_parser, dest="inventory_command", title="inventory subcommands")
+
+    snapshot_parser = _make_sub(
+        inventory_sub,
+        "snapshot",
+        help="Record one document per video with its current full collection membership.",
+        description=(
+            "Write one document per video to the configured OpenSearch index, capturing\n"
+            "rating_key, title, studio, writers, and the full sorted list of collections it\n"
+            "currently belongs to, tagged with a shared run_id/timestamp for this run."
+        ),
+        epilog="Example:\n  plexadm inventory snapshot",
+    )
+    set_func(snapshot_parser, inventory_snapshot)
+
+    diff_parser = _make_sub(
+        inventory_sub,
+        "diff",
+        help="Compare two snapshots and report every video whose collections changed.",
+        description=(
+            "Defaults to the two most recent snapshots. For each video whose collection set\n"
+            "changed, cross-checks plexadm's own audit trail (when it's configured with an\n"
+            "OpenSearch sink) for a matching add/remove event in that time window, and flags\n"
+            "any change with none as UNATTRIBUTED - the case where something other than\n"
+            "plexadm changed it."
+        ),
+        epilog="Example:\n  plexadm inventory diff",
+    )
+    diff_parser.add_argument("--run-a", dest="run_a", metavar="RUN_ID", default=None, help="Older snapshot run_id.")
+    diff_parser.add_argument("--run-b", dest="run_b", metavar="RUN_ID", default=None, help="Newer snapshot run_id.")
+    diff_parser.add_argument(
+        "--no-attribution",
+        action="store_true",
+        help="Skip cross-checking the plexadm-audit trail; just report raw changes.",
+    )
+    set_func(diff_parser, inventory_diff)
 
 
 def main(argv: list[str] | None = None) -> int:
