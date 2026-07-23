@@ -451,7 +451,10 @@ def _cumshot_absent_exclusion_names() -> set[str]:
         "01: Composition: Female Only",
     }
     non_sexual_names = {"01: Category: Non-Sexual"}
-    return cumshot_names | female_only_names | non_sexual_names
+    # A compilation aggregates clips from many separate sources/scenes, so it isn't expected to
+    # carry one single cumshot tag the way a normal scene would.
+    compilation_names = {"01: Category: Compilation"}
+    return cumshot_names | female_only_names | non_sexual_names | compilation_names
 
 
 def sync_cumshot_absent(args: argparse.Namespace) -> int:

@@ -207,6 +207,13 @@ class TestAddDurationCollection:
         assert {"duration>>": 3_600_000} in used
 
 
+class TestCumshotAbsentExclusionNames:
+    def test_excludes_compilations(self) -> None:
+        # A compilation aggregates clips from many separate sources/scenes, so it isn't expected
+        # to carry one single cumshot tag the way a normal scene would.
+        assert "01: Category: Compilation" in cli._cumshot_absent_exclusion_names()
+
+
 class TestAddSearchResults:
     def test_exclude_collection_adds_plex_side_filters(self) -> None:
         collection = MagicMock(title="01: Composition: Solo")
