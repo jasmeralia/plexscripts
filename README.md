@@ -247,13 +247,11 @@ Special list kinds:
 
 - `uncategorized`
 - `uncollected`
-- `multipart`
 - `merged`
 - `potential-indie`
 - `multi-f-without-category`
 - `no-composition`
 - `no-hair`
-- `no-moneyshot`
 
 Examples:
 
@@ -261,7 +259,6 @@ Examples:
 plexadm list special uncategorized
 plexadm list special no-hair
 plexadm list special uncollected
-plexadm list special multipart
 ```
 
 ### Renames
@@ -383,7 +380,7 @@ plexadm collection add-short "01: Category: Short Videos" --max-duration-ms 1200
 Add videos where media height is greater than width:
 
 ```bash
-plexadm collection add-vertical "01: Category: Vertical"
+plexadm collection add-vertical "01: Category: Vertical Video"
 ```
 
 ### Sync Unrated Collection

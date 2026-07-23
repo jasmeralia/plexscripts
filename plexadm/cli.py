@@ -45,6 +45,7 @@ LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION = "00D: Review: Lesbian Single-Writer"
 CUMSHOT_ABSENT_REVIEW_COLLECTION = "00D: Review: Cumshot Absent"
 PPV_COLLECTION = "01: Category: PPV"
 PPV_FILENAME_PATTERN = "*- PPV *"
+DEFAULT_SHORT_VIDEO_MAX_DURATION_MS = 90_000
 
 # The "01: Category:" taxonomy is being split into narrower prefixes (see
 # `plexadm collection rename-categories` / stash_backfill_tags._EXISTING_CATEGORY_RENAMES).
@@ -88,15 +89,6 @@ EXCLUDED_HAIR_COLLECTIONS = [
     "01: Hair: Silver",
     "01: Hair: White",
     "01: Hair: Unknown",
-]
-
-EXCLUDED_MONEYSHOT_COLLECTIONS = [
-    "01: Category: Creampie",
-    "01: Category: Cum Swap",
-    "01: Cumshot: Facial",
-    "01: Category: Internal",
-    "01: Category: Non-Sexual",
-    "01: Category: Swallow",
 ]
 
 
@@ -231,8 +223,20 @@ def remove_matching_titles(args: argparse.Namespace) -> int:
 def add_duration_collection(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
-    filters = and_filter({"duration<<": args.max_duration_ms}, not_in_collection(collection.title))
-    results = ctx.search(filters=filters, reload=True)
+    max_duration_ms = args.max_duration_ms
+    min_duration_ms = args.min_duration_ms
+    if max_duration_ms is None and min_duration_ms is None:
+        # Neither bound given: preserve add-short's original behavior (short videos only).
+        max_duration_ms = DEFAULT_SHORT_VIDEO_MAX_DURATION_MS
+    extra_filters = json.loads(args.filters) if args.filters else {}
+    parts: list[dict[str, Any]] = []
+    if max_duration_ms is not None:
+        parts.append({"duration<<": max_duration_ms})
+    if min_duration_ms is not None:
+        parts.append({"duration>>": min_duration_ms})
+    parts.extend({key: value} for key, value in extra_filters.items())
+    parts.append(not_in_collection(collection.title))
+    results = ctx.search(filters=and_filter(*parts), reload=True)
     for video in results:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     added = add_items(collection, results, dry_run=args.dry_run)
@@ -612,18 +616,8 @@ def list_special(args: argparse.Namespace) -> int:
     elif args.kind == "no-hair":
         excluded = [not_in_collection(name) for name in EXCLUDED_HAIR_COLLECTIONS]
         videos = ctx.search(filters=and_filter(*excluded), reload=False)
-    elif args.kind == "no-moneyshot":
-        excluded = [not_in_collection(name) for name in EXCLUDED_MONEYSHOT_COLLECTIONS]
-        videos = ctx.search(filters=and_filter(*excluded), reload=False)
     elif args.kind == "uncollected":
         videos = [video for video in ctx.all_videos(reload=True) if not collection_titles(video)]
-    elif args.kind == "multipart":
-        videos = [
-            video
-            for video in ctx.all_videos(reload=True)
-            if len(getattr(video, "media", []) or []) > 1
-            or any(len(getattr(media, "parts", []) or []) > 1 for media in getattr(video, "media", []) or [])
-        ]
     elif args.kind == "merged":
         videos = [video for video in ctx.all_videos(reload=True) if len(getattr(video, "guids", []) or []) > 1]
     elif args.kind == "potential-indie":
@@ -1265,13 +1259,11 @@ def _build_list_commands(sub: Any) -> None:
     special_help = {
         "uncategorized": "videos missing all '01: Category:' collections (alias of no-composition)",
         "uncollected": "videos that are not in any collection at all",
-        "multipart": "videos backed by more than one media file or media part",
         "merged": "videos with more than one external GUID (likely merged)",
         "potential-indie": "non-scene videos with no studio whose title contains ' - '",
         "multi-f-without-category": "videos with multiple title-derived writers but no category collection",
         "no-composition": "videos missing every composition category (FFM, MMF, ...)",
         "no-hair": "videos missing every hair-colour collection",
-        "no-moneyshot": "videos missing every money-shot collection (Creampie, Facial, ...)",
     }
     special = _make_sub(
         list_sub,
@@ -1285,7 +1277,7 @@ def _build_list_commands(sub: Any) -> None:
             "Examples:\n"
             "  plexadm list special uncategorized\n"
             "  plexadm list special no-hair\n"
-            "  plexadm list special multipart"
+            "  plexadm list special uncollected"
         ),
     )
     special.add_argument(
@@ -1416,22 +1408,50 @@ def _build_collection_commands(sub: Any) -> None:
     remove_title.add_argument("pattern", metavar="PATTERN", help="Substring to match in the video title.")
     set_func(remove_title, remove_matching_titles)
 
-    add_short = _make_sub(
+    add_duration = _make_sub(
         collection_sub,
-        "add-short",
-        help="Add every short-duration video to COLLECTION.",
-        description="Add every video whose duration is below --max-duration-ms to COLLECTION.",
-        epilog="Example:\n  plexadm collection add-short '01: Duration: Short' --max-duration-ms 60000",
+        "add-duration",
+        help="Add every video matching a duration bound (and optional ad hoc filters) to COLLECTION.",
+        description=(
+            "Add every video whose duration is below --max-duration-ms and/or above\n"
+            "--min-duration-ms to COLLECTION. If neither bound is given, defaults to\n"
+            f"--max-duration-ms {DEFAULT_SHORT_VIDEO_MAX_DURATION_MS} (short videos), matching this\n"
+            "command's old name/behavior as 'add-short'.\n\n"
+            "--filters takes a JSON object of additional Plex advanced-search conditions,\n"
+            "AND-combined with the duration bound(s) - the same dict shape accepted by\n"
+            '`LibrarySection.search(filters=...)` (e.g. \'{"studio": "Independent Content", '
+            '"collection!": "01: Theme: Live Stream"}\').'
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm collection add-duration '01: Duration: Short' --max-duration-ms 60000\n"
+            "  plexadm collection add-duration '00D: Review: Indie Long No Livestream' "
+            "--min-duration-ms 3600000 "
+            '--filters \'{"studio": "Independent Content", "collection!": "01: Theme: Live Stream"}\''
+        ),
     )
-    add_short.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
-    add_short.add_argument(
+    add_duration.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_duration.add_argument(
         "--max-duration-ms",
         type=int,
-        default=90_000,
+        default=None,
         metavar="MS",
-        help="Maximum video duration in milliseconds (default: 90000, i.e. 90s).",
+        help=f"Maximum video duration in milliseconds (default: {DEFAULT_SHORT_VIDEO_MAX_DURATION_MS} if "
+        "--min-duration-ms is also omitted; otherwise unbounded).",
     )
-    set_func(add_short, add_duration_collection)
+    add_duration.add_argument(
+        "--min-duration-ms",
+        type=int,
+        default=None,
+        metavar="MS",
+        help="Minimum video duration in milliseconds (default: unbounded).",
+    )
+    add_duration.add_argument(
+        "--filters",
+        metavar="JSON",
+        help="Extra Plex advanced-search filters as a JSON object, AND-combined with the duration bound(s).",
+    )
+    set_func(add_duration, add_duration_collection)
 
     add_orgy = _make_sub(
         collection_sub,
@@ -1455,7 +1475,7 @@ def _build_collection_commands(sub: Any) -> None:
         "add-vertical",
         help="Add every vertically-oriented video to COLLECTION.",
         description="Add every video whose first media is taller than it is wide (height > width) to COLLECTION.",
-        epilog="Example:\n  plexadm collection add-vertical '01: Format: Vertical'",
+        epilog="Example:\n  plexadm collection add-vertical '01: Category: Vertical Video'",
     )
     add_vertical.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     set_func(add_vertical, add_vertical_collection)

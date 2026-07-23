@@ -209,6 +209,23 @@ def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False)
     log_event(AuditEvent(action="rename_collection", level=level, title=new_title, details=details))
 
 
+def create_collection(section: Any, *, title: str, items: Iterable[Any], dry_run: bool = False) -> None:
+    """Create a regular (non-smart) collection seeded with items.
+
+    Plex requires at least one item to create a manual collection at all - there's no "create
+    empty, add items later" path for these, unlike smart collections. Distinct audit action
+    name from `create_smart_collection`'s "create_collection" so the two are distinguishable in
+    the audit trail after the fact.
+    """
+    item_list = list(items)
+    if title != LOCKED_COLLECTION:
+        item_list = _drop_locked(item_list)
+    if not dry_run:
+        section.createCollection(title=title, items=item_list)
+    level, details = _mutation_level_and_details(dry_run, {"item_count": len(item_list)})
+    log_event(AuditEvent(action="create_manual_collection", level=level, title=title, details=details))
+
+
 def delete_collection(collection: Any, *, dry_run: bool = False) -> None:
     title = str(collection.title)
     if not dry_run:

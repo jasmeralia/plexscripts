@@ -1658,7 +1658,7 @@ _COMPOSITION_TAG_RENAMES: dict[str, str] = {
 # per entry.
 _UNCLASSIFIED_CATEGORY_NOTES: dict[str, str] = {
     "01: Category: Beautiful Agony": "looks like it may actually be a studio/brand name, not a content category - worth checking before any rename",
-    "01: Category: Non-Sexual": "content-type flag (also appears in EXCLUDED_MONEYSHOT_COLLECTIONS for the same reason), not a content descriptor itself",
+    "01: Category: Non-Sexual": "content-type flag, not a content descriptor itself",
     "01: Category: Short Videos": "video format/length, not a content descriptor",
     "01: Category: Vertical Video": "video format/orientation, not a content descriptor",
 }

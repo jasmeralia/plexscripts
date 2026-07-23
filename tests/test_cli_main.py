@@ -136,6 +136,77 @@ class TestSyncNoStudio:
         mock_add_items.assert_called_once_with(collection, [], dry_run=False)
 
 
+class TestAddDurationCollection:
+    def test_defaults_to_short_video_bound_when_no_bounds_given(self) -> None:
+        collection = MagicMock(title="01: Category: Short Videos")
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = []
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            collection="01: Category: Short Videos",
+            max_duration_ms=None,
+            min_duration_ms=None,
+            filters=None,
+        )
+
+        with patch.object(cli, "build_context", return_value=ctx), patch.object(cli, "add_items", return_value=0):
+            assert cli.add_duration_collection(args) == 0
+
+        used = ctx.search.call_args.kwargs["filters"]["and"]
+        assert {"duration<<": cli.DEFAULT_SHORT_VIDEO_MAX_DURATION_MS} in used
+        assert not any("duration>>" in part for part in used)
+
+    def test_min_only_does_not_apply_the_short_video_default(self) -> None:
+        # Real risk: silently keeping the old 90s default max bound alongside an explicit
+        # --min-duration-ms would make min > max, so the query would always return nothing.
+        collection = MagicMock(title="00D: Review: Indie Long No Livestream")
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = []
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            collection="00D: Review: Indie Long No Livestream",
+            max_duration_ms=None,
+            min_duration_ms=3_600_000,
+            filters=None,
+        )
+
+        with patch.object(cli, "build_context", return_value=ctx), patch.object(cli, "add_items", return_value=0):
+            assert cli.add_duration_collection(args) == 0
+
+        used = ctx.search.call_args.kwargs["filters"]["and"]
+        assert {"duration>>": 3_600_000} in used
+        assert not any("duration<<" in part for part in used)
+
+    def test_ad_hoc_filters_json_is_and_combined_with_the_duration_bound(self) -> None:
+        collection = MagicMock(title="00D: Review: Indie Long No Livestream")
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+        ctx.search.return_value = []
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            collection="00D: Review: Indie Long No Livestream",
+            max_duration_ms=None,
+            min_duration_ms=3_600_000,
+            filters='{"studio": "Independent Content", "collection!": "01: Theme: Live Stream"}',
+        )
+
+        with patch.object(cli, "build_context", return_value=ctx), patch.object(cli, "add_items", return_value=0):
+            assert cli.add_duration_collection(args) == 0
+
+        used = ctx.search.call_args.kwargs["filters"]["and"]
+        assert {"studio": "Independent Content"} in used
+        assert {"collection!": "01: Theme: Live Stream"} in used
+        assert {"duration>>": 3_600_000} in used
+
+
 class TestRetargetWriterPpv:
     def test_resolves_old_collection_filter_key_before_emptying_it(self) -> None:
         # Real bug found live: resolving OLD's smart-filter ID via collection_filter_key()

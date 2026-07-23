@@ -10,6 +10,7 @@ from plexadm.plex import (
     LOCKED_COLLECTION,
     add_items,
     add_writer,
+    create_collection,
     create_smart_collection,
     delete_collection,
     lock_title_and_sort_title,
@@ -318,6 +319,49 @@ class TestSetStudioAddWriterRenameCreate:
             rename_collection(collection, "New Title")
 
         collection.editSortTitle.assert_called_once_with("New Title")
+
+    def test_create_collection_creates_with_seed_items_and_logs(self) -> None:
+        section = SimpleNamespace(createCollection=MagicMock())
+        video = _video(title="Seed Video", ratingKey=99)
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            create_collection(section, title="00D: Review: New", items=[video])
+
+        section.createCollection.assert_called_once_with(title="00D: Review: New", items=[video])
+        mock_log.assert_called_once_with(
+            AuditEvent(action="create_manual_collection", title="00D: Review: New", details={"item_count": 1})
+        )
+
+    def test_create_collection_drops_locked_items(self) -> None:
+        # Real gap found in review: create_collection() bypassed _drop_locked() entirely, so
+        # seeding a brand-new review collection could silently add a '99: LOCKED' video's
+        # membership - exactly what the LOCKED guard exists to prevent, regardless of which
+        # command is doing the adding.
+        section = SimpleNamespace(createCollection=MagicMock())
+        locked = _video(title="Locked Video", ratingKey=1, collections=[LOCKED_COLLECTION])
+        unlocked = _video(title="Unlocked Video", ratingKey=2)
+
+        with patch("plexadm.plex.log_event"):
+            create_collection(section, title="00D: Review: New", items=[locked, unlocked])
+
+        section.createCollection.assert_called_once_with(title="00D: Review: New", items=[unlocked])
+
+    def test_create_collection_dry_run_makes_no_call_but_logs_at_debug(self) -> None:
+        section = SimpleNamespace(createCollection=MagicMock())
+        video = _video(title="Seed Video", ratingKey=99)
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            create_collection(section, title="00D: Review: New", items=[video], dry_run=True)
+
+        section.createCollection.assert_not_called()
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="create_manual_collection",
+                level="DEBUG",
+                title="00D: Review: New",
+                details={"item_count": 1, "dry_run": True},
+            )
+        )
 
     def test_delete_collection_deletes_and_logs(self) -> None:
         collection = _collection("00A: Rin (PPVs)")
