@@ -69,6 +69,7 @@ query AllTags {
 }
 """
 
+
 def all_tags(self) -> list[dict[str, Any]]:
     """Return every Stash tag with its id, name, and scene_count."""
     return self._gql(_ALL_TAGS)["allTags"]  # _gql's variables arg defaults to None; no variables needed for this query

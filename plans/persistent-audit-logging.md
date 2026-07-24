@@ -15,12 +15,12 @@ New module `plexadm/audit.py`:
 ```python
 @dataclass(frozen=True)
 class MutationEvent:
-    action: str                                    # "add" | "remove" | "edit_studio" | "add_writer"
-                                                     # | "rename_collection" | "create_collection"
+    action: str  # "add" | "remove" | "edit_studio" | "add_writer"
+    # | "rename_collection" | "create_collection"
     title: str
     rating_key: int | None = None
     collection: str | None = None
-    details: dict[str, Any] = field(default_factory=dict)   # action-specific extra context
+    details: dict[str, Any] = field(default_factory=dict)  # action-specific extra context
 
     def to_record(self) -> dict[str, Any]:
         ctx = _CURRENT_INVOCATION.get()
@@ -43,10 +43,12 @@ This covers the task's stated minimum (timestamp, collection, ratingKey, title, 
 ```python
 _CURRENT_INVOCATION: ContextVar[InvocationContext | None] = ContextVar("plexadm_invocation", default=None)
 
+
 @dataclass(frozen=True)
 class InvocationContext:
     rule: str
     invocation: str
+
 
 def set_invocation_context(*, rule: str, argv: list[str] | None = None) -> None:
     _CURRENT_INVOCATION.set(InvocationContext(rule=rule, invocation=shlex.join(argv or sys.argv)))
@@ -104,14 +106,17 @@ class FileSinkConfig:
     max_bytes: int = 10_485_760
     backup_count: int = 10
 
+
 @dataclass(frozen=True)
 class SyslogSinkConfig:
     address: str = "/dev/log"
     facility: str = "user"
 
+
 @dataclass(frozen=True)
 class JournalSinkConfig:
     identifier: str = "plexadm"
+
 
 @dataclass(frozen=True)
 class OpenSearchSinkConfig:
@@ -121,6 +126,7 @@ class OpenSearchSinkConfig:
     password: str | None = None
     verify_tls: bool = True
 
+
 @dataclass(frozen=True)
 class LoggingConfig:
     sink: str = "file"
@@ -128,6 +134,7 @@ class LoggingConfig:
     syslog: SyslogSinkConfig = field(default_factory=SyslogSinkConfig)
     journal: JournalSinkConfig = field(default_factory=JournalSinkConfig)
     opensearch: OpenSearchSinkConfig | None = None
+
 
 def load_logging_config(path: str | Path | None = None) -> LoggingConfig:
     config_path = Path(path).expanduser() if path else default_config_path()
@@ -247,10 +254,12 @@ _CONFIG: LoggingConfig | None = None
 _LOGGER: logging.Logger | None = None
 _FAILURE_COUNT = 0
 
+
 def configure(config: LoggingConfig) -> None:
     global _CONFIG, _LOGGER
     _CONFIG = config
     _LOGGER = None
+
 
 def _logger() -> logging.Logger:
     global _LOGGER
@@ -263,6 +272,7 @@ def _logger() -> logging.Logger:
         _LOGGER = logger
     return _LOGGER
 
+
 def log_mutation(event: MutationEvent) -> None:
     global _FAILURE_COUNT
     try:
@@ -270,6 +280,7 @@ def log_mutation(event: MutationEvent) -> None:
     except Exception as exc:
         _FAILURE_COUNT += 1
         print(fail(f"AUDIT LOG WRITE FAILED ({(_CONFIG or LoggingConfig()).sink}): {exc}"), file=sys.stderr)
+
 
 def has_failures() -> bool:
     return _FAILURE_COUNT > 0
@@ -317,11 +328,16 @@ def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -
     if item_list and not dry_run:
         collection.addItems(item_list)
         for item in item_list:
-            log_mutation(MutationEvent(
-                action="add", title=item.title, rating_key=getattr(item, "ratingKey", None),
-                collection=str(collection.title),
-            ))
+            log_mutation(
+                MutationEvent(
+                    action="add",
+                    title=item.title,
+                    rating_key=getattr(item, "ratingKey", None),
+                    collection=str(collection.title),
+                )
+            )
     return len(item_list)
+
 
 def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
@@ -330,11 +346,16 @@ def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False
     if item_list and not dry_run:
         collection.removeItems(item_list)
         for item in item_list:
-            log_mutation(MutationEvent(
-                action="remove", title=item.title, rating_key=getattr(item, "ratingKey", None),
-                collection=str(collection.title),
-            ))
+            log_mutation(
+                MutationEvent(
+                    action="remove",
+                    title=item.title,
+                    rating_key=getattr(item, "ratingKey", None),
+                    collection=str(collection.title),
+                )
+            )
     return len(item_list)
+
 
 def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
     if has_collection(video, LOCKED_COLLECTION):
@@ -344,11 +365,16 @@ def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
         return True
     old_studio = getattr(video, "studio", None)
     video.edit(**{"studio.value": studio, "label.locked": 1})
-    log_mutation(MutationEvent(
-        action="edit_studio", title=video.title, rating_key=getattr(video, "ratingKey", None),
-        details={"old_studio": old_studio, "new_studio": studio},
-    ))
+    log_mutation(
+        MutationEvent(
+            action="edit_studio",
+            title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details={"old_studio": old_studio, "new_studio": studio},
+        )
+    )
     return True
+
 
 def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) -> bool:
     if has_collection(video, LOCKED_COLLECTION):
@@ -357,11 +383,16 @@ def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) ->
     if dry_run:
         return True
     video.addWriter(writer_names, True)
-    log_mutation(MutationEvent(
-        action="add_writer", title=video.title, rating_key=getattr(video, "ratingKey", None),
-        details={"writers": writer_names},
-    ))
+    log_mutation(
+        MutationEvent(
+            action="add_writer",
+            title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details={"writers": writer_names},
+        )
+    )
     return True
+
 
 def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False) -> None:
     old_title = str(collection.title)
@@ -369,6 +400,7 @@ def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False)
         return
     collection.editTitle(new_title)
     log_mutation(MutationEvent(action="rename_collection", title=new_title, details={"old_title": old_title}))
+
 
 def create_smart_collection(
     section: Any, *, title: str, sort: str, filters: dict[str, Any], dry_run: bool = False
