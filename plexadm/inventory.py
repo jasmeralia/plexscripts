@@ -86,6 +86,12 @@ class VideoChange:
 def _has_matching_audit_event(
     audit_client: Any, audit_index: str, *, rating_key: int, collection: str, action: str, since: str, until: str
 ) -> bool:
+    # The plexadm-audit index maps "collection" as `type: keyword` directly (see plexadm.audit),
+    # not `text` with a `.keyword` multi-field - querying "collection.keyword" hits a field that
+    # doesn't exist and OpenSearch silently returns zero hits rather than erroring. Real bug found
+    # live: this made every single diffed change report UNATTRIBUTED regardless of whether
+    # plexadm itself made it - confirmed by querying the real cluster directly, which found 763
+    # matching "01: Hair: Blonde" add events that this lookup was reporting as absent.
     response = audit_client.search(
         index=audit_index,
         body={
@@ -96,7 +102,7 @@ def _has_matching_audit_event(
                     "filter": [
                         {"term": {"rating_key": rating_key}},
                         {"term": {"action": action}},
-                        {"term": {"collection.keyword": collection}},
+                        {"term": {"collection": collection}},
                         {"range": {"timestamp": {"gte": since, "lte": until}}},
                     ]
                 }

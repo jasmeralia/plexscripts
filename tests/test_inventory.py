@@ -134,3 +134,26 @@ class TestDiffSnapshots:
             _, _, changes = diff_snapshots(config, run_a="run-a", run_b="run-b", audit_index="plexadm-audit")
 
         assert changes[0].attributed is True
+
+    def test_queries_bare_collection_field_not_a_nonexistent_keyword_subfield(self) -> None:
+        # Real bug found live: plexadm-audit maps "collection" as `type: keyword` directly (see
+        # plexadm.audit), not `text` with a `.keyword` multi-field. Querying "collection.keyword"
+        # hits a field that doesn't exist - OpenSearch returns zero hits rather than erroring, so
+        # every diffed change reported UNATTRIBUTED regardless of whether plexadm made it.
+        # Confirmed live: 763 real "01: Hair: Blonde" add events were being reported as absent.
+        config = InventoryConfig(url="http://localhost:9200")
+        older_docs = [{"_source": {"rating_key": 1, "title": "A", "collections": []}}]
+        newer_docs = [{"_source": {"rating_key": 1, "title": "A", "collections": ["01: Theme: Cosplay"]}}]
+
+        mock_client = MagicMock()
+        mock_client.search.return_value = {"hits": {"total": {"value": 1}}}
+
+        with (
+            patch("plexadm.inventory._client", return_value=mock_client),
+            patch("opensearchpy.helpers.scan", side_effect=[older_docs, newer_docs]),
+        ):
+            diff_snapshots(config, run_a="run-a", run_b="run-b", audit_index="plexadm-audit")
+
+        query_filters = mock_client.search.call_args.kwargs["body"]["query"]["bool"]["filter"]
+        assert {"term": {"collection": "01: Theme: Cosplay"}} in query_filters
+        assert not any("collection.keyword" in condition.get("term", {}) for condition in query_filters)
