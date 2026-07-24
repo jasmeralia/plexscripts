@@ -400,3 +400,58 @@ class TestRetargetWriterPpv:
             assert cli.retarget_writer_ppv(args) == 0
 
         assert call_order == ["resolve:01: Rin PPV", "remove"]
+
+
+class TestCloneSmartCollection:
+    def test_and_combines_source_filters_with_add_filter(self) -> None:
+        source = MagicMock(title="00D: Review: No Hair Color", smart=True)
+        source.filters.return_value = {
+            "sort": ["movie.titleSort"],
+            "filters": {"and": [{"collection!": "129138"}]},
+        }
+
+        ctx = MagicMock()
+        ctx.collection.return_value = source
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            source="00D: Review: No Hair Color",
+            target="00D: Review: No Hair Color (Indie)",
+            add_filter='{"studio": "Independent"}',
+        )
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "create_smart_collection") as mock_create,
+        ):
+            assert cli.clone_smart_collection(args) == 0
+
+        mock_create.assert_called_once_with(
+            ctx.section,
+            title="00D: Review: No Hair Color (Indie)",
+            sort=["movie.titleSort"],
+            filters={"and": [{"and": [{"collection!": "129138"}]}, {"studio": "Independent"}]},
+            dry_run=False,
+        )
+
+    def test_rejects_non_smart_source(self) -> None:
+        source = MagicMock(title="00A: NO STUDIO", smart=False)
+        ctx = MagicMock()
+        ctx.collection.return_value = source
+
+        args = argparse.Namespace(
+            config=None,
+            dry_run=False,
+            source="00A: NO STUDIO",
+            target="Whatever",
+            add_filter='{"studio": "Independent"}',
+        )
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "create_smart_collection") as mock_create,
+        ):
+            assert cli.clone_smart_collection(args) == 1
+
+        mock_create.assert_not_called()

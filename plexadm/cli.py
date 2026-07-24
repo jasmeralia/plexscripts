@@ -832,6 +832,24 @@ def retarget_writer_ppv(args: argparse.Namespace) -> int:
     return 0
 
 
+def clone_smart_collection(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    source = ctx.collection(args.source)
+    if not source.smart:
+        print(fail(f"'{source.title}' is not a smart collection - clone only supports smart collections."))
+        return 1
+    spec = source.filters()
+    conditions = spec.get("filters", {})
+    extra = json.loads(args.add_filter)
+    combined = and_filter(conditions, extra) if conditions else extra
+    print(info(f"Cloning '{source.title}' -> '{args.target}' with extra filter {extra}"))
+    create_smart_collection(
+        ctx.section, title=args.target, sort=spec.get("sort"), filters=combined, dry_run=args.dry_run
+    )
+    print(info(f"Created smart collection '{args.target}'.{dry_run_note(args)}"))
+    return 0
+
+
 def rename_collections(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     pattern = re.compile(args.pattern)
@@ -1873,6 +1891,31 @@ def _build_smart_collection_commands(sub: Any) -> None:
         epilog="Example:\n  plexadm smart-collections sync",
     )
     set_func(sync, sync_smart_collections)
+
+    clone = _make_sub(
+        smart_sub,
+        "clone",
+        help="Clone a smart collection under a new name, AND-combined with an extra filter.",
+        description=(
+            "Read SOURCE's existing smart-filter tree and create TARGET as a new smart\n"
+            "collection with the same conditions plus --add-filter AND-combined in.\n"
+            "SOURCE must be a smart collection; TARGET must not already exist."
+        ),
+        epilog=(
+            "Example:\n"
+            "  plexadm smart-collections clone '00D: Review: No Hair Color' "
+            "'00D: Review: No Hair Color (Indie)' --add-filter '{\"studio\": \"Independent\"}'"
+        ),
+    )
+    clone.add_argument("source", metavar="SOURCE", help="Existing smart collection to clone from.")
+    clone.add_argument("target", metavar="TARGET", help="New smart collection name to create.")
+    clone.add_argument(
+        "--add-filter",
+        required=True,
+        metavar="JSON",
+        help="Extra Plex advanced-search filter as a JSON object, AND-combined with SOURCE's filters.",
+    )
+    set_func(clone, clone_smart_collection)
 
     rename_collection_parser = _make_sub(
         smart_sub,

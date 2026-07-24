@@ -634,6 +634,17 @@ Rename collections using a Python regular expression replacement:
 plexadm smart-collections rename "^Old Prefix: " "New Prefix: "
 ```
 
+### Clone A Smart Collection
+
+Clone an existing smart collection under a new name, AND-combining its filters with an extra one:
+
+```bash
+plexadm smart-collections clone "00D: Review: No Hair Color" "00D: Review: No Hair Color (Indie)" \
+  --add-filter '{"studio": "Independent"}'
+```
+
+SOURCE must already be a smart collection; TARGET must not already exist.
+
 ## Top Reports
 
 Show top category collections:

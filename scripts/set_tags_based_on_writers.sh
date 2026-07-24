@@ -15,6 +15,7 @@ REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-/usr/local/share/plexadm/reference}
 "$PLEXADM" collection add-writers '01: Attributes: Porcelain Skin' "${REFERENCE_DIR}/writers_porcelain.txt"
 "$PLEXADM" collection add-writers '01: Attributes: Trans MTF' "${REFERENCE_DIR}/writers_trans_mtf.txt"
 
+"$PLEXADM" collection add-writers '01: Hair: Black' "${REFERENCE_DIR}/writers_black_hair.txt"
 "$PLEXADM" collection add-writers '01: Hair: Blonde' "${REFERENCE_DIR}/writers_blonde.txt"
 "$PLEXADM" collection add-writers '01: Hair: Blue' "${REFERENCE_DIR}/writers_blue_hair.txt"
 "$PLEXADM" collection add-writers '01: Hair: Brunette' "${REFERENCE_DIR}/writers_brunette.txt"
