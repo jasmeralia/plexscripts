@@ -16,6 +16,7 @@ from plexadm.plex import (
     lock_title_and_sort_title,
     remove_items,
     rename_collection,
+    rename_title,
     set_studio,
     update_smart_collection_filters,
 )
@@ -302,6 +303,50 @@ class TestSetStudioAddWriterRenameCreate:
 
         video.edit.assert_called_once_with(
             **{"title.value": "My Title", "title.locked": 1, "titleSort.value": "My Title", "titleSort.locked": 1}
+        )
+
+    def test_rename_title_skips_locked_video(self) -> None:
+        video = _video(collections=[LOCKED_COLLECTION])
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert rename_title(video, "New Title") is False
+
+        video.edit.assert_not_called()
+        mock_log.assert_not_called()
+
+    def test_rename_title_dry_run_makes_no_edit_but_logs_at_debug(self) -> None:
+        video = _video(title="Old Title")
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert rename_title(video, "New Title", dry_run=True) is True
+
+        video.edit.assert_not_called()
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="rename_title",
+                level="DEBUG",
+                title="New Title",
+                rating_key=video.ratingKey,
+                details={"old_title": "Old Title", "dry_run": True},
+            )
+        )
+
+    def test_rename_title_edits_title_and_sort_title_and_locks_both(self) -> None:
+        video = _video(title="Old Title")
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert rename_title(video, "New Title") is True
+
+        video.edit.assert_called_once_with(
+            **{"title.value": "New Title", "title.locked": 1, "titleSort.value": "New Title", "titleSort.locked": 1}
+        )
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="rename_title",
+                title="New Title",
+                rating_key=video.ratingKey,
+                details={"old_title": "Old Title"},
+            )
         )
 
     def test_rename_collection_dry_run_makes_no_edit_but_logs_at_debug(self) -> None:

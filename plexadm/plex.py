@@ -192,6 +192,33 @@ def lock_title_and_sort_title(video: Any, *, dry_run: bool = False) -> bool:
     return True
 
 
+def rename_title(video: Any, new_title: str, *, dry_run: bool = False) -> bool:
+    """Rename a video's title and sort title together, then lock both.
+
+    Real bug found live: two Rin-writer videos' rendered titles used mismatched capitalization
+    of the same writer name across otherwise-identical scenes, purely a title-text typo (their
+    actual `writer` tag was already consistent). Locks both fields after renaming for the same
+    reason as `lock_title_and_sort_title` - so agent refresh/matching can't silently revert it.
+    """
+    if has_collection(video, LOCKED_COLLECTION):
+        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
+        return False
+    old_title = str(video.title)
+    if not dry_run:
+        video.edit(**{"title.value": new_title, "title.locked": 1, "titleSort.value": new_title, "titleSort.locked": 1})
+    level, details = _mutation_level_and_details(dry_run, {"old_title": old_title})
+    log_event(
+        AuditEvent(
+            action="rename_title",
+            level=level,
+            title=new_title,
+            rating_key=getattr(video, "ratingKey", None),
+            details=details,
+        )
+    )
+    return True
+
+
 def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) -> bool:
     if has_collection(video, LOCKED_COLLECTION):
         print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
