@@ -15,6 +15,7 @@ For the new module, define the inverse and reuse `_collection_to_tag`'s semantic
 ```python
 from plexadm.stash_reconcile import _collection_to_tag  # "01: Category: MF Only" -> "Category: MF Only"
 
+
 def _tag_to_collection(tag_name: str) -> str:
     return f"01: {tag_name}"  # "Category: MF Only" -> "01: Category: MF Only"
 ```
@@ -36,16 +37,22 @@ Build directly on the two groups used this session, but split Group B into its h
 ```python
 # Stash tag names (post "01: " strip)
 GROUP_SINGLE_FEMALE = {
-    "Category: Solo", "Category: MF Only", "Category: MMF", "Category: Gangbang",
+    "Category: Solo",
+    "Category: MF Only",
+    "Category: MMF",
+    "Category: Gangbang",
 }  # exactly one female performer present; pairwise mutually exclusive (each encodes
-   # a distinct exact partner arrangement: 0, 1 male, 2 males, 3+ people)
+# a distinct exact partner arrangement: 0, 1 male, 2 males, 3+ people)
 
 GROUP_MULTI_FEMALE_HEADCOUNT = {
-    "Category: FFM", "Category: FFFM", "Category: Reverse Gangbang", "Category: FFF+",
+    "Category: FFM",
+    "Category: FFFM",
+    "Category: Reverse Gangbang",
+    "Category: FFF+",
 }  # 2+ females present; pairwise mutually exclusive (each encodes a distinct headcount)
 
 GROUP_MULTI_FEMALE_ACTIVITY = {"Category: Lesbian"}  # girl-girl activity; compatible with
-   # any single GROUP_MULTI_FEMALE_HEADCOUNT tag, but incompatible with GROUP_SINGLE_FEMALE
+# any single GROUP_MULTI_FEMALE_HEADCOUNT tag, but incompatible with GROUP_SINGLE_FEMALE
 
 COMPOSITION_TAGS = GROUP_SINGLE_FEMALE | GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY
 ```
@@ -58,9 +65,9 @@ class SceneDecision:
     rating_key: str
     title: str
     file_paths: list[str]
-    adds: list[str] = field(default_factory=list)              # tag names to add to Plex (safe)
-    remove_candidates: list[str] = field(default_factory=list) # tag names to flag for removal (review)
-    ambiguous_reason: str | None = None                        # set => stash itself is unreliable here
+    adds: list[str] = field(default_factory=list)  # tag names to add to Plex (safe)
+    remove_candidates: list[str] = field(default_factory=list)  # tag names to flag for removal (review)
+    ambiguous_reason: str | None = None  # set => stash itself is unreliable here
 
 
 def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision | None:
@@ -88,12 +95,11 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
     adds = sorted(s - p)
 
     if single:
-        contradicting = (GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY
-                          | (GROUP_SINGLE_FEMALE - single))
+        contradicting = GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY | (GROUP_SINGLE_FEMALE - single)
     else:
         contradicting = set(GROUP_SINGLE_FEMALE)
         if headcount:
-            contradicting |= (GROUP_MULTI_FEMALE_HEADCOUNT - headcount)
+            contradicting |= GROUP_MULTI_FEMALE_HEADCOUNT - headcount
         # note: lesbian alone (no headcount tag) does NOT mark other headcount tags as
         # contradicting, since headcount is simply unspecified in that case.
 
