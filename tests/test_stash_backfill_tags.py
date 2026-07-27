@@ -917,9 +917,11 @@ class TestFifthRoundMergesAndAttributes:
 
     def test_side_fuck_is_activity_without_a_bare_fuck_keyword(self) -> None:
         assert _suggest_new_collection_name("Side Fuck") == "01: Activity: Side Fuck"
-        # A bare "fuck" keyword would have wrongly swept these in too - confirms it wasn't added.
-        assert _suggest_new_collection_name("Hard Fuck") == "01: Category: Hard Fuck"
-        assert _suggest_new_collection_name("Deep Fuck") == "01: Category: Deep Fuck"
+        # A bare "fuck" keyword would still wrongly sweep in unrelated tags - confirms it wasn't
+        # added. Hard Fuck/Deep Fuck reach Activity via their own individual name overrides
+        # instead (2026-07-25 review), not a shared keyword.
+        assert _suggest_new_collection_name("Hard Fuck") == "01: Activity: Hard Fuck"
+        assert _suggest_new_collection_name("Deep Fuck") == "01: Activity: Deep Fuck"
 
     def test_pov_gender_direction_tags_get_dedicated_names(self) -> None:
         assert _suggest_new_collection_name("Male - POV") == "01: Theme: POV: His"
@@ -969,7 +971,9 @@ class TestFifthRoundMergesAndAttributes:
             assert _suggest_new_collection_name(tag_name).startswith("01: Activity: ")
 
     def test_tit_wording_is_normalized_from_breast(self) -> None:
-        assert _suggest_new_collection_name("Breast Play") == "01: Category: Tit Play"
+        # "Breast Play" -> Activity (reclassified from Category in the 2026-07-25 review); the
+        # override key is matched against the normalized "Tit Play" name, not the raw tag name.
+        assert _suggest_new_collection_name("Breast Play") == "01: Activity: Tit Play"
         assert _suggest_new_collection_name("Breast Squeezing") == "01: Activity: Tit Squeezing"
         assert _suggest_new_collection_name("Close Up Breasts") == "01: Attributes: Close Up Tits"
 
@@ -999,6 +1003,72 @@ class TestCompositionNewCollectionOverrides:
     def test_plain_lesbian_composition_tags_are_unaffected(self) -> None:
         # Confirms the override is scoped to the specific tag names above, not "lesbian" broadly.
         assert _suggest_new_collection_name("Lesbian Anal") == "01: Activity: Lesbian Anal"
+
+    def test_bare_twosome_is_composition(self) -> None:
+        assert _suggest_new_collection_name("Twosome") == "01: Composition: Twosome"
+
+
+class TestSixthRoundHairAndDpSplit:
+    """2026-07-25 review: hair-length gender wording, and (DP)-suffixed positions split into
+    the base position plus Double Penetration rather than getting their own collection."""
+
+    def test_long_hair_female_avoids_parenthetical_gender(self) -> None:
+        assert _suggest_new_collection_name("Long Hair (Female)") == "01: Attributes: Long Haired Woman"
+        # Bare "Long Hair" (no gender qualifier) is unaffected.
+        assert _suggest_new_collection_name("Long Hair") == "01: Attributes: Long Hair"
+
+    def test_cowgirl_dp_splits_into_base_position_and_double_penetration(self) -> None:
+        targets = ["01: Activity: Cowgirl", "01: Activity: Double Penetration"]
+        assert _suggested_action("Cowgirl (DP)", set(targets)) == f"merge -> {' + '.join(targets)}"
+        # Neither target exists yet in the live report - stays "add" until both are real.
+        assert _suggested_action("Cowgirl (DP)", set()) == "add"
+
+    def test_reverse_cowgirl_dp_is_matched_before_the_bare_cowgirl_dp_phrase(self) -> None:
+        targets = ["01: Activity: Reverse Cowgirl", "01: Activity: Double Penetration"]
+        assert _suggested_action("Reverse Cowgirl (DP)", set(targets)) == f"merge -> {' + '.join(targets)}"
+
+
+class TestSixthRoundCategoryReclassification:
+    """2026-07-25 review: most "01: Category:" Add suggestions reclassified into Activity/
+    Attributes/Prop/Theme/Composition after a full tag-by-tag pass."""
+
+    def test_activity_reclassifications(self) -> None:
+        assert _suggest_new_collection_name("Vaginal Sex") == "01: Activity: Vaginal Sex"
+        assert _suggest_new_collection_name("Orgasm") == "01: Activity: Orgasm"
+        assert _suggest_new_collection_name("Ass Play") == "01: Activity: Ass Play"
+
+    def test_attribute_reclassifications(self) -> None:
+        assert _suggest_new_collection_name("Short Woman") == "01: Attributes: Short Woman"
+        assert _suggest_new_collection_name("Big Ass") == "01: Attributes: Big Ass"
+
+    def test_bwc_bbc_drop_the_parenthetical_acronym(self) -> None:
+        assert _suggest_new_collection_name("Big White Cock (BWC)") == "01: Attributes: Big White Cock"
+        assert _suggest_new_collection_name("Big Black Cock (BBC)") == "01: Attributes: Big Black Cock"
+
+    def test_prop_reclassifications(self) -> None:
+        assert _suggest_new_collection_name("Earrings") == "01: Prop: Earrings"
+        assert _suggest_new_collection_name("Lube") == "01: Prop: Lube"
+
+    def test_theme_reclassifications(self) -> None:
+        assert _suggest_new_collection_name("College") == "01: Theme: College"
+        assert _suggest_new_collection_name("Bondage") == "01: Theme: Bondage"
+
+    def test_ambiguous_relational_and_meta_tags_stay_category(self) -> None:
+        # Reviewed and deliberately left alone - see the comment block in
+        # _SUGGESTED_NAME_OVERRIDES for the reasoning per tag.
+        assert _suggest_new_collection_name("Interracial") == "01: Category: Interracial"
+        assert _suggest_new_collection_name("Pornstar") == "01: Category: Pornstar"
+        assert _suggest_new_collection_name("Series") == "01: Category: Series"
+
+    def test_facesitting_on_her_merges_into_the_existing_face_sitting_collection(self) -> None:
+        target = "01: Category: Face Sitting"
+        assert _suggested_action("Facesitting on Her", {target}) == f"merge -> {target}"
+        # "Facesitting on Him" is a separate, already-skip-listed exact tag name, unaffected.
+
+    def test_all_vaginal_forward_declares_into_vaginal_sex(self) -> None:
+        target = "01: Activity: Vaginal Sex"
+        assert _suggested_action("All Vaginal", {target}) == f"merge -> {target}"
+        assert _suggested_action("All Vaginal", set()) == "add"
 
 
 class TestTagSource:
@@ -1361,12 +1431,58 @@ class TestUnmappedTags:
         # target, not just tags that are fully stuck in "add".
         assert "Anal Cowgirl - POV (currently -> 01: Category: Anal)" in report
         assert "Cowgirl - POV" in report
-        # "01: Theme: POV" is waited on by both tags (2), "01: Activity: Cowgirl" by only one (1)
-        # - sorted by impact, POV comes first. Table-cell-exact needles, since the substring
-        # "01: Activity: Cowgirl" also appears earlier as a prefix of the Add section's own
-        # "01: Activity: Cowgirl - POV" suggestion.
+        # "01: Activity: Cowgirl" no longer appears as its own pending row: it's one of the
+        # 2026-07-25 accepted Add suggestions (_ACCEPTED_ADD_COLLECTIONS), so it now resolves as
+        # a valid merge target even though it isn't a real Plex collection yet. Only "01: Theme:
+        # POV" (not accepted) is still genuinely pending, waited on by both tags.
         pending_section = report[report.index("## Pending Collections") :]
-        assert pending_section.index("| 01: Theme: POV |") < pending_section.index("| 01: Activity: Cowgirl |")
+        assert "| 01: Theme: POV |" in pending_section
+        assert "01: Activity: Cowgirl |" not in pending_section
+
+    def test_accepted_add_collection_promotes_pending_tag_into_merge(self, tmp_path: Path) -> None:
+        # "All Vaginal" forward-merges into "01: Activity: Vaginal Sex" (_CATEGORY_MERGE_PHRASES),
+        # and that target is one of the 2026-07-25 accepted Add suggestions
+        # (_ACCEPTED_ADD_COLLECTIONS) - even though it isn't a real Plex collection, it should
+        # resolve as a full "## Merge" row rather than sitting in "## Add" / "## Pending
+        # Collections".
+        tags = [
+            {
+                "id": "1",
+                "name": "All Vaginal",
+                "scene_count": 49,
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "a"}],
+            },
+        ]
+        stash = MagicMock()
+        stash.all_tags.return_value = tags
+        stash.configured_stash_boxes.return_value = [{"name": "StashDB", "endpoint": "https://stashdb.org/graphql"}]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = []
+        output = tmp_path / "unmapped.md"
+        args = SimpleNamespace(
+            config="config.ini",
+            log_level="WARNING",
+            output=output,
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert unmapped_tags(args) == 0
+
+        report = output.read_text(encoding="utf-8")
+        # No forward-declared merge is left unresolved for this single tag, so "## Pending
+        # Collections" is omitted entirely (same zero-rows convention as elsewhere in this
+        # report) - slice against "## Skip", which is always present, instead.
+        add_section = report[report.index("## Add") : report.index("## Merge")]
+        merge_section = report[report.index("## Merge") : report.index("## Skip")]
+        assert "## Pending Collections" not in report
+        assert "All Vaginal" not in add_section
+        assert "All Vaginal" in merge_section
+        assert "01: Activity: Vaginal Sex" in merge_section
 
 
 class TestRenameTags:

@@ -946,6 +946,15 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     # resolving-match-wins, so "Dildo Blowjob" needs to keep hitting its own specific rule
     # rather than this generic one.
     "dildo": "01: Prop: Dildo",
+    # "Grinding on face is redundant with face sitting" already established this exact pattern
+    # (see above) - the directional "on Her" variant is the same concept, just StashDB's more
+    # specific phrasing. "Facesitting on Him" is a separate, already-skip-listed tag and is
+    # unaffected (different exact name).
+    "facesitting on her": "01: Category: Face Sitting",
+    # Forward-declared per the 2026-07-25 review's "All Anal" precedent immediately above this
+    # block: "All Vaginal" is the same "no other act type present" descriptor, one level down
+    # from the base act. Won't fire until "01: Activity: Vaginal Sex" is a real collection.
+    "all vaginal": "01: Activity: Vaginal Sex",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
@@ -1008,6 +1017,16 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     # a real, already-existing target, so this one only depends on POV to activate.
     "titjob - pov": ["01: Category: Tit Fucking", "01: Theme: POV"],
     "doggy style - pov": ["01: Activity: Doggy Style", "01: Theme: POV"],
+    # Confirmed by direct user request (2026-07-25 review): "(DP)" variants split into the base
+    # position plus the existing Double Penetration activity, rather than getting their own
+    # dedicated "Cowgirl (DP)" collection. Neither target is a real collection yet (Cowgirl is
+    # itself still pending "add"; Double Penetration is pending its "01: Category:" ->
+    # "01: Activity:" rename - see _EXISTING_CATEGORY_RENAMES), so this is forward-declared the
+    # same way as the POV splits above. "Reverse Cowgirl (DP)" must be listed (and therefore
+    # matched) before the bare "Cowgirl (DP)" - same substring-ordering reasoning as "reverse
+    # cowgirl - pov" vs "cowgirl - pov" above.
+    "reverse cowgirl (dp)": ["01: Activity: Reverse Cowgirl", "01: Activity: Double Penetration"],
+    "cowgirl (dp)": ["01: Activity: Cowgirl", "01: Activity: Double Penetration"],
 }
 
 # Exact whole-tag-name (not substring) merges: "black" alone is too short/common a substring to
@@ -1109,6 +1128,109 @@ _SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
     "male - pov": "01: Theme: POV: His",
     "female - pov": "01: Theme: POV: Hers",
     "mixed - pov": "01: Theme: POV: Mixed",
+    # Confirmed by direct user request (2026-07-25 review): gendered-parenthetical hair-length
+    # tags shouldn't put the gender inside parens - matches the existing "TattooedWoman"/
+    # "TattooedMan" naming precedent instead.
+    "long hair (female)": "01: Attributes: Long Haired Woman",
+    # 2026-07-25 review: the bulk of the "01: Category:" catch-all Add suggestions were reviewed
+    # tag-by-tag and reclassified into Activity/Attributes/Prop/Theme/Composition where a clean
+    # fit exists, per direct user request ("most of these should actually be attributes or
+    # activities instead"). Left as Category (no override below, falls through to the default
+    # "01: Category: <name>"): "Interracial"/"Trans Fucks Female" (relational, not a single
+    # performer's attribute nor a tracked composition axis), "Group Sex" (overlaps the existing
+    # enumerated composition tags too closely to give its own axis), "Pornstar"/"Babes"/"Adorable"/
+    # "Rough"/"Wet Look" (too subjective/vague to file as a concrete attribute or activity),
+    # "Narrative"/"3rd Person Narrative"/"Series"/"Re-release"/"Redistribution"/"Missing or
+    # Removed"/"Award Winning"/"Photos" (meta/production flags, not content descriptors), and
+    # "Poolside"/"Bathroom"/"Living Room"/"Kitchen"/"Shower"/"Close Up" (settings/framing, same
+    # bucket as the already-skip-listed furniture words).
+    "vaginal sex": "01: Activity: Vaginal Sex",
+    "oral sex": "01: Activity: Oral Sex",
+    "pussy to mouth": "01: Activity: Pussy to Mouth",
+    "ass to pussy": "01: Activity: Ass to Pussy",
+    "ass to other's mouth": "01: Activity: Ass to Other's Mouth",
+    "ass to other's ass": "01: Activity: Ass to Other's Ass",
+    "orgasm": "01: Activity: Orgasm",
+    # "Hard Fuck"/"Deep Fuck" deliberately aren't a bare "fuck" keyword (would sweep in unrelated
+    # tags), so they're called out individually here instead - same reasoning as "Face Fuck"/
+    # "Side Fuck" above.
+    "hard fuck": "01: Activity: Hard Fuck",
+    "deep fuck": "01: Activity: Deep Fuck",
+    "girls finishing the job": "01: Activity: Girls Finishing the Job",
+    # Normalized "Breast Play" -> "Tit Play" name, reclassified from Category to Activity.
+    "tit play": "01: Activity: Tit Play",
+    "dirty talk": "01: Activity: Dirty Talk",
+    # Same bucket as the existing "01: Category: Nipple Play" -> "01: Activity: Nipple Play"
+    # rename precedent.
+    "ball play": "01: Activity: Ball Play",
+    "ass play": "01: Activity: Ass Play",
+    "double handed": "01: Activity: Double Handed",
+    "dancing": "01: Activity: Dancing",
+    "throat fucking": "01: Activity: Throat Fucking",
+    "fuck n lick": "01: Activity: Fuck N Lick",
+    "gaping": "01: Attributes: Gaping",
+    "trimmed pussy": "01: Attributes: Trimmed Pussy",
+    "short woman": "01: Attributes: Short Woman",
+    "tall woman": "01: Attributes: Tall Woman",
+    "tiny woman": "01: Attributes: Tiny Woman",
+    # Scene-level "was a condom used" is treated as a content attribute, same bucket as the
+    # Circumcised/Uncircumcised body attribute pair below.
+    "condom": "01: Attributes: Condom",
+    "no condom": "01: Attributes: No Condom",
+    "uncircumcised": "01: Attributes: Uncircumcised",
+    "circumcised": "01: Attributes: Circumcised",
+    "big ass": "01: Attributes: Big Ass",
+    "small ass": "01: Attributes: Small Ass",
+    "all natural": "01: Attributes: All Natural",
+    # BWC/BBC: attributes, not categories - and the acronym in parens is dropped, matching the
+    # "no parenthetical gender/qualifier in regular collection names" preference from the same
+    # review round.
+    "big white cock (bwc)": "01: Attributes: Big White Cock",
+    "big black cock (bbc)": "01: Attributes: Big Black Cock",
+    "skinny": "01: Attributes: Skinny",
+    "outie pussy": "01: Attributes: Outie Pussy",
+    "innie pussy": "01: Attributes: Innie Pussy",
+    "tan lines": "01: Attributes: Tan Lines",
+    "transgender": "01: Attributes: Transgender",
+    "curvy": "01: Attributes: Curvy",
+    "fake nails": "01: Attributes: Fake Nails",
+    "muscular man": "01: Attributes: Muscular Man",
+    "topless": "01: Attributes: Topless",
+    "freckles": "01: Attributes: Freckles",
+    "monster cock": "01: Attributes: Monster Cock",
+    "puffy nipples": "01: Attributes: Puffy Nipples",
+    "pedicured": "01: Attributes: Pedicured",
+    "manicured": "01: Attributes: Manicured",
+    "shaved": "01: Attributes: Shaved",
+    "black man": "01: Attributes: Black Man",
+    "barefoot": "01: Attributes: Barefoot",
+    # Jewelry/eyewear accessories - physical worn objects, same Prop bucket as lingerie/stockings/
+    # heels rather than the body-focused Attributes bucket (piercings/skin/hair/tattoos).
+    "earrings": "01: Prop: Earrings",
+    "necklace": "01: Prop: Necklace",
+    "bracelet": "01: Prop: Bracelet",
+    "rings": "01: Prop: Rings",
+    "choker": "01: Prop: Choker",
+    "glasses": "01: Prop: Glasses",
+    # Same Prop bucket as the existing "01: Category: Oil"/"01: Category: Hot Wax" ->
+    # "01: Prop: Oil"/"01: Prop: Hot Wax" rename precedent (the physical product, not the act).
+    "lube": "01: Prop: Lube",
+    "college": "01: Theme: College",
+    "softcore": "01: Theme: Softcore",
+    "erotica": "01: Theme: Erotica",
+    "amateur": "01: Theme: Amateur",
+    "glamour": "01: Theme: Glamour",
+    "reality porn": "01: Theme: Reality Porn",
+    "sports": "01: Theme: Sports",
+    # Genre/style descriptor, same bucket as the existing "01: Category: Fetish" ->
+    # "01: Theme: Fetish" rename precedent - not Prop, since this tag itself carries no specific
+    # gear the way "Handcuffs"/"Rope"/"Restraints" already do.
+    "bondage": "01: Theme: Bondage",
+    "clothed sex": "01: Theme: Clothed Sex",
+    "romance": "01: Theme: Romance",
+    # Bare person-count tag, same axis as the existing Threesome/Foursome/Gangbang/Orgy
+    # composition tags - not an Activity or Attribute.
+    "twosome": "01: Composition: Twosome",
 }
 
 # Confirmed by direct user request: "anal anything also needs the anal activity tag" - every
@@ -1663,6 +1785,177 @@ _UNCLASSIFIED_CATEGORY_NOTES: dict[str, str] = {
     "01: Category: Vertical Video": "video format/orientation, not a content descriptor",
 }
 
+# Confirmed by direct user request (2026-07-25 review round): every collection name currently
+# suggested by an "Add" row was accepted as a final taxonomy decision, en masse - not yet
+# created in Plex, but a valid merge target from here on. A snapshot (not a live recomputation)
+# deliberately, so a *future* Add suggestion that hasn't been reviewed yet doesn't automatically
+# start counting as accepted just by showing up in the same report run - only this dated,
+# reviewed list does. `_write_unmapped_tags_report` unions this into the titles it resolves
+# merge/pending targets against (see `resolve_titles` there), so any tag whose merge rule points
+# at one of these (e.g. "All Vaginal" -> "01: Activity: Vaginal Sex") promotes out of "Pending
+# Collections" into a real "## Merge" row, even though the target isn't in Plex yet. Real Plex
+# existence checks (`_has_existing_plex_match`, `_EXISTING_CATEGORY_RENAMES` filtering) are
+# unaffected - those still only see actual Plex collections, so these 154 still correctly show
+# up under "## Add" until someone actually creates them.
+_ACCEPTED_ADD_COLLECTIONS: frozenset[str] = frozenset(
+    {
+        "01: Activity: Ass Play",
+        "01: Activity: Ass to Other's Ass",
+        "01: Activity: Ass to Other's Mouth",
+        "01: Activity: Ass to Pussy",
+        "01: Activity: Ball Play",
+        "01: Activity: Ball Sucking",
+        "01: Activity: Couple Masturbation",
+        "01: Activity: Cowgirl",
+        "01: Activity: Dancing",
+        "01: Activity: Deep Fuck",
+        "01: Activity: Dirty Talk",
+        "01: Activity: Doggy Style",
+        "01: Activity: Double Handed",
+        "01: Activity: Double Handjob",
+        "01: Activity: Face Down Ass Up",
+        "01: Activity: Facefuck",
+        "01: Activity: Finger Sucking",
+        "01: Activity: Fuck N Lick",
+        "01: Activity: Gagging",
+        "01: Activity: Girls Finishing the Job",
+        "01: Activity: Hair Pulling",
+        "01: Activity: Handjob to Completion",
+        "01: Activity: Hard Fuck",
+        "01: Activity: Masturbation",
+        "01: Activity: Masturbation During Sex",
+        "01: Activity: Missionary",
+        "01: Activity: Oral Sex",
+        "01: Activity: Orgasm",
+        "01: Activity: Piledriver",
+        "01: Activity: Pussy Fingering During Sex",
+        "01: Activity: Pussy Rubbing",
+        "01: Activity: Pussy to Mouth",
+        "01: Activity: Reverse Cowgirl",
+        "01: Activity: Reverse Riding",
+        "01: Activity: Riding",
+        "01: Activity: Side Fuck",
+        "01: Activity: Spit Roast",
+        "01: Activity: Spitting",
+        "01: Activity: Spooning",
+        "01: Activity: Stand and Carry",
+        "01: Activity: Standing Doggy Style",
+        "01: Activity: Standing Sex",
+        "01: Activity: Throat Fucking",
+        "01: Activity: Tit Play",
+        "01: Activity: Tit Sucking",
+        "01: Activity: Vaginal Sex",
+        "01: Attributes: All Natural",
+        "01: Attributes: Barefoot",
+        "01: Attributes: Big Ass",
+        "01: Attributes: Big Black Cock",
+        "01: Attributes: Big Dick",
+        "01: Attributes: Big Tits",
+        "01: Attributes: Big White Cock",
+        "01: Attributes: Black Man",
+        "01: Attributes: Circumcised",
+        "01: Attributes: Colored Hair",
+        "01: Attributes: Condom",
+        "01: Attributes: Curly Hair",
+        "01: Attributes: Curvy",
+        "01: Attributes: Fake Nails",
+        "01: Attributes: Fake Tits",
+        "01: Attributes: Freckles",
+        "01: Attributes: Gaping",
+        "01: Attributes: Hairless Genitals",
+        "01: Attributes: Hairless Labia",
+        "01: Attributes: Hairless Pussy",
+        "01: Attributes: Hairy Pussy",
+        "01: Attributes: Innie Pussy",
+        "01: Attributes: Long Hair",
+        "01: Attributes: Long Haired Woman",
+        "01: Attributes: Manicured",
+        "01: Attributes: Monster Cock",
+        "01: Attributes: Muscular Man",
+        "01: Attributes: Natural Tits",
+        "01: Attributes: Navel Piercing",
+        "01: Attributes: No Condom",
+        "01: Attributes: No Tattoos",
+        "01: Attributes: Nose Piercing",
+        "01: Attributes: Outie Pussy",
+        "01: Attributes: Pale Skin",
+        "01: Attributes: Pedicured",
+        "01: Attributes: Perky Tits",
+        "01: Attributes: Piercing",
+        "01: Attributes: Pubic Hair",
+        "01: Attributes: Puffy Nipples",
+        "01: Attributes: Shaved",
+        "01: Attributes: Short Hair",
+        "01: Attributes: Short Woman",
+        "01: Attributes: Skinny",
+        "01: Attributes: Small Ass",
+        "01: Attributes: Small Tits",
+        "01: Attributes: Straight Hair",
+        "01: Attributes: Tall Woman",
+        "01: Attributes: Tan Lines",
+        "01: Attributes: Tanned Skin",
+        "01: Attributes: Tattooed Man",
+        "01: Attributes: Tattooed Woman",
+        "01: Attributes: Tattoos",
+        "01: Attributes: Tattoos & Piercings",
+        "01: Attributes: Tiny Tits",
+        "01: Attributes: Tiny Woman",
+        "01: Attributes: Topless",
+        "01: Attributes: Transgender",
+        "01: Attributes: Trimmed Pussy",
+        "01: Attributes: Uncircumcised",
+        "01: Attributes: Wavy Hair",
+        "01: Category: 3rd Person Narrative",
+        "01: Category: Adorable",
+        "01: Category: All Vaginal",
+        "01: Category: Award Winning",
+        "01: Category: Babes",
+        "01: Category: Bathroom",
+        "01: Category: Close Up",
+        "01: Category: Group Sex",
+        "01: Category: Interracial",
+        "01: Category: Kitchen",
+        "01: Category: Living Room",
+        "01: Category: Missing or Removed",
+        "01: Category: Narrative",
+        "01: Category: Photos",
+        "01: Category: Poolside",
+        "01: Category: Pornstar",
+        "01: Category: Re-release",
+        "01: Category: Redistribution",
+        "01: Category: Rough",
+        "01: Category: Series",
+        "01: Category: Shower",
+        "01: Category: Trans Fucks Female",
+        "01: Category: Wet Look",
+        "01: Composition: Twosome",
+        "01: Prop: Black Stockings",
+        "01: Prop: Bracelet",
+        "01: Prop: Choker",
+        "01: Prop: Earrings",
+        "01: Prop: Glasses",
+        "01: Prop: Lingerie",
+        "01: Prop: Lube",
+        "01: Prop: Necklace",
+        "01: Prop: Nude Stockings",
+        "01: Prop: Rings",
+        "01: Prop: Skirt",
+        "01: Prop: Stockings",
+        "01: Prop: White Stockings",
+        "01: Prop: Woman's Heels",
+        "01: Theme: Amateur",
+        "01: Theme: Bondage",
+        "01: Theme: Clothed Sex",
+        "01: Theme: College",
+        "01: Theme: Erotica",
+        "01: Theme: Glamour",
+        "01: Theme: Reality Porn",
+        "01: Theme: Romance",
+        "01: Theme: Softcore",
+        "01: Theme: Sports",
+    }
+)
+
 
 def _write_unmapped_tags_report(
     path: str | Path,
@@ -1678,11 +1971,17 @@ def _write_unmapped_tags_report(
     report_path.parent.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+    # Accepted-but-not-yet-created Add suggestions count as valid merge targets (see
+    # _ACCEPTED_ADD_COLLECTIONS) - only for merge/pending resolution below, never for the
+    # real-Plex-only checks (existing_renames, unclassified further down) that must keep
+    # reflecting actual Plex state.
+    resolve_titles = existing_titles | _ACCEPTED_ADD_COLLECTIONS
+
     add_rows: list[dict[str, Any]] = []
     merge_rows: list[tuple[dict[str, Any], str]] = []
     skip_rows: list[dict[str, Any]] = []
     for tag in unmapped:
-        action = _suggested_action(str(tag["name"]), existing_titles)
+        action = _suggested_action(str(tag["name"]), resolve_titles)
         if action == "skip":
             skip_rows.append(tag)
         elif action.startswith("merge -> "):
@@ -1700,10 +1999,12 @@ def _write_unmapped_tags_report(
         f"{len(add_rows)} suggested add, {len(merge_rows)} suggested merge, {len(skip_rows)} suggested skip.",
         "",
         "All of the below is a heuristic starting point for review, not a decision. `merge` "
-        "always reflects an actual existing Plex collection as the target. `Suggested "
-        "Collection` for `Add` rows is a keyword-based guess at the emerging taxonomy "
-        "(Cumshot/Composition/Prop/Activity/Theme) and falls back to the existing `Category:` "
-        "form when no keyword matched - verify before creating anything.",
+        "reflects either an actual existing Plex collection, or one of the 154 Add suggestions "
+        "accepted 2026-07-25 (not yet created in Plex, but now a valid merge target - see "
+        "`_ACCEPTED_ADD_COLLECTIONS`), as the target. `Suggested Collection` for `Add` rows is a "
+        "keyword-based guess at the emerging taxonomy (Cumshot/Composition/Prop/Activity/Theme/"
+        "Attributes) and falls back to the existing `Category:` form when no keyword matched - "
+        "verify before creating anything.",
         "",
         "## Add",
         "",
@@ -1757,14 +2058,14 @@ def _write_unmapped_tags_report(
         if not targets:
             continue
         for target in targets:
-            if _resolve_existing(target, existing_titles) is None:
+            if _resolve_existing(target, resolve_titles) is None:
                 pending_targets[target].append(str(tag["name"]))
     for tag, current_target in merge_rows:
         targets = _potential_merge_targets(str(tag["name"]))
         if not targets:
             continue
         for target in targets:
-            if _resolve_existing(target, existing_titles) is None:
+            if _resolve_existing(target, resolve_titles) is None:
                 pending_targets[target].append(f"{tag['name']} (currently -> {current_target})")
 
     if pending_targets:
