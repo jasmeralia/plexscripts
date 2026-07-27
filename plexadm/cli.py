@@ -9,12 +9,15 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from plexadm import __version__, audit
 from plexadm.config import load_inventory_config, load_logging_config
 from plexadm.console import fail, info, ok, warn
+from plexadm.dupes_report import DEFAULT_DUPES_BASE_DIR, _translate_path
+from plexadm.dupes_report import dupes_report as tools_dupes_report
 from plexadm.filters import and_filter, in_collection, not_in_collection, rated, title_contains, unrated, writer_any
 from plexadm.plex import (
     LOCKED_COLLECTION,
@@ -626,6 +629,24 @@ def list_studio_writers(args: argparse.Namespace) -> int:
 
 def list_special(args: argparse.Namespace) -> int:
     ctx = build_context(args)
+    if args.kind == "duplicates":
+        # Output shape (file paths, not titles) differs from every other kind below, so it
+        # returns directly rather than joining the shared `print_title` loop at the bottom.
+        for video in ctx.section.search(duplicate=True):
+            reload_if_partial(video)
+            paths = [
+                _translate_path(str(part.file), args.base_dir)
+                for media in getattr(video, "media", None) or []
+                for part in getattr(media, "parts", None) or []
+                if part.file
+            ]
+            if not paths:
+                continue
+            print(f"{video.title}:")
+            for path in paths:
+                print(f"  {path}")
+        return 0
+
     if args.kind == "uncategorized" or args.kind == "no-composition":
         excluded = [not_in_collection(name) for name in EXCLUDED_COMPOSITION_COLLECTIONS]
         videos = ctx.search(filters=and_filter(*excluded), reload=False)
@@ -868,10 +889,12 @@ def rename_collections(args: argparse.Namespace) -> int:
 SCENE_BASE_DIR = "/data/NSFW Scenes/"
 
 
-def list_renames(args: argparse.Namespace) -> int:
-    ctx = build_context(args)
-    filter_text = args.filter_text
+def _rename_candidates(ctx: PlexContext, filter_text: str | None) -> Iterator[tuple[Any, list[str]]]:
+    """Yield (video, locations) for every video whose on-disk filename doesn't match its title.
 
+    Shared between `list renames` (reporting) and `tools rename-gen-script` (script
+    generation) so the two can never drift on what counts as a mismatch.
+    """
     for video in ctx.all_videos():
         locations = getattr(video, "locations", []) or []
         if not locations:
@@ -881,9 +904,6 @@ def list_renames(args: argparse.Namespace) -> int:
             haystack = [video.title] + locations
             if not any(filter_text in entry for entry in haystack):
                 continue
-
-        if args.script and len(locations) > 1:
-            continue
 
         filename = Path(locations[0]).name
         match_found = any(video.title in location for location in locations)
@@ -899,22 +919,43 @@ def list_renames(args: argparse.Namespace) -> int:
             match_found = True
 
         has_location_mismatch = any(video.title not in location for location in locations)
-        needs_review = not args.script and len(locations) > 1 and has_location_mismatch
+        needs_review = len(locations) > 1 and has_location_mismatch
 
         if not match_found or needs_review:
-            old_location = locations[0].replace(args.base_dir, "")
-            new_fname = f"{video.title}.mp4"
-            first_writer = new_fname.split(" - ", 1)[0].split(",")[0]
-            if args.script:
-                print(f'mv "{old_location}" "{first_writer}/{new_fname}"')
-            else:
-                if len(locations) > 1:
-                    print(f"WARNING: {video.title} has multiple locations!")
-                    for location in locations:
-                        print(f"  {location}")
-                    print("")
-                else:
-                    print(f"{old_location} -> {first_writer}/{new_fname}")
+            yield video, locations
+
+
+def _rename_target(video: Any, locations: list[str], base_dir: str) -> tuple[str, str, str]:
+    old_location = locations[0].replace(base_dir, "")
+    new_fname = f"{video.title}.mp4"
+    first_writer = new_fname.split(" - ", 1)[0].split(",")[0]
+    return old_location, new_fname, first_writer
+
+
+def list_renames(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    for video, locations in _rename_candidates(ctx, args.filter_text):
+        old_location, new_fname, first_writer = _rename_target(video, locations, args.base_dir)
+        if len(locations) > 1:
+            print(f"WARNING: {video.title} has multiple locations!")
+            for location in locations:
+                print(f"  {location}")
+            print("")
+        else:
+            print(f"{old_location} -> {first_writer}/{new_fname}")
+
+    return 0
+
+
+def rename_gen_script(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    for video, locations in _rename_candidates(ctx, args.filter_text):
+        if len(locations) > 1:
+            # Ambiguous which location to move - same skip `list renames` flags as a WARNING
+            # instead of generating a (possibly wrong) `mv` command for it.
+            continue
+        old_location, new_fname, first_writer = _rename_target(video, locations, args.base_dir)
+        print(f'mv "{old_location}" "{first_writer}/{new_fname}"')
 
     return 0
 
@@ -1306,29 +1347,20 @@ def _build_list_commands(sub: Any) -> None:
         "renames",
         help="Report file renames needed so on-disk filenames match Plex titles.",
         description=(
-            "For each video whose filename does not match its Plex title, print either\n"
-            "a human-readable diff (default) or a `mv` script (--script).\n"
+            "For each video whose filename does not match its Plex title, print a\n"
+            "human-readable diff. Videos with multiple file locations are flagged with\n"
+            "a WARNING instead, since it's ambiguous which one to rename.\n"
             "\n"
-            "Videos with multiple file locations are skipped in --script mode and\n"
-            "flagged with a WARNING in human-readable mode."
+            "To generate a `mv` script from the same underlying data, use\n"
+            "`plexadm tools rename-gen-script` instead."
         ),
-        epilog=(
-            "Examples:\n"
-            "  plexadm list renames\n"
-            "  plexadm list renames 'Brazzers'\n"
-            "  plexadm list renames --script > rename.sh"
-        ),
+        epilog=("Examples:\n  plexadm list renames\n  plexadm list renames 'Brazzers'"),
     )
     renames.add_argument(
         "filter_text",
         nargs="?",
         metavar="FILTER",
         help="Only include videos whose title or file path contains this substring.",
-    )
-    renames.add_argument(
-        "--script",
-        action="store_true",
-        help="Output `mv` commands instead of a human-readable diff.",
     )
     renames.add_argument(
         "--base-dir",
@@ -1346,6 +1378,7 @@ def _build_list_commands(sub: Any) -> None:
         "multi-f-without-category": "videos with multiple title-derived writers but no category collection",
         "no-composition": "videos missing every composition category (FFM, MMF, ...)",
         "no-hair": "videos missing every hair-colour collection",
+        "duplicates": "videos Plex flags as duplicate=true (multiple file versions on one item)",
     }
     special = _make_sub(
         list_sub,
@@ -1359,7 +1392,11 @@ def _build_list_commands(sub: Any) -> None:
             "Examples:\n"
             "  plexadm list special uncategorized\n"
             "  plexadm list special no-hair\n"
-            "  plexadm list special uncollected"
+            "  plexadm list special uncollected\n"
+            "  plexadm list special duplicates\n"
+            "\n"
+            "For a full markdown report with delete recommendations instead, use\n"
+            "`plexadm tools dupes-report`."
         ),
     )
     special.add_argument(
@@ -1367,6 +1404,15 @@ def _build_list_commands(sub: Any) -> None:
         choices=list(special_help),
         metavar="KIND",
         help="Which audit to run (see description for the list).",
+    )
+    special.add_argument(
+        "--base-dir",
+        default=DEFAULT_DUPES_BASE_DIR,
+        metavar="DIR",
+        help=(
+            "Replacement for Plex's internal '/data/' path prefix (default: "
+            f"{DEFAULT_DUPES_BASE_DIR}). Only used by the 'duplicates' kind."
+        ),
     )
     set_func(special, list_special)
 
@@ -1985,8 +2031,10 @@ def _build_tools_commands(sub: Any) -> None:
         epilog=(
             "Examples:\n"
             "  plexadm tools find-missing-file '/data/NSFW Scenes/Alice/foo.mp4'\n"
+            "  plexadm tools rename-gen-script > rename.sh\n"
             "  plexadm tools fix-dl-scene-name 'scene.mp4' --prefix 'Alice'\n"
-            "  plexadm tools upload-vids --remote-host truenas"
+            "  plexadm tools upload-vids --remote-host truenas\n"
+            "  plexadm tools dupes-report"
         ),
     )
     tools_sub = _add_subparsers(tools, dest="tools_command", title="tools subcommands")
@@ -2000,6 +2048,34 @@ def _build_tools_commands(sub: Any) -> None:
     )
     missing.add_argument("path", metavar="PATH", help="Absolute on-disk path to look up.")
     set_func(missing, find_missing_file)
+
+    rename_script = _make_sub(
+        tools_sub,
+        "rename-gen-script",
+        help="Generate `mv` commands for videos whose filename doesn't match their Plex title.",
+        description=(
+            "For each video whose filename does not match its Plex title, print an `mv`\n"
+            "command that renames it into place. Videos with multiple file locations are\n"
+            "skipped, since it's ambiguous which one to rename.\n"
+            "\n"
+            "For a human-readable report of the same mismatches instead, use\n"
+            "`plexadm list renames`."
+        ),
+        epilog="Example:\n  plexadm tools rename-gen-script > rename.sh",
+    )
+    rename_script.add_argument(
+        "filter_text",
+        nargs="?",
+        metavar="FILTER",
+        help="Only include videos whose title or file path contains this substring.",
+    )
+    rename_script.add_argument(
+        "--base-dir",
+        default=SCENE_BASE_DIR,
+        metavar="DIR",
+        help=f"Base directory prefix to strip from file paths (default: {SCENE_BASE_DIR}).",
+    )
+    set_func(rename_script, rename_gen_script)
 
     dl = _make_sub(
         tools_sub,
@@ -2097,6 +2173,46 @@ def _build_tools_commands(sub: Any) -> None:
         help="Remote base directory under which '<star>/<file>' will be placed (default: /mnt/myzmirror/plexdata/NSFW Scenes).",
     )
     upload.set_defaults(func=upload_vids)
+
+    dupes = _make_sub(
+        tools_sub,
+        "dupes-report",
+        help="Generate a markdown report of Plex duplicate=true videos with delete recommendations.",
+        description=(
+            "Search for every video Plex flags duplicate=true (multiple file versions\n"
+            "attached to one item) and write a markdown report listing each file's full\n"
+            "path, duration, size, and resolution, plus whether the item's title and sort\n"
+            "title are locked fields.\n"
+            "\n"
+            "Each group gets a recommendation, never an automatic deletion:\n"
+            "  - durations don't match (>1s apart)   -> needs manual review\n"
+            "  - durations match, a PPV file is the highest resolution\n"
+            "                                        -> delete the non-PPV file(s)\n"
+            "  - durations match, no PPV file present -> delete the lowest-resolution/size\n"
+            "                                             file(s)\n"
+            "  - durations match, a PPV file exists but isn't the highest resolution\n"
+            "                                        -> needs manual review"
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm tools dupes-report\n"
+            "  plexadm tools dupes-report --output reference/dupes_report.md\n"
+            "  plexadm tools dupes-report --base-dir /other/mount/plexdata/"
+        ),
+    )
+    dupes.add_argument(
+        "--output",
+        default="reference/dupes_report.md",
+        metavar="PATH",
+        help="Markdown report output path (default: reference/dupes_report.md).",
+    )
+    dupes.add_argument(
+        "--base-dir",
+        default=DEFAULT_DUPES_BASE_DIR,
+        metavar="DIR",
+        help=f"Replacement for Plex's internal '/data/' path prefix (default: {DEFAULT_DUPES_BASE_DIR}).",
+    )
+    set_func(dupes, tools_dupes_report)
 
 
 def _build_top_command(sub: Any) -> None:

@@ -16,6 +16,8 @@ Do not add new top-level one-off scripts when a `plexadm` subcommand or helper m
 
 Any video tagged `99: LOCKED` must never have its collection memberships changed by plexadm - neither additions nor removals - regardless of which command is operating. This is enforced once, centrally, in `plexadm.plex.add_items`/`remove_items`/`create_collection` (all three silently drop locked videos from the item list before touching the Plex API, unless the target collection *is* `99: LOCKED` itself, since adding/removing the lock is how you set/unset it). Do not re-implement this check per-command; if you add a new mutating command, it gets this protection for free by going through `add_items`/`remove_items`.
 
+`plexadm.plex.lock_title_and_sort_title` is a deliberate exception to this guard: it locks the `title`/`titleSort` fields to whatever value they already have, so it preserves existing metadata rather than altering it - the thing the guard exists to prevent doesn't apply. `rename_title` (which does change the title's value) still respects the guard as normal.
+
 `plexadm.plex.LOCK_BYPASS_COLLECTIONS` lists collections exempt from this guard: `01: Category: Short Videos`, `01: Category: Vertical Video`, `00C: Unrated`, `00A: NO STUDIO`, `01: Category: PPV`. These describe a fact about the file itself (duration, orientation, rating, studio presence, filename) rather than a judgment call about the content, so locked videos still get tagged into them like any other video. Only add a collection to this set if it's similarly a format/technical property, not a content descriptor - anything content-related stays subject to the full lock.
 
 ## Persistent audit logging

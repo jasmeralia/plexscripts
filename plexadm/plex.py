@@ -171,10 +171,13 @@ def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
 def lock_title_and_sort_title(video: Any, *, dry_run: bool = False) -> bool:
     """Lock title and sort title to their current values, so agent refresh/matching can't
     silently overwrite manually-curated titles (e.g. merged-duplicate items whose title was
-    picked by hand from among several release names)."""
-    if has_collection(video, LOCKED_COLLECTION):
-        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
-        return False
+    picked by hand from among several release names).
+
+    Deliberately not subject to the `99: LOCKED` collection-membership guard (unlike
+    `rename_title`, which actually changes the title value): this only locks each field to
+    whatever it already is, so it preserves existing metadata rather than altering it - the
+    exact thing `99: LOCKED` exists to protect against doesn't apply here.
+    """
     title = str(video.title)
     sort_title = str(getattr(video, "titleSort", None) or title)
     if not dry_run:

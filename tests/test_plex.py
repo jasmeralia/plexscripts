@@ -250,14 +250,19 @@ class TestSetStudioAddWriterRenameCreate:
             )
         )
 
-    def test_lock_title_and_sort_title_skips_locked_video(self) -> None:
-        video = _video(collections=[LOCKED_COLLECTION])
+    def test_lock_title_and_sort_title_is_not_skipped_for_a_locked_video(self) -> None:
+        # Unlike rename_title, this only locks each field to its own current value - it
+        # preserves existing metadata rather than altering it, so the 99: LOCKED
+        # collection-membership guard doesn't apply here.
+        video = _video(title="My Title", titleSort="My Title", collections=[LOCKED_COLLECTION])
 
         with patch("plexadm.plex.log_event") as mock_log:
-            assert lock_title_and_sort_title(video) is False
+            assert lock_title_and_sort_title(video) is True
 
-        video.edit.assert_not_called()
-        mock_log.assert_not_called()
+        video.edit.assert_called_once_with(
+            **{"title.value": "My Title", "title.locked": 1, "titleSort.value": "My Title", "titleSort.locked": 1}
+        )
+        mock_log.assert_called_once()
 
     def test_lock_title_and_sort_title_dry_run_makes_no_edit_but_logs_at_debug(self) -> None:
         video = _video(title="My Title", titleSort="My Title")

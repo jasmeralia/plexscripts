@@ -272,6 +272,7 @@ Special list kinds:
 - `multi-f-without-category`
 - `no-composition`
 - `no-hair`
+- `duplicates`
 
 Examples:
 
@@ -279,7 +280,14 @@ Examples:
 plexadm list special uncategorized
 plexadm list special no-hair
 plexadm list special uncollected
+plexadm list special duplicates
 ```
+
+`duplicates` prints the title of every video Plex flags `duplicate=true` (multiple file
+versions attached to one item), followed by each file's path with the `/data/` prefix
+replaced by `--base-dir` (default: `/mnt/myzmirror/plexdata/`). For sizes, durations,
+resolutions, and a delete recommendation instead of just paths, use
+[`plexadm tools dupes-report`](#tools).
 
 ### Renames
 
@@ -290,13 +298,6 @@ plexadm list renames
 plexadm list renames "TUSHY"
 ```
 
-Output shell `mv` commands instead of a human-readable diff:
-
-```bash
-plexadm list renames --script
-plexadm list renames --script "TUSHY"
-```
-
 Override the base directory prefix stripped from file paths (default: `/data/NSFW Scenes/`):
 
 ```bash
@@ -304,6 +305,9 @@ plexadm list renames --base-dir "/other/path/"
 ```
 
 Message, Post, PPV, and titles containing `?` are excluded automatically.
+
+This command only reports; it never mutates anything. To generate a `mv` script from the same
+underlying data, use [`plexadm tools rename-gen-script`](#tools) instead.
 
 ## Collection Commands
 
@@ -463,6 +467,10 @@ items whose title was chosen by hand from among several release names):
 ```bash
 plexadm collection lock-titles "00A: DUPES"
 ```
+
+Applies even to `99: LOCKED` items: it only locks each field to whatever value it already has,
+so it preserves existing metadata rather than altering it, unlike the collection-membership
+changes that guard exists to block.
 
 ### Rename Categories (one-time taxonomy migration)
 
@@ -687,6 +695,35 @@ Find which Plex item references a file path:
 ```bash
 plexadm tools find-missing-file "/path/to/file.mp4"
 ```
+
+Generate `mv` commands for videos whose filename doesn't match their Plex title (the script-
+generation counterpart to `plexadm list renames`, which only reports):
+
+```bash
+plexadm tools rename-gen-script > rename.sh
+plexadm tools rename-gen-script "TUSHY" --base-dir "/other/path/"
+```
+
+Videos with multiple file locations are skipped, since it's ambiguous which one to rename;
+`plexadm list renames` flags those with a WARNING instead.
+
+Generate a markdown report of Plex `duplicate=true` videos (multiple file versions attached to
+one item), with a delete recommendation per group:
+
+```bash
+plexadm tools dupes-report
+plexadm tools dupes-report --output reference/dupes_report.md --base-dir "/other/mount/plexdata/"
+```
+
+For each duplicate-flagged video, the report lists every file's full path (`/data/` replaced by
+`--base-dir`, default `/mnt/myzmirror/plexdata/`), duration, size, and resolution, plus whether
+the item's title and sort title are locked fields. Recommendations are a starting point for
+manual review, never an automatic deletion:
+
+- durations don't match (more than 1 second apart) -> needs manual review
+- durations match and a PPV file is the highest resolution -> delete the non-PPV file(s)
+- durations match and no file contains PPV -> delete the lowest-resolution/size file(s)
+- durations match and a PPV file exists but isn't the highest resolution -> needs manual review
 
 Generate a download scene name:
 
