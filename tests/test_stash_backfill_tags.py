@@ -57,15 +57,27 @@ class TestClassifyScene:
         assert decision.remove_candidates == []
         assert decision.ambiguous_reason is None
 
-    def test_solo_signal_flags_existing_lesbian_membership(self) -> None:
+    def test_solo_signal_no_longer_contradicts_existing_lesbian_membership(self) -> None:
+        # Confirmed by direct user correction (2026-07-27): Lesbian is a girl-girl activity
+        # marker, not a headcount/composition axis - it must never be proposed for removal just
+        # because a single-female tag is also present.
+        assert (
+            classify_scene(
+                {"Composition: Solo"},
+                {"Composition: Solo", "Composition: Lesbian"},
+            )
+            is None
+        )
+
+    def test_solo_signal_still_flags_a_contradicting_single_female_tag(self) -> None:
         decision = classify_scene(
             {"Composition: Solo"},
-            {"Composition: Solo", "Composition: Lesbian"},
+            {"Composition: Solo", "Composition: MF Only"},
         )
 
         assert decision is not None
         assert decision.adds == []
-        assert decision.remove_candidates == ["Composition: Lesbian"]
+        assert decision.remove_candidates == ["Composition: MF Only"]
         assert decision.ambiguous_reason is None
 
     def test_ffm_and_lesbian_are_compatible(self) -> None:
@@ -103,6 +115,34 @@ class TestClassifyScene:
             "multiple multi-female headcount tags: ['Composition: FFFM', 'Composition: FFM']"
         )
 
+    def test_fffm_and_reverse_gangbang_are_compatible_not_ambiguous(self) -> None:
+        # Confirmed by direct user correction (2026-07-28): Reverse Gangbang (1 male + 3+
+        # females, the user's own definition) is not a distinct headcount from FFFM (3 females +
+        # 1 male) - they describe the same scene, not a conflict. Only this exact pair is
+        # exempted; FFM+FFFM above stays a real conflict since 2 females genuinely differs from 3.
+        decision = classify_scene(
+            {"Composition: FFFM", "Composition: Reverse Gangbang"},
+            set(),
+        )
+
+        assert decision is not None
+        assert decision.ambiguous_reason is None
+        assert decision.adds == ["Composition: FFFM", "Composition: Reverse Gangbang"]
+
+    def test_fffm_reverse_gangbang_plus_a_third_headcount_tag_still_ambiguous(self) -> None:
+        # The compatible-pair exemption is exact-match only - adding a genuinely different
+        # headcount (FFM) back into the mix must still flag as a conflict.
+        decision = classify_scene(
+            {"Composition: FFFM", "Composition: Reverse Gangbang", "Composition: FFM"},
+            set(),
+        )
+
+        assert decision is not None
+        assert decision.ambiguous_reason == (
+            "multiple multi-female headcount tags: "
+            "['Composition: FFFM', 'Composition: FFM', 'Composition: Reverse Gangbang']"
+        )
+
     def test_matching_stash_and_plex_tags_return_none(self) -> None:
         assert classify_scene({"Composition: MF Only"}, {"Composition: MF Only"}) is None
 
@@ -112,6 +152,62 @@ class TestClassifyScene:
         assert decision is not None
         assert decision.adds == ["Composition: Lesbian"]
         assert decision.remove_candidates == []
+
+    def test_lesbian_conflicts_with_mf_only(self) -> None:
+        # Confirmed by direct user correction (2026-07-28): MF Only means exactly one man and
+        # one woman, full stop - structurally incompatible with girl-girl activity, unlike
+        # Gangbang/FFM/etc. which don't exclude a second/third woman being involved.
+        decision = classify_scene({"Composition: MF Only", "Composition: Lesbian"}, set())
+
+        assert decision is not None
+        assert decision.ambiguous_reason == "cross-axis: ['Composition: MF Only'] + ['Composition: Lesbian']"
+
+    def test_lesbian_conflicts_with_tf_only(self) -> None:
+        decision = classify_scene({"Composition: TF Only", "Composition: Lesbian"}, set())
+
+        assert decision is not None
+        assert decision.ambiguous_reason == "cross-axis: ['Composition: TF Only'] + ['Composition: Lesbian']"
+
+    def test_mf_only_signal_flags_existing_lesbian_membership(self) -> None:
+        decision = classify_scene(
+            {"Composition: MF Only"},
+            {"Composition: MF Only", "Composition: Lesbian"},
+        )
+
+        assert decision is not None
+        assert decision.adds == []
+        assert decision.remove_candidates == ["Composition: Lesbian"]
+        assert decision.ambiguous_reason is None
+
+    def test_lesbian_signal_flags_existing_mf_only_membership(self) -> None:
+        decision = classify_scene({"Composition: Lesbian"}, {"Composition: MF Only"})
+
+        assert decision is not None
+        assert decision.adds == ["Composition: Lesbian"]
+        assert decision.remove_candidates == ["Composition: MF Only"]
+        assert decision.ambiguous_reason is None
+
+    def test_mf_only_and_tf_only_conflict_with_each_other(self) -> None:
+        # Confirmed by direct user correction (2026-07-28): MF Only (a man + a woman) and TF Only
+        # (a trans woman + a cis woman) are themselves mutually exclusive, same reasoning as why
+        # each is incompatible with Lesbian.
+        decision = classify_scene({"Composition: MF Only", "Composition: TF Only"}, set())
+
+        assert decision is not None
+        assert decision.ambiguous_reason == (
+            "multiple exclusive-pairing tags: ['Composition: MF Only', 'Composition: TF Only']"
+        )
+
+    def test_tf_only_signal_flags_existing_mf_only_membership(self) -> None:
+        decision = classify_scene(
+            {"Composition: TF Only"},
+            {"Composition: MF Only"},
+        )
+
+        assert decision is not None
+        assert decision.adds == ["Composition: TF Only"]
+        assert decision.remove_candidates == ["Composition: MF Only"]
+        assert decision.ambiguous_reason is None
 
     def test_headcount_signal_replaces_other_plex_headcount(self) -> None:
         decision = classify_scene({"Composition: FFM"}, {"Composition: FFFM"})
@@ -1704,10 +1800,13 @@ class TestBackfillIntegration:
         assert "_No ambiguous scenes this run._" in report
 
     def test_remove_candidates_are_only_written_to_review(self, tmp_path: Path) -> None:
+        # Solo (from Stash) contradicting an existing MF Only membership - a still-valid
+        # single-female-group conflict, deliberately not involving Lesbian (which no longer
+        # contradicts anything - see TestClassifyScene).
         path = "/data/NSFW Scenes/Test/test.mp4"
         video = _mock_video(
             locations=[path],
-            collections=["01: Composition: Solo", "01: Composition: Lesbian"],
+            collections=["01: Composition: Solo", "01: Composition: MF Only"],
         )
         scene = {
             "id": "7",
@@ -1744,7 +1843,7 @@ class TestBackfillIntegration:
         review = _load_review(args.review_output)
         assert len(review) == 1
         assert review[0]["action"] == "remove_candidate"
-        assert review[0]["collection_to_remove"] == "01: Composition: Lesbian"
+        assert review[0]["collection_to_remove"] == "01: Composition: MF Only"
         report = args.report_output.read_text(encoding="utf-8")
         assert "Mode: APPLIED" in report
         assert "## Composition additions by collection" not in report

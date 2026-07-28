@@ -35,8 +35,33 @@ GROUP_MULTI_FEMALE_HEADCOUNT = {
     "Composition: Reverse Gangbang",
     "Composition: FFF+",
 }
+# Confirmed by direct user correction (2026-07-27, refined 2026-07-28): Lesbian is a girl-girl
+# *activity* marker, not a headcount/composition axis - it coexists with most single-female or
+# multi-female-headcount tags (a scene can be Gangbang, or FFM, and still have girl-girl activity
+# between the women present). It is NOT compatible with the two tags that specifically mean
+# "exactly this one pairing, nothing else": MF Only (one man, one woman, full stop) and TF Only
+# (one trans woman, one cis woman, full stop) - both describe a fixed two-person pairing that
+# structurally can't also have separate girl-girl activity the way a 3+-person scene can.
+# (Lesbian will eventually move from the Composition classification to Activity entirely; until
+# then it stays here, just only gated against these two.)
+#
+# MF Only and TF Only are also mutually exclusive with *each other* (confirmed by direct user
+# correction, 2026-07-28): one means a man + a woman, the other a trans woman + a cis woman -
+# fixed, incompatible two-person pairings, same reasoning as why each is incompatible with
+# Lesbian above.
 GROUP_MULTI_FEMALE_ACTIVITY = {"Composition: Lesbian"}
-COMPOSITION_TAGS = frozenset(GROUP_SINGLE_FEMALE | GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY)
+_EXCLUSIVE_PAIRING_TAGS = frozenset({"Composition: MF Only", "Composition: TF Only"})
+COMPOSITION_TAGS = frozenset(
+    GROUP_SINGLE_FEMALE | GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY | {"Composition: TF Only"}
+)
+
+# Confirmed by direct user correction (2026-07-28): Reverse Gangbang (the user's own definition -
+# 1 male + 3+ females) is not a distinct headcount from FFFM (3 females + 1 male) - FFFM is just
+# the specific-headcount name for exactly that pattern, so the two describe the same scene rather
+# than conflicting. No other headcount pair has been confirmed compatible this way (e.g. FFM's
+# headcount of 2 females genuinely differs from FFFM's 3, so that pair stays a real conflict) -
+# only this exact combination is exempted, not headcount conflicts in general.
+_COMPATIBLE_HEADCOUNT_COMBOS = frozenset({frozenset({"Composition: FFFM", "Composition: Reverse Gangbang"})})
 
 
 @dataclass
@@ -62,14 +87,19 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
     single = s & GROUP_SINGLE_FEMALE
     headcount = s & GROUP_MULTI_FEMALE_HEADCOUNT
     lesbian = s & GROUP_MULTI_FEMALE_ACTIVITY
+    exclusive_pairing = s & _EXCLUSIVE_PAIRING_TAGS
 
     conflicts = []
     if len(single) > 1:
         conflicts.append(f"multiple single-female tags: {sorted(single)}")
-    if len(headcount) > 1:
+    if len(headcount) > 1 and frozenset(headcount) not in _COMPATIBLE_HEADCOUNT_COMBOS:
         conflicts.append(f"multiple multi-female headcount tags: {sorted(headcount)}")
-    if single and (headcount or lesbian):
-        conflicts.append(f"cross-axis: {sorted(single)} + {sorted(headcount | lesbian)}")
+    if single and headcount:
+        conflicts.append(f"cross-axis: {sorted(single)} + {sorted(headcount)}")
+    if lesbian and exclusive_pairing:
+        conflicts.append(f"cross-axis: {sorted(exclusive_pairing)} + {sorted(lesbian)}")
+    if len(exclusive_pairing) > 1:
+        conflicts.append(f"multiple exclusive-pairing tags: {sorted(exclusive_pairing)}")
 
     if conflicts:
         return SceneDecision(rating_key="", title="", file_paths=[], ambiguous_reason="; ".join(conflicts))
@@ -77,11 +107,18 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
     adds = sorted(s - p)
 
     if single:
-        contradicting = GROUP_MULTI_FEMALE_HEADCOUNT | GROUP_MULTI_FEMALE_ACTIVITY | (GROUP_SINGLE_FEMALE - single)
+        contradicting = GROUP_MULTI_FEMALE_HEADCOUNT | (GROUP_SINGLE_FEMALE - single)
     else:
         contradicting = set(GROUP_SINGLE_FEMALE)
         if headcount:
             contradicting |= GROUP_MULTI_FEMALE_HEADCOUNT - headcount
+
+    # Lesbian and MF Only/TF Only contradict each other independent of the single/headcount axis
+    # above, and MF Only/TF Only contradict each other too - see _EXCLUSIVE_PAIRING_TAGS.
+    if lesbian:
+        contradicting |= _EXCLUSIVE_PAIRING_TAGS
+    elif exclusive_pairing:
+        contradicting |= GROUP_MULTI_FEMALE_ACTIVITY | (_EXCLUSIVE_PAIRING_TAGS - exclusive_pairing)
 
     remove_candidates = sorted(p & contradicting)
     if not adds and not remove_candidates:
