@@ -10,11 +10,13 @@ from plexadm.stash_backfill_tags import (
     _EXISTING_CATEGORY_RENAMES,
     COMPOSITION_COLLECTIONS,
     COMPOSITION_TAGS,
+    _apply_targets,
     _has_existing_plex_match,
     _load_review,
     _plex_tags_in_scope,
     _potential_merge_targets,
     _resolve_existing,
+    _resolved_merge_targets,
     _stash_tags_in_scope,
     _suggest_new_collection_name,
     _suggested_action,
@@ -175,6 +177,7 @@ class TestHairBackfill:
         }
         stash = MagicMock()
         stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = []
         collection = SimpleNamespace(title="01: Hair: Blonde")
         plex_ctx = MagicMock()
         plex_ctx.all_videos.return_value = [video]
@@ -212,6 +215,7 @@ class TestHairBackfill:
         }
         stash = MagicMock()
         stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = []
         plex_ctx = MagicMock()
         plex_ctx.all_videos.return_value = [video]
         args = SimpleNamespace(
@@ -453,6 +457,46 @@ class TestSuggestedAction:
 
     def test_open_mouth_facial_requires_both_targets_to_exist(self) -> None:
         assert _suggested_action("Open Mouth Facial", {"01: Category: Facial"}) == "add"
+
+
+class TestResolvedMergeTargets:
+    def test_returns_raw_multi_target_list(self) -> None:
+        assert _resolved_merge_targets(
+            "Anal Missionary",
+            {"01: Category: Anal", "01: Activity: Missionary"},
+        ) == ["01: Category: Anal", "01: Activity: Missionary"]
+
+    def test_skip_list_takes_priority_over_resolvable_targets(self) -> None:
+        assert (
+            _resolved_merge_targets(
+                "4K Anal Missionary",
+                {"01: Category: Anal", "01: Activity: Missionary"},
+            )
+            is None
+        )
+
+
+class TestApplyTargets:
+    def test_applies_explicit_merge_rule(self) -> None:
+        assert _apply_targets(
+            "Anal Missionary",
+            {"01: Category: Anal", "01: Activity: Missionary"},
+        ) == ["01: Category: Anal", "01: Activity: Missionary"]
+
+    def test_applies_accepted_bare_add(self) -> None:
+        assert _apply_targets("Missionary", {"01: Activity: Missionary"}) == ["01: Activity: Missionary"]
+
+    def test_leaves_unaccepted_bare_add_alone(self) -> None:
+        assert _apply_targets("Ordinary Unreviewed Tag", set()) is None
+
+    def test_skip_list_takes_priority_over_accepted_bare_add(self) -> None:
+        tag_name = "Prolapse"
+        suggested = _suggest_new_collection_name(tag_name)
+        with patch(
+            "plexadm.stash_backfill_tags._ACCEPTED_ADD_COLLECTIONS",
+            frozenset({suggested}),
+        ):
+            assert _apply_targets(tag_name, {suggested}) is None
 
 
 class TestTagalongTargets:
@@ -1628,6 +1672,7 @@ class TestBackfillIntegration:
         }
         stash = MagicMock()
         stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = []
         collection = SimpleNamespace(title="01: Composition: Solo")
         plex_ctx = MagicMock()
         plex_ctx.all_videos.return_value = [video]
@@ -1671,6 +1716,7 @@ class TestBackfillIntegration:
         }
         stash = MagicMock()
         stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = []
         plex_ctx = MagicMock()
         plex_ctx.all_videos.return_value = [video]
         args = SimpleNamespace(
@@ -1717,6 +1763,7 @@ class TestBackfillIntegration:
         }
         stash = MagicMock()
         stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = []
         plex_ctx = MagicMock()
         plex_ctx.all_videos.return_value = [video]
         args = SimpleNamespace(
@@ -1743,6 +1790,214 @@ class TestBackfillIntegration:
         assert "| Title | Reason |" in report
         assert "| Scene \\| One | cross-axis: ['Composition: Solo'] + ['Composition: FFM'] |" in report
         assert "Ambiguous matches staged for review: 1" in report
+
+    def test_taxonomy_merge_adds_to_existing_collection_with_dry_run(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(locations=[path])
+        tag = {
+            "id": "10",
+            "name": "Blackmail Fantasy",
+            "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "abc"}],
+        }
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [{"id": tag["id"], "name": tag["name"]}],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = [tag]
+        collection = SimpleNamespace(title="01: Category: Blackmail")
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = [collection]
+        plex_ctx.all_videos.return_value = [video]
+        plex_ctx.collection.return_value = collection
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=True,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+            patch("plexadm.stash_backfill_tags.add_items", return_value=1) as add_items,
+            patch("plexadm.stash_backfill_tags.create_collection") as create_collection,
+        ):
+            assert backfill_tags(args) == 0
+
+        add_items.assert_called_once_with(collection, [video], dry_run=True)
+        create_collection.assert_not_called()
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "- Taxonomy memberships added: 1" in report
+        assert "- New collections created: 0" in report
+        assert "## Taxonomy additions by collection" in report
+        assert "| 01: Category: Blackmail | 1 |" in report
+
+    def test_taxonomy_accepted_add_creates_collection_with_dry_run(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(locations=[path])
+        tag = {
+            "id": "10",
+            "name": "Missionary",
+            "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "abc"}],
+        }
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [{"id": tag["id"], "name": tag["name"]}],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = [tag]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = []
+        plex_ctx.all_videos.return_value = [video]
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=True,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+            patch("plexadm.stash_backfill_tags.add_items") as add_items,
+            patch("plexadm.stash_backfill_tags.create_collection") as create_collection,
+        ):
+            assert backfill_tags(args) == 0
+
+        add_items.assert_not_called()
+        create_collection.assert_called_once_with(
+            plex_ctx.section,
+            title="01: Activity: Missionary",
+            items=[video],
+            dry_run=True,
+        )
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "- Taxonomy memberships added: 1" in report
+        assert "- New collections created: 1" in report
+        assert "| 01: Activity: Missionary (new) | 1 |" in report
+
+    def test_taxonomy_skips_excluded_and_unaccepted_tags(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(locations=[path])
+        tags = [
+            {
+                "id": "10",
+                "name": "4K Available",
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "abc"}],
+            },
+            {
+                "id": "11",
+                "name": "Ordinary Unreviewed Tag",
+                "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "def"}],
+            },
+        ]
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [{"id": tag["id"], "name": tag["name"]} for tag in tags],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = tags
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = []
+        plex_ctx.all_videos.return_value = [video]
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=False,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+            patch("plexadm.stash_backfill_tags.add_items") as add_items,
+            patch("plexadm.stash_backfill_tags.create_collection") as create_collection,
+        ):
+            assert backfill_tags(args) == 0
+
+        add_items.assert_not_called()
+        create_collection.assert_not_called()
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "- Taxonomy memberships added: 0" in report
+        assert "## Taxonomy additions by collection" not in report
+
+    def test_composition_and_taxonomy_apply_independently(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(locations=[path])
+        taxonomy_tag = {
+            "id": "10",
+            "name": "Blackmail Fantasy",
+            "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "abc"}],
+        }
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [
+                {"id": "1", "name": "Composition: Solo"},
+                {"id": taxonomy_tag["id"], "name": taxonomy_tag["name"]},
+            ],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = [taxonomy_tag]
+        composition_collection = SimpleNamespace(title="01: Composition: Solo")
+        taxonomy_collection = SimpleNamespace(title="01: Category: Blackmail")
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = [composition_collection, taxonomy_collection]
+        plex_ctx.all_videos.return_value = [video]
+        plex_ctx.collection.side_effect = {
+            composition_collection.title: composition_collection,
+            taxonomy_collection.title: taxonomy_collection,
+        }.__getitem__
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=False,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+            patch("plexadm.stash_backfill_tags.add_items", return_value=1) as add_items,
+            patch("plexadm.stash_backfill_tags.create_collection") as create_collection,
+        ):
+            assert backfill_tags(args) == 0
+
+        assert add_items.call_count == 2
+        add_items.assert_any_call(composition_collection, [video], dry_run=False)
+        add_items.assert_any_call(taxonomy_collection, [video], dry_run=False)
+        create_collection.assert_not_called()
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "- Composition memberships added: 1" in report
+        assert "- Taxonomy memberships added: 1" in report
 
     def test_apply_review_uses_remove_helper_with_dry_run(self, tmp_path: Path) -> None:
         review_path = tmp_path / "review.json"

@@ -2406,9 +2406,10 @@ def _build_stash_commands(sub: Any) -> None:
         description=(
             "Reads every Plex item in the configured library section, matches Stash\n"
             "scenes by file path, and immediately adds missing, unambiguous\n"
-            "composition-category memberships to Plex. Potential removals and\n"
-            "internally ambiguous Stash tags are written to a JSON review file and\n"
-            "are never removed by this command."
+            "Composition/Hair memberships plus accepted full-taxonomy suggestions to Plex,\n"
+            "creating taxonomy collections as needed. Potential removals and internally\n"
+            "ambiguous Stash tags are written to a JSON review file and are never removed\n"
+            "by this command."
         ),
         epilog=(
             "Examples:\n"

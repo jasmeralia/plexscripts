@@ -13,7 +13,7 @@ from plexadm.cli import EXCLUDED_COMPOSITION_COLLECTIONS, EXCLUDED_HAIR_COLLECTI
 from plexadm.config import load_config, load_logging_config
 from plexadm.console import info, ok, warn
 from plexadm.logging_setup import configure_command_logging
-from plexadm.plex import PlexContext, add_items, reload_if_partial, remove_items
+from plexadm.plex import PlexContext, add_items, create_collection, reload_if_partial, remove_items
 from plexadm.stash import StashClient
 from plexadm.stash_reconcile import _collection_to_tag
 
@@ -1324,6 +1324,59 @@ def _with_tagalong(tag_name: str, targets: list[str]) -> list[str]:
     return combined
 
 
+def _is_skip_tag(tag_name: str) -> bool:
+    """Extracted from _suggested_action's skip check - also needed standalone by
+    _apply_targets, which must not apply a tag whose name happens to collide with an
+    accepted collection name but is still skip-listed."""
+    lower_name = tag_name.lower()
+    words = set(re.findall(r"[a-z0-9]+", lower_name))
+    return lower_name in _SKIP_EXACT_TAG_NAMES or bool(
+        words & (_SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS | _SKIP_EYE_COLOR_WORDS | _SKIP_AGE_WORDS)
+    )
+
+
+def _resolved_merge_targets(tag_name: str, existing_titles: set[str]) -> list[str] | None:
+    """Return the resolved target list if tag_name fully resolves to a merge (every listed
+    target exists in existing_titles), mirroring _suggested_action's matching order exactly:
+    skip check, then exact/multi/category phrases, then the hair-color path, then the
+    tagalong-only fallback. Returns None if the tag is skip-listed or nothing resolves (would
+    fall through to plain "add" in _suggested_action)."""
+    if _is_skip_tag(tag_name):
+        return None
+    lower_name = tag_name.lower()
+    words = set(re.findall(r"[a-z0-9]+", lower_name))
+
+    exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
+    if exact_target:
+        resolved = [_resolve_existing(t, existing_titles) for t in _with_tagalong(tag_name, [exact_target])]
+        if all(resolved):
+            return resolved  # type: ignore[return-value]
+    for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
+        if phrase in lower_name:
+            resolved = [_resolve_existing(t, existing_titles) for t in _with_tagalong(tag_name, targets)]
+            if all(resolved):
+                return resolved  # type: ignore[return-value]
+    for phrase, target in _CATEGORY_MERGE_PHRASES.items():
+        if phrase in lower_name:
+            resolved = [_resolve_existing(t, existing_titles) for t in _with_tagalong(tag_name, [target])]
+            if all(resolved):
+                return resolved  # type: ignore[return-value]
+    if words & _HAIR_CONTEXT_WORDS:
+        for word in words:
+            hair_target = _HAIR_MERGE_KEYWORDS.get(word)
+            if hair_target and hair_target in existing_titles:
+                return [hair_target]
+    tagalong = _tagalong_targets(tag_name)
+    if tagalong:
+        resolved = [
+            _resolve_existing(t, existing_titles)
+            for t in _with_tagalong(tag_name, [_suggest_new_collection_name(tag_name)])
+        ]
+        if all(resolved):
+            return resolved  # type: ignore[return-value]
+    return None
+
+
 def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
     """Heuristic-only suggestion for an unmapped tag: 'add', 'merge -> <collection>', or 'skip'.
 
@@ -1356,45 +1409,11 @@ def _suggested_action(tag_name: str, existing_titles: set[str]) -> str:
        keyword matching would be too noisy to trust even as a suggestion; a human scanning
        the raw list is more reliable there.
     """
-    lower_name = tag_name.lower()
-    words = set(re.findall(r"[a-z0-9]+", lower_name))
-    if lower_name in _SKIP_EXACT_TAG_NAMES or words & (
-        _SKIP_MARKER_WORDS | _SKIP_GENERIC_BODY_WORDS | _SKIP_EYE_COLOR_WORDS | _SKIP_AGE_WORDS
-    ):
+    if _is_skip_tag(tag_name):
         return "skip"
-    exact_target = _EXACT_MATCH_MERGE_PHRASES.get(lower_name)
-    if exact_target:
-        full_targets = _with_tagalong(tag_name, [exact_target])
-        resolved_targets = [_resolve_existing(target, existing_titles) for target in full_targets]
-        if all(resolved_targets):
-            return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
-    for phrase, targets in _MULTI_TARGET_MERGE_PHRASES.items():
-        if phrase in lower_name:
-            full_targets = _with_tagalong(tag_name, targets)
-            resolved_targets = [_resolve_existing(target, existing_titles) for target in full_targets]
-            if all(resolved_targets):
-                return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
-    for phrase, target in _CATEGORY_MERGE_PHRASES.items():
-        if phrase in lower_name:
-            full_targets = _with_tagalong(tag_name, [target])
-            resolved_targets = [_resolve_existing(t, existing_titles) for t in full_targets]
-            if all(resolved_targets):
-                return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
-    if words & _HAIR_CONTEXT_WORDS:
-        for word in words:
-            hair_target = _HAIR_MERGE_KEYWORDS.get(word)
-            if hair_target and hair_target in existing_titles:
-                return f"merge -> {hair_target}"
-    # No explicit merge rule matched - a tag-along-eligible tag (anal/toy) still needs tracking:
-    # treat its own generic suggested name as an implicit single-target rule so it stays "add"
-    # until real, then correctly upgrades to a full multi-target merge, same as every other
-    # forward-declared rule above.
-    tagalong = _tagalong_targets(tag_name)
-    if tagalong:
-        full_targets = _with_tagalong(tag_name, [_suggest_new_collection_name(tag_name)])
-        resolved_targets = [_resolve_existing(t, existing_titles) for t in full_targets]
-        if all(resolved_targets):
-            return f"merge -> {' + '.join(resolved_targets)}"  # type: ignore[arg-type]
+    resolved = _resolved_merge_targets(tag_name, existing_titles)
+    if resolved is not None:
+        return f"merge -> {' + '.join(resolved)}"
     return "add"
 
 
@@ -2029,6 +2048,26 @@ _ACCEPTED_ADD_COLLECTIONS: frozenset[str] = frozenset(
 )
 
 
+def _apply_targets(tag_name: str, resolve_titles: set[str]) -> list[str] | None:
+    """The full list of collection titles a tag should be applied to during backfill_tags'
+    taxonomy pass, or None if it shouldn't be touched at all (skip-listed, or an Add suggestion
+    that hasn't been accepted yet - see _ACCEPTED_ADD_COLLECTIONS). `resolve_titles` must be
+    `existing_titles | _ACCEPTED_ADD_COLLECTIONS`, exactly like _write_unmapped_tags_report's
+    resolve_titles - this function exists specifically to keep backfill_tags' taxonomy behavior
+    identical to what the unmapped-tags report's `## Merge` section already shows, not to
+    introduce new judgment calls.
+    """
+    resolved = _resolved_merge_targets(tag_name, resolve_titles)
+    if resolved is not None:
+        return resolved
+    if _is_skip_tag(tag_name):
+        return None
+    suggested = _suggest_new_collection_name(tag_name)
+    if suggested in _ACCEPTED_ADD_COLLECTIONS:
+        return _with_tagalong(tag_name, [suggested])
+    return None
+
+
 def _write_unmapped_tags_report(
     path: str | Path,
     unmapped: list[dict[str, Any]],
@@ -2226,8 +2265,11 @@ def _write_backfill_report(
     matched_count: int,
     composition_additions: dict[str, list[Any]],
     hair_additions: dict[str, list[Any]],
+    taxonomy_additions: dict[str, list[Any]],
+    new_collections: list[str],
     composition_added_count: int,
     hair_added_count: int,
+    taxonomy_added_count: int,
     ambiguous_entries: list[tuple[str, str]],
     review_path: str | Path,
     review_entry_count: int,
@@ -2248,6 +2290,8 @@ def _write_backfill_report(
         f"- Matched to Stash: {matched_count}",
         f"- Composition memberships added: {composition_added_count}",
         f"- Hair memberships added: {hair_added_count}",
+        f"- Taxonomy memberships added: {taxonomy_added_count}",
+        f"- New collections created: {len(new_collections)}",
         f"- Ambiguous matches staged for review: {len(ambiguous_entries)}",
         f"- Review entries written: {review_entry_count} -> {review_path}",
     ]
@@ -2280,6 +2324,21 @@ def _write_backfill_report(
         lines.extend(
             f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {len(videos)} |"
             for tag, videos in sorted(hair_additions.items())
+        )
+
+    if taxonomy_additions:
+        lines.extend(
+            [
+                "",
+                "## Taxonomy additions by collection",
+                "",
+                "| Collection | Videos added |",
+                "|---|---:|",
+            ]
+        )
+        lines.extend(
+            f"| {_escape_markdown_table_cell(target + (' (new)' if target in new_collections else ''))} | {len(videos)} |"
+            for target, videos in sorted(taxonomy_additions.items())
         )
 
     lines.extend(["", "## Ambiguous scenes (staged for review, not applied)", ""])
@@ -2348,14 +2407,31 @@ def backfill_tags(args: Any) -> int:
         )
 
     print(info("Connecting to Stash and building scene index..."))
-    stash_index = StashClient(endpoint).all_scenes()
+    stash = StashClient(endpoint)
+    stash_index = stash.all_scenes()
     print(info(f"Stash: {len({scene['id'] for scene in stash_index.values()})} scenes across {len(stash_index)} paths"))
+    print(info("Fetching Stash tags..."))
+    tags = stash.all_tags()
 
     plex_ctx = PlexContext(cfg)
+    existing_titles = {str(collection.title) for collection in plex_ctx.section.collections()}
+    resolve_titles = existing_titles | _ACCEPTED_ADD_COLLECTIONS
+
+    # Same "unmapped, non-local" scope as unmapped_tags() - local tags (no stash_ids) are
+    # already reflected in Plex via plexadm stash sync-tags, nothing to apply for them.
+    candidates = [tag for tag in tags if not _has_existing_plex_match(tag, existing_titles)]
+    unmapped = [tag for tag in candidates if tag.get("stash_ids") or []]
+    apply_map: dict[str, list[str]] = {}
+    for tag in unmapped:
+        targets = _apply_targets(str(tag["name"]), resolve_titles)
+        if targets:
+            apply_map[str(tag["name"])] = targets
+
     limit: int | None = getattr(args, "limit", None)
     path_filter: str | None = getattr(args, "path", None)
     additions: dict[str, list[Any]] = defaultdict(list)
     hair_additions: dict[str, list[Any]] = defaultdict(list)
+    taxonomy_additions: dict[str, list[Any]] = defaultdict(list)
     review_entries: list[dict[str, Any]] = []
     ambiguous_entries: list[tuple[str, str]] = []
     processed = 0
@@ -2393,20 +2469,27 @@ def backfill_tags(args: Any) -> int:
         stash_tags = set().union(*(_stash_tags_in_scope(scene, COMPOSITION_TAGS) for scene in matched.values()))
         plex_tags = _plex_tags_in_scope(video, COMPOSITION_TAGS)
         decision = classify_scene(stash_tags, plex_tags)
-        if decision is None:
-            continue
+        if decision is not None:
+            decision.rating_key = str(video.ratingKey)
+            decision.title = str(video.title)
+            decision.file_paths = locations
 
-        decision.rating_key = str(video.ratingKey)
-        decision.title = str(video.title)
-        decision.file_paths = locations
+            if decision.ambiguous_reason:
+                ambiguous_count += 1
+                ambiguous_entries.append((decision.title, decision.ambiguous_reason))
+            else:
+                for tag in decision.adds:
+                    additions[tag].append(video)
+            review_entries.extend(_decision_entries(decision, stash_tags, plex_tags))
 
-        if decision.ambiguous_reason:
-            ambiguous_count += 1
-            ambiguous_entries.append((decision.title, decision.ambiguous_reason))
-        else:
-            for tag in decision.adds:
-                additions[tag].append(video)
-        review_entries.extend(_decision_entries(decision, stash_tags, plex_tags))
+        video_stash_tags = {
+            str(t["name"]) for scene in matched.values() for t in (scene.get("tags") or []) if t.get("name")
+        }
+        video_plex_collections = {str(c) for c in getattr(video, "collections", None) or []}
+        for tag_name in video_stash_tags & apply_map.keys():
+            for target in apply_map[tag_name]:
+                if target not in video_plex_collections:
+                    taxonomy_additions[target].append(video)
 
     review_path = Path(getattr(args, "review_output", "reference/stash_backfill_review.json"))
     _write_review(review_path, review_entries)
@@ -2421,6 +2504,17 @@ def backfill_tags(args: Any) -> int:
         collection = plex_ctx.collection(_tag_to_collection(tag))
         hair_added_count += add_items(collection, videos, dry_run=args.dry_run)
 
+    new_collections: list[str] = []
+    taxonomy_added_count = 0
+    for target, videos in sorted(taxonomy_additions.items()):
+        if target in existing_titles:
+            collection = plex_ctx.collection(target)
+            taxonomy_added_count += add_items(collection, videos, dry_run=args.dry_run)
+        else:
+            new_collections.append(target)
+            create_collection(plex_ctx.section, title=target, items=videos, dry_run=args.dry_run)
+            taxonomy_added_count += len(videos)
+
     report_path = Path(getattr(args, "report_output", "reference/stash_backfill_report.md"))
     _write_backfill_report(
         report_path,
@@ -2429,8 +2523,11 @@ def backfill_tags(args: Any) -> int:
         matched_count=matched_count,
         composition_additions=additions,
         hair_additions=hair_additions,
+        taxonomy_additions=taxonomy_additions,
+        new_collections=new_collections,
         composition_added_count=composition_added_count,
         hair_added_count=hair_added_count,
+        taxonomy_added_count=taxonomy_added_count,
         ambiguous_entries=ambiguous_entries,
         review_path=review_path,
         review_entry_count=len(review_entries),
@@ -2440,6 +2537,8 @@ def backfill_tags(args: Any) -> int:
     print(info(f"Matched to Stash: {matched_count}"))
     print(info(f"Composition memberships added: {composition_added_count}"))
     print(info(f"Hair memberships added: {hair_added_count}"))
+    print(info(f"Taxonomy memberships added: {taxonomy_added_count}"))
+    print(info(f"New collections created: {len(new_collections)}"))
     print(info(f"Ambiguous matches staged: {ambiguous_count}"))
     print(info(f"Review entries written: {len(review_entries)} → {review_path}"))
     print(info(f"Report written to {report_path}"))

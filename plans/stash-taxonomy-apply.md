@@ -169,6 +169,7 @@ Add a `taxonomy_additions: dict[str, list[Any]] = defaultdict(list)` alongside t
 **Inside the existing per-video loop**, after the existing hair/composition blocks (right after
 `review_entries.extend(_decision_entries(decision, stash_tags, plex_tags))`), add:
 
+<!-- fmt: off -->
 ```python
         video_stash_tags = {
             str(t["name"]) for scene in matched.values() for t in (scene.get("tags") or []) if t.get("name")
@@ -179,6 +180,7 @@ Add a `taxonomy_additions: dict[str, list[Any]] = defaultdict(list)` alongside t
                 if target not in video_plex_collections:
                     taxonomy_additions[target].append(video)
 ```
+<!-- fmt: on -->
 
 `matched` here is the same `dict[str, dict[str, Any]]` of matched Stash scenes the existing hair/
 composition code already builds and iterates (`matched.values()`) - reuse it, don't refetch or
