@@ -4,8 +4,9 @@ import logging
 import re
 from typing import Any
 
-from plexadm.config import load_config
+from plexadm.config import load_config, load_logging_config
 from plexadm.console import info, ok
+from plexadm.logging_setup import configure_command_logging
 from plexadm.plex import PlexContext, reload_if_partial
 from plexadm.stash import StashClient
 
@@ -22,7 +23,7 @@ def _tag_name(title: str) -> str:
 
 def sync_tags(args: Any) -> int:
     log_level = getattr(args, "log_level", "WARNING").upper()
-    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING), format="%(levelname)s: %(message)s")
+    configure_command_logging(log_level, load_logging_config(args.config))
 
     cfg = load_config(args.config)
     endpoint = getattr(args, "stash_endpoint", None) or cfg.stash_endpoint

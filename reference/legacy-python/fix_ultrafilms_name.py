@@ -27,8 +27,6 @@ replacements = {
     'Shelly Bliss': 'Mia Ferrari aka Shelly Bliss',
     'Divina': 'Sheri Vi aka Divina',
     'Sheri Vi': 'Sheri Vi aka Divina',
-    'SpookyBooBoo': 'SpookyBooBoo aka Deloris Jean',
-    'Deloris Jean': 'SpookyBooBoo aka Deloris Jean',
     'Nancy A': 'Nancy Ace'
 }
 

@@ -5,4 +5,4 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-/usr/local/share/plexadm/reference}
 
-time "$PLEXADM" collection sync-ppv '01: Category: PPV' | tee "${REFERENCE_DIR}/ppv.log"
+time "$PLEXADM" collection add-ppv '01: Category: PPV' | tee "${REFERENCE_DIR}/ppv.log"

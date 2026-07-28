@@ -9,18 +9,22 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from plexadm import __version__, audit
-from plexadm.config import load_logging_config
+from plexadm.config import load_inventory_config, load_logging_config, resolve_bool_setting
 from plexadm.console import fail, info, ok, warn
+from plexadm.dupes_report import DEFAULT_DUPES_BASE_DIR, _translate_path
+from plexadm.dupes_report import dupes_report as tools_dupes_report
 from plexadm.filters import and_filter, in_collection, not_in_collection, rated, title_contains, unrated, writer_any
 from plexadm.plex import (
     LOCKED_COLLECTION,
     PlexContext,
     add_items,
     add_writer,
+    collection_filter_key,
     collection_titles,
     create_smart_collection,
     has_collection,
@@ -29,6 +33,7 @@ from plexadm.plex import (
     remove_items,
     rename_collection,
     set_studio,
+    update_smart_collection_filters,
 )
 from plexadm.progress import progress_prefix
 from plexadm.stash_reconcile import reconcile as stash_reconcile
@@ -38,10 +43,28 @@ from plexadm.writers import missing_title_writers, read_writer_file, writers_fro
 NO_STUDIO_COLLECTION = "00A: NO STUDIO"
 UNRATED_COLLECTION = "00C: Unrated"
 INDEPENDENT_STUDIO = "Independent Content"
-LESBIAN_COLLECTION = "01: Category: Lesbian"
+LESBIAN_COLLECTION = "01: Composition: Lesbian"
 LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION = "00D: Review: Lesbian Single-Writer"
+CUMSHOT_ABSENT_REVIEW_COLLECTION = "00D: Review: Cumshot Absent"
 PPV_COLLECTION = "01: Category: PPV"
 PPV_FILENAME_PATTERN = "*- PPV *"
+DEFAULT_SHORT_VIDEO_MAX_DURATION_MS = 90_000
+
+# The "01: Category:" taxonomy is being split into narrower prefixes (see
+# `plexadm collection rename-categories` / stash_backfill_tags._EXISTING_CATEGORY_RENAMES).
+# Anything that used to recognize a collection as "a category" by checking for a literal
+# "01: Category:" substring needs to check this whole family instead, or it'll silently stop
+# seeing most collections once they're renamed. Deliberately excludes "01: Hair:" - hair is a
+# separate axis, not part of the category taxonomy, same as before the rename.
+CATEGORY_TAXONOMY_PREFIXES = (
+    "01: Category:",
+    "01: Activity:",
+    "01: Attributes:",
+    "01: Composition:",
+    "01: Cumshot:",
+    "01: Prop:",
+    "01: Theme:",
+)
 
 EXCLUDED_COMPOSITION_COLLECTIONS = [
     "01: Category: FFF+",
@@ -55,7 +78,6 @@ EXCLUDED_COMPOSITION_COLLECTIONS = [
     "01: Category: Orgy",
     "01: Category: Reverse Gangbang",
     "01: Category: Solo",
-    "01: Category: Trans MTF",
 ]
 
 EXCLUDED_HAIR_COLLECTIONS = [
@@ -70,15 +92,6 @@ EXCLUDED_HAIR_COLLECTIONS = [
     "01: Hair: Silver",
     "01: Hair: White",
     "01: Hair: Unknown",
-]
-
-EXCLUDED_MONEYSHOT_COLLECTIONS = [
-    "01: Category: Creampie",
-    "01: Category: Cum Swap",
-    "01: Category: Facial",
-    "01: Category: Internal",
-    "01: Category: Non-Sexual",
-    "01: Category: Swallow",
 ]
 
 
@@ -128,9 +141,18 @@ def add_matching_titles(args: argparse.Namespace) -> int:
 def add_search_results(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
-    filters = and_filter(not_in_collection(collection.title), title_contains(args.pattern))
+    exclusions = [not_in_collection(name) for name in args.exclude_collection or []]
+    filters = and_filter(not_in_collection(collection.title), title_contains(args.pattern), *exclusions)
     print(info(f"Search filters: {filters}"))
     results = ctx.search(filters=filters, reload=True)
+    prefixes = tuple(args.exclude_collection_prefix or [])
+    if prefixes:
+        # Plex's smart-filter DSL matches one specific collection at a time, not a text prefix -
+        # there's no "collection! " filter that works across a whole family at once, so this has
+        # to happen client-side against each video's already-reloaded collection list.
+        results = [
+            video for video in results if not any(title.startswith(prefixes) for title in collection_titles(video))
+        ]
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{collection.title}'"))
     added = add_items(collection, results, dry_run=args.dry_run)
@@ -163,6 +185,11 @@ def add_writers_file(args: argparse.Namespace) -> int:
     filters = and_filter(not_in_collection(collection.title), not_in_collection(LOCKED_COLLECTION), writer_any(writers))
     print(info(f"Search filters: {filters}"))
     results = ctx.search(filters=filters, reload=True)
+    if args.single_writer_only:
+        # Plex has no "writer count" smart filter, so a listed writer (e.g. a Solo performer)
+        # who happens to co-star in a multi-writer scene would otherwise get that scene tagged
+        # Solo too - filter it out here in Python instead.
+        results = [video for video in results if len(getattr(video, "writers", None) or []) == 1]
     for index, video in enumerate(results, 1):
         print(warn(f"{progress_prefix(index, len(results))}'{video.title}' needs to be added to '{collection.title}'"))
     added = add_items(collection, results, dry_run=args.dry_run)
@@ -213,8 +240,20 @@ def remove_matching_titles(args: argparse.Namespace) -> int:
 def add_duration_collection(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
-    filters = and_filter({"duration<<": args.max_duration_ms}, not_in_collection(collection.title))
-    results = ctx.search(filters=filters, reload=True)
+    max_duration_ms = args.max_duration_ms
+    min_duration_ms = args.min_duration_ms
+    if max_duration_ms is None and min_duration_ms is None:
+        # Neither bound given: preserve add-short's original behavior (short videos only).
+        max_duration_ms = DEFAULT_SHORT_VIDEO_MAX_DURATION_MS
+    extra_filters = json.loads(args.filters) if args.filters else {}
+    parts: list[dict[str, Any]] = []
+    if max_duration_ms is not None:
+        parts.append({"duration<<": max_duration_ms})
+    if min_duration_ms is not None:
+        parts.append({"duration>>": min_duration_ms})
+    parts.extend({key: value} for key, value in extra_filters.items())
+    parts.append(not_in_collection(collection.title))
+    results = ctx.search(filters=and_filter(*parts), reload=True)
     for video in results:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     added = add_items(collection, results, dry_run=args.dry_run)
@@ -275,7 +314,12 @@ def sync_no_studio(args: argparse.Namespace) -> int:
     collection = ctx.collection(args.collection)
     to_add = ctx.search(studio__exact="", sort="titleSort", reload=True)
     to_add = [video for video in to_add if not has_collection(video, collection.title)]
-    to_remove = ctx.search(filters=and_filter({"studio!": ""}, {"collection=": collection.title}), reload=True)
+    # Plex's advanced dict-filter syntax ("studio!": "") silently returns zero results for this
+    # field, regardless of how many videos actually have a studio set - confirmed live against
+    # the real library (a kwarg-style studio__ne="" query correctly found real victims that the
+    # dict form missed). Use the kwarg form instead; it can be combined with the dict-style
+    # collection filter in the same search() call.
+    to_remove = ctx.search(filters={"collection=": collection.title}, studio__ne="", reload=True)
     for video in to_add:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     for video in to_remove:
@@ -295,21 +339,20 @@ def _matches_ppv_filename(video: Any) -> bool:
     return any(fnmatch.fnmatchcase(Path(location).name, PPV_FILENAME_PATTERN) for location in locations)
 
 
-def sync_ppv(args: argparse.Namespace) -> int:
+def add_ppv(args: argparse.Namespace) -> int:
+    """Add-only: a filename that stops matching the PPV pattern (e.g. after a manual rename
+    away from a platform's raw export name) does not mean the content stopped being valid PPV
+    content - some legitimate PPV sources (e.g. MFC) just don't get exported with that naming
+    convention. Removing on filename-mismatch alone was flagging real PPV videos for removal,
+    so this only ever adds, never removes."""
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
     to_add = ctx.search(filters=not_in_collection(collection.title), reload=True)
     to_add = [video for video in to_add if _matches_ppv_filename(video)]
-    to_remove = ctx.search(filters=in_collection(collection.title), reload=True)
-    to_remove = [video for video in to_remove if not _matches_ppv_filename(video)]
     for video in to_add:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
-    for video in to_remove:
-        print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
     added = add_items(collection, to_add, dry_run=args.dry_run)
-    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
     print(info(f"{added} collections added.{dry_run_note(args)}"))
-    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
     return 0
 
 
@@ -328,13 +371,43 @@ def lock_collection_titles(args: argparse.Namespace) -> int:
     return 0
 
 
+def rename_categories(args: argparse.Namespace) -> int:
+    # Local import: stash_backfill_tags imports EXCLUDED_COMPOSITION_COLLECTIONS/
+    # EXCLUDED_HAIR_COLLECTIONS from this module, so a top-level import here would be circular.
+    from plexadm.stash_backfill_tags import _EXISTING_CATEGORY_RENAMES, COMPOSITION_COLLECTIONS
+
+    ctx = build_context(args)
+    existing = {str(collection.title): collection for collection in ctx.section.collections()}
+    renamed = 0
+    skipped_composition = 0
+    for old, new in sorted(_EXISTING_CATEGORY_RENAMES.items()):
+        if old == new or old not in existing:
+            continue
+        if old in COMPOSITION_COLLECTIONS and not args.include_composition:
+            skipped_composition += 1
+            continue
+        print(warn(f"'{old}' needs to be renamed to '{new}'"))
+        rename_collection(existing[old], new, dry_run=args.dry_run)
+        renamed += 1
+    print(info(f"{renamed} collections renamed.{dry_run_note(args)}"))
+    if skipped_composition:
+        print(
+            warn(
+                f"{skipped_composition} composition collections skipped (Stash tags aren't renamed "
+                "yet, so backfill-tags matching would break - pass --include-composition once "
+                "that's handled)."
+            )
+        )
+    return 0
+
+
 def sync_lesbian_single_writer(args: argparse.Namespace) -> int:
-    """Flag '01: Category: Lesbian' members with exactly one credited writer - a lone
+    """Flag '01: Composition: Lesbian' members with exactly one credited writer - a lone
     credited performer is a strong signal the 'Lesbian' tag is wrong, since lesbian
     content normally credits two or more female performers in the title. Applies
     regardless of studio, including Independent Content: solo indie creators are
     exactly the kind of single-writer/no-partner case this should also catch. This is
-    a review/cataloging collection only: it never touches '01: Category: Lesbian'
+    a review/cataloging collection only: it never touches '01: Composition: Lesbian'
     membership itself."""
     ctx = build_context(args)
     collection = ctx.collection(args.collection)
@@ -344,6 +417,61 @@ def sync_lesbian_single_writer(args: argparse.Namespace) -> int:
     to_add = [video for video in matches if not has_collection(video, collection.title)]
     current_members = ctx.search(filters=in_collection(collection.title), reload=True)
     to_remove = [video for video in current_members if video.ratingKey not in match_keys]
+    for video in to_add:
+        print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
+    for video in to_remove:
+        print(warn(f"'{video.title}' needs to be removed from '{collection.title}'"))
+    added = add_items(collection, to_add, dry_run=args.dry_run)
+    removed = remove_items(collection, to_remove, dry_run=args.dry_run)
+    print(info(f"{added} collections added.{dry_run_note(args)}"))
+    print(info(f"{removed} collections removed.{dry_run_note(args)}"))
+    return 0
+
+
+def _cumshot_absent_exclusion_names() -> set[str]:
+    # Local import: stash_backfill_tags imports EXCLUDED_COMPOSITION_COLLECTIONS/
+    # EXCLUDED_HAIR_COLLECTIONS from this module, so a top-level import here would be circular.
+    from plexadm.stash_backfill_tags import _EXISTING_CATEGORY_RENAMES
+
+    # Both the pre- and post-rename_categories() name for every Cumshot collection, so this
+    # works correctly whether or not that migration has run yet.
+    cumshot_names = {
+        name
+        for old, new in _EXISTING_CATEGORY_RENAMES.items()
+        if new.startswith("01: Cumshot: ")
+        for name in (old, new)
+    }
+    # "No male performer present" - a cumshot (in the sense this review collection cares
+    # about) structurally can't happen. Solo/Lesbian are real, populated collections today;
+    # FF Only/Female Only don't exist yet (no backfill logic populates them yet) but are
+    # included so this starts excluding them automatically once they do.
+    female_only_names = {
+        "01: Category: Solo",
+        "01: Category: Lesbian",
+        "01: Composition: Solo",
+        "01: Composition: Lesbian",
+        "01: Composition: FF Only",
+        "01: Composition: Female Only",
+    }
+    non_sexual_names = {"01: Category: Non-Sexual"}
+    # A compilation aggregates clips from many separate sources/scenes, so it isn't expected to
+    # carry one single cumshot tag the way a normal scene would.
+    compilation_names = {"01: Category: Compilation"}
+    return cumshot_names | female_only_names | non_sexual_names | compilation_names
+
+
+def sync_cumshot_absent(args: argparse.Namespace) -> int:
+    """Flag sexual, non-female-only videos with no Cumshot-collection membership for review -
+    likely either missing a cumshot tag entirely or a case the exclusions below should have
+    caught but didn't. This is a review/cataloging collection only: it never touches Cumshot
+    collection membership itself."""
+    excluded_names = _cumshot_absent_exclusion_names()
+    ctx = build_context(args)
+    collection = ctx.collection(args.collection)
+    exclusion_filters = [not_in_collection(name) for name in sorted(excluded_names)]
+    to_add = ctx.search(filters=and_filter(*exclusion_filters, not_in_collection(collection.title)), reload=True)
+    current_members = ctx.search(filters=in_collection(collection.title), reload=True)
+    to_remove = [video for video in current_members if collection_titles(video) & excluded_names]
     for video in to_add:
         print(warn(f"'{video.title}' needs to be added to '{collection.title}'"))
     for video in to_remove:
@@ -501,24 +629,32 @@ def list_studio_writers(args: argparse.Namespace) -> int:
 
 def list_special(args: argparse.Namespace) -> int:
     ctx = build_context(args)
+    if args.kind == "duplicates":
+        # Output shape (file paths, not titles) differs from every other kind below, so it
+        # returns directly rather than joining the shared `print_title` loop at the bottom.
+        for video in ctx.section.search(duplicate=True):
+            reload_if_partial(video)
+            paths = [
+                _translate_path(str(part.file), args.base_dir)
+                for media in getattr(video, "media", None) or []
+                for part in getattr(media, "parts", None) or []
+                if part.file
+            ]
+            if not paths:
+                continue
+            print(f"{video.title}:")
+            for path in paths:
+                print(f"  {path}")
+        return 0
+
     if args.kind == "uncategorized" or args.kind == "no-composition":
         excluded = [not_in_collection(name) for name in EXCLUDED_COMPOSITION_COLLECTIONS]
         videos = ctx.search(filters=and_filter(*excluded), reload=False)
     elif args.kind == "no-hair":
         excluded = [not_in_collection(name) for name in EXCLUDED_HAIR_COLLECTIONS]
         videos = ctx.search(filters=and_filter(*excluded), reload=False)
-    elif args.kind == "no-moneyshot":
-        excluded = [not_in_collection(name) for name in EXCLUDED_MONEYSHOT_COLLECTIONS]
-        videos = ctx.search(filters=and_filter(*excluded), reload=False)
     elif args.kind == "uncollected":
         videos = [video for video in ctx.all_videos(reload=True) if not collection_titles(video)]
-    elif args.kind == "multipart":
-        videos = [
-            video
-            for video in ctx.all_videos(reload=True)
-            if len(getattr(video, "media", []) or []) > 1
-            or any(len(getattr(media, "parts", []) or []) > 1 for media in getattr(video, "media", []) or [])
-        ]
     elif args.kind == "merged":
         videos = [video for video in ctx.all_videos(reload=True) if len(getattr(video, "guids", []) or []) > 1]
     elif args.kind == "potential-indie":
@@ -528,6 +664,10 @@ def list_special(args: argparse.Namespace) -> int:
             if not is_scene(video) and not getattr(video, "studio", None) and " - " in video.title
         ]
     elif args.kind == "multi-f-without-category":
+        # Deliberately still checks "01: Category:" specifically rather than the full
+        # CATEGORY_TAXONOMY_PREFIXES family: this is really asking "no composition tag yet"
+        # (Solo/FFM/MMF/etc.), and those are intentionally still "01: Category:" - see
+        # EXCLUDED_COMPOSITION_COLLECTIONS and rename_categories()'s composition deferral.
         videos = [
             video
             for video in ctx.all_videos(reload=True)
@@ -601,6 +741,161 @@ def set_writers_and_sync(args: argparse.Namespace) -> int:
     return sync_smart_collections(args)
 
 
+def _require_inventory_config(args: argparse.Namespace) -> Any:
+    config = load_inventory_config(args.config)
+    if config is None:
+        raise ValueError(
+            "No [inventory] section configured. Add an [inventory] section with at least "
+            "'url' to the config file to use inventory commands."
+        )
+    return config
+
+
+def inventory_snapshot(args: argparse.Namespace) -> int:
+    from plexadm.inventory import take_snapshot
+
+    ctx = build_context(args)
+    config = _require_inventory_config(args)
+
+    stash = None
+    if getattr(args, "with_stash_ids", True):
+        from plexadm.config import load_config
+        from plexadm.stash import StashClient
+
+        cfg = load_config(args.config)
+        if not cfg.stash_endpoint:
+            # Config file presence is the sole gate here, not --stash-endpoint: enabled-by-
+            # default Stash correlation shouldn't silently start hitting an endpoint nobody
+            # configured just because it was passed on the command line for some other reason.
+            # Only warn if a flag suggests the user was actually trying to force it - a plain
+            # "no [stash] config at all" run stays silent, since skipping is just the default
+            # behavior working as intended.
+            if getattr(args, "stash_endpoint", None):
+                print(
+                    warn(
+                        "Stash is not configured in the config file - ignoring --stash-endpoint "
+                        "and skipping Stash correlation. Add stashEndpoint to your config to "
+                        "enable it by default."
+                    )
+                )
+        else:
+            stash = StashClient(getattr(args, "stash_endpoint", None) or cfg.stash_endpoint)
+
+    count = take_snapshot(ctx, config, dry_run=args.dry_run, stash=stash)
+    print(ok(f"{count} video snapshots written to '{config.index}'.{dry_run_note(args)}"))
+    return 0
+
+
+def inventory_diff(args: argparse.Namespace) -> int:
+    from plexadm.inventory import diff_snapshots
+
+    config = _require_inventory_config(args)
+    audit_index = None
+    if not args.no_attribution:
+        logging_config = load_logging_config(args.config)
+        if logging_config.sink == "opensearch" and logging_config.opensearch is not None:
+            audit_index = logging_config.opensearch.index
+
+    run_a, run_b, changes = diff_snapshots(config, run_a=args.run_a, run_b=args.run_b, audit_index=audit_index)
+    print(info(f"Comparing snapshot '{run_a}' -> '{run_b}'"))
+    if not changes:
+        print(ok("No collection membership changes between these snapshots."))
+        return 0
+
+    for change in sorted(changes, key=lambda c: c.title):
+        marker = "" if change.attributed else " [UNATTRIBUTED - no matching plexadm-audit event]"
+        if change.added:
+            print(warn(f"'{change.title}' gained: {', '.join(change.added)}{marker}"))
+        if change.removed:
+            print(warn(f"'{change.title}' lost: {', '.join(change.removed)}{marker}"))
+    unattributed = sum(1 for change in changes if not change.attributed)
+    print(info(f"{len(changes)} videos changed, {unattributed} with at least one unattributed change."))
+    return 0
+
+
+def _filters_reference_collection(node: Any, target_key: str) -> bool:
+    """Recursively check whether a smart collection's parsed filter tree (as returned by
+    plexapi's `Collection.filters()`) contains a "collection" condition matching target_key,
+    however deep it's nested inside "and"/"or" groups."""
+    if isinstance(node, dict):
+        if str(node.get("collection")) == target_key:
+            return True
+        return any(_filters_reference_collection(value, target_key) for value in node.values())
+    if isinstance(node, list):
+        return any(_filters_reference_collection(item, target_key) for item in node)
+    return False
+
+
+def retarget_writer_ppv(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    old = ctx.collection(args.old_collection)
+    new = ctx.collection(args.new_collection)
+
+    # Resolve OLD's smart-filter ID before mutating anything below. Plex stops offering an
+    # empty collection as a "collection" filter choice at all - confirmed live: emptying "01:
+    # Rin PPV" via the removal step further down made this same lookup fail immediately
+    # afterward with "No collection filter choice found". Resolving it first, while OLD still
+    # has members, is what makes the later smart-collection retarget step possible at all.
+    old_key = collection_filter_key(ctx.section, old.title)
+
+    items = list(old.items())
+    to_add = [video for video in items if not has_collection(video, new.title)]
+    for video in to_add:
+        print(warn(f"'{video.title}' needs to be added to '{new.title}'"))
+    added = add_items(new, to_add, dry_run=args.dry_run)
+    for video in items:
+        print(warn(f"'{video.title}' needs to be removed from '{old.title}'"))
+    removed = remove_items(old, items, dry_run=args.dry_run)
+    print(
+        info(f"{added} videos added to '{new.title}', {removed} videos removed from '{old.title}'.{dry_run_note(args)}")
+    )
+
+    name_needle = args.name_contains.lower()
+    retargeted = 0
+    for collection in ctx.section.collections():
+        reload_if_partial(collection)
+        if not collection.smart or name_needle not in str(collection.title).lower():
+            continue
+        spec = collection.filters()
+        conditions = spec.get("filters", {})
+        if not _filters_reference_collection(conditions, old_key):
+            continue
+        if set(conditions.keys()) != {"collection"}:
+            print(
+                warn(
+                    f"'{collection.title}' filter references '{old.title}' but has other "
+                    "conditions too - skipping, retarget it by hand."
+                )
+            )
+            continue
+        new_filters = {"and": [{"collection": new.title}, {"writer": args.writer}]}
+        print(warn(f"Retargeting '{collection.title}' to '{new.title}' + writer '{args.writer}'"))
+        update_smart_collection_filters(
+            collection, section=ctx.section, sort=spec.get("sort"), filters=new_filters, dry_run=args.dry_run
+        )
+        retargeted += 1
+    print(info(f"{retargeted} smart collections retargeted.{dry_run_note(args)}"))
+    return 0
+
+
+def clone_smart_collection(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    source = ctx.collection(args.source)
+    if not source.smart:
+        print(fail(f"'{source.title}' is not a smart collection - clone only supports smart collections."))
+        return 1
+    spec = source.filters()
+    conditions = spec.get("filters", {})
+    extra = json.loads(args.add_filter)
+    combined = and_filter(conditions, extra) if conditions else extra
+    print(info(f"Cloning '{source.title}' -> '{args.target}' with extra filter {extra}"))
+    create_smart_collection(
+        ctx.section, title=args.target, sort=spec.get("sort"), filters=combined, dry_run=args.dry_run
+    )
+    print(info(f"Created smart collection '{args.target}'.{dry_run_note(args)}"))
+    return 0
+
+
 def rename_collections(args: argparse.Namespace) -> int:
     ctx = build_context(args)
     pattern = re.compile(args.pattern)
@@ -619,10 +914,12 @@ def rename_collections(args: argparse.Namespace) -> int:
 SCENE_BASE_DIR = "/data/NSFW Scenes/"
 
 
-def list_renames(args: argparse.Namespace) -> int:
-    ctx = build_context(args)
-    filter_text = args.filter_text
+def _rename_candidates(ctx: PlexContext, filter_text: str | None) -> Iterator[tuple[Any, list[str]]]:
+    """Yield (video, locations) for every video whose on-disk filename doesn't match its title.
 
+    Shared between `list renames` (reporting) and `tools rename-gen-script` (script
+    generation) so the two can never drift on what counts as a mismatch.
+    """
     for video in ctx.all_videos():
         locations = getattr(video, "locations", []) or []
         if not locations:
@@ -632,9 +929,6 @@ def list_renames(args: argparse.Namespace) -> int:
             haystack = [video.title] + locations
             if not any(filter_text in entry for entry in haystack):
                 continue
-
-        if args.script and len(locations) > 1:
-            continue
 
         filename = Path(locations[0]).name
         match_found = any(video.title in location for location in locations)
@@ -650,22 +944,43 @@ def list_renames(args: argparse.Namespace) -> int:
             match_found = True
 
         has_location_mismatch = any(video.title not in location for location in locations)
-        needs_review = not args.script and len(locations) > 1 and has_location_mismatch
+        needs_review = len(locations) > 1 and has_location_mismatch
 
         if not match_found or needs_review:
-            old_location = locations[0].replace(args.base_dir, "")
-            new_fname = f"{video.title}.mp4"
-            first_writer = new_fname.split(" - ", 1)[0].split(",")[0]
-            if args.script:
-                print(f'mv "{old_location}" "{first_writer}/{new_fname}"')
-            else:
-                if len(locations) > 1:
-                    print(f"WARNING: {video.title} has multiple locations!")
-                    for location in locations:
-                        print(f"  {location}")
-                    print("")
-                else:
-                    print(f"{old_location} -> {first_writer}/{new_fname}")
+            yield video, locations
+
+
+def _rename_target(video: Any, locations: list[str], base_dir: str) -> tuple[str, str, str]:
+    old_location = locations[0].replace(base_dir, "")
+    new_fname = f"{video.title}.mp4"
+    first_writer = new_fname.split(" - ", 1)[0].split(",")[0]
+    return old_location, new_fname, first_writer
+
+
+def list_renames(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    for video, locations in _rename_candidates(ctx, args.filter_text):
+        old_location, new_fname, first_writer = _rename_target(video, locations, args.base_dir)
+        if len(locations) > 1:
+            print(f"WARNING: {video.title} has multiple locations!")
+            for location in locations:
+                print(f"  {location}")
+            print("")
+        else:
+            print(f"{old_location} -> {first_writer}/{new_fname}")
+
+    return 0
+
+
+def rename_gen_script(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    for video, locations in _rename_candidates(ctx, args.filter_text):
+        if len(locations) > 1:
+            # Ambiguous which location to move - same skip `list renames` flags as a WARNING
+            # instead of generating a (possibly wrong) `mv` command for it.
+            continue
+        old_location, new_fname, first_writer = _rename_target(video, locations, args.base_dir)
+        print(f'mv "{old_location}" "{first_writer}/{new_fname}"')
 
     return 0
 
@@ -749,7 +1064,7 @@ def print_top(args: argparse.Namespace) -> int:
     if args.source == "categories":
         rows = []
         for collection in ctx.section.collections():
-            if "01: Category: " in collection.title:
+            if any(prefix in collection.title for prefix in CATEGORY_TAXONOMY_PREFIXES):
                 reload_if_partial(collection)
                 rows.append((len(collection.items()), collection.title))
         for count, title in sorted(rows)[-args.limit :]:
@@ -798,6 +1113,12 @@ def add_common_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
+        # Real gap found live (2026-07-28): this help text has claimed PLEXADM_DRY_RUN=1 was
+        # honored since it was first written, but nothing ever actually read the env var - the
+        # flag's default was hardcoded to store_true's usual False. Fixed by resolving the
+        # default through resolve_bool_setting instead, the same env-wins-over-config-or-default
+        # helper quiet_opensearch_log uses.
+        default=resolve_bool_setting("PLEXADM_DRY_RUN", False),
         help=(
             "Report what would be added, removed, or edited without changing Plex. "
             "Also honored via the PLEXADM_DRY_RUN=1 environment variable, so it can be "
@@ -862,8 +1183,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Examples:\n"
-            "  plexadm list videos --collection '01: Category: Solo'\n"
-            "  plexadm collection add-search '01: Category: Oil' 'Oily'\n"
+            "  plexadm list videos --collection '01: Composition: Solo'\n"
+            "  plexadm collection add-search '01: Prop: Oil' 'Oily'\n"
             "  plexadm studio rename 'Old Studio' 'New Studio'\n"
             "  plexadm smart-collections sync\n"
             "  plexadm top categories --limit 25\n"
@@ -887,6 +1208,7 @@ def build_parser() -> argparse.ArgumentParser:
     _build_tools_commands(sub)
     _build_top_command(sub)
     _build_stash_commands(sub)
+    _build_inventory_commands(sub)
 
     return parser
 
@@ -905,7 +1227,7 @@ def _build_list_commands(sub: Any) -> None:
             "  plexadm list videos --title 'oil'\n"
             "  plexadm list collections '01: Category'\n"
             "  plexadm list studios\n"
-            "  plexadm list writers --collection '01: Category: Solo'\n"
+            "  plexadm list writers --collection '01: Composition: Solo'\n"
             "  plexadm list renames --script > rename.sh\n"
             "  plexadm list special uncategorized"
         ),
@@ -926,7 +1248,7 @@ def _build_list_commands(sub: Any) -> None:
         ),
         epilog=(
             "Examples:\n"
-            "  plexadm list videos --collection '01: Category: Solo'\n"
+            "  plexadm list videos --collection '01: Composition: Solo'\n"
             "  plexadm list videos --studio 'Brazzers' --regex '(?i)\\bpov\\b'\n"
             "  plexadm list videos --writer 'Alice' --no-title-spaces"
         ),
@@ -1028,7 +1350,7 @@ def _build_list_commands(sub: Any) -> None:
             "By default this scans the whole library; restrict it to a single\n"
             "collection with --collection."
         ),
-        epilog="Example:\n  plexadm list writers --collection '01: Category: Solo'",
+        epilog="Example:\n  plexadm list writers --collection '01: Composition: Solo'",
     )
     writers.add_argument(
         "--collection",
@@ -1056,29 +1378,20 @@ def _build_list_commands(sub: Any) -> None:
         "renames",
         help="Report file renames needed so on-disk filenames match Plex titles.",
         description=(
-            "For each video whose filename does not match its Plex title, print either\n"
-            "a human-readable diff (default) or a `mv` script (--script).\n"
+            "For each video whose filename does not match its Plex title, print a\n"
+            "human-readable diff. Videos with multiple file locations are flagged with\n"
+            "a WARNING instead, since it's ambiguous which one to rename.\n"
             "\n"
-            "Videos with multiple file locations are skipped in --script mode and\n"
-            "flagged with a WARNING in human-readable mode."
+            "To generate a `mv` script from the same underlying data, use\n"
+            "`plexadm tools rename-gen-script` instead."
         ),
-        epilog=(
-            "Examples:\n"
-            "  plexadm list renames\n"
-            "  plexadm list renames 'Brazzers'\n"
-            "  plexadm list renames --script > rename.sh"
-        ),
+        epilog=("Examples:\n  plexadm list renames\n  plexadm list renames 'Brazzers'"),
     )
     renames.add_argument(
         "filter_text",
         nargs="?",
         metavar="FILTER",
         help="Only include videos whose title or file path contains this substring.",
-    )
-    renames.add_argument(
-        "--script",
-        action="store_true",
-        help="Output `mv` commands instead of a human-readable diff.",
     )
     renames.add_argument(
         "--base-dir",
@@ -1091,13 +1404,12 @@ def _build_list_commands(sub: Any) -> None:
     special_help = {
         "uncategorized": "videos missing all '01: Category:' collections (alias of no-composition)",
         "uncollected": "videos that are not in any collection at all",
-        "multipart": "videos backed by more than one media file or media part",
         "merged": "videos with more than one external GUID (likely merged)",
         "potential-indie": "non-scene videos with no studio whose title contains ' - '",
         "multi-f-without-category": "videos with multiple title-derived writers but no category collection",
         "no-composition": "videos missing every composition category (FFM, MMF, ...)",
         "no-hair": "videos missing every hair-colour collection",
-        "no-moneyshot": "videos missing every money-shot collection (Creampie, Facial, ...)",
+        "duplicates": "videos Plex flags as duplicate=true (multiple file versions on one item)",
     }
     special = _make_sub(
         list_sub,
@@ -1111,7 +1423,11 @@ def _build_list_commands(sub: Any) -> None:
             "Examples:\n"
             "  plexadm list special uncategorized\n"
             "  plexadm list special no-hair\n"
-            "  plexadm list special multipart"
+            "  plexadm list special uncollected\n"
+            "  plexadm list special duplicates\n"
+            "\n"
+            "For a full markdown report with delete recommendations instead, use\n"
+            "`plexadm tools dupes-report`."
         ),
     )
     special.add_argument(
@@ -1119,6 +1435,15 @@ def _build_list_commands(sub: Any) -> None:
         choices=list(special_help),
         metavar="KIND",
         help="Which audit to run (see description for the list).",
+    )
+    special.add_argument(
+        "--base-dir",
+        default=DEFAULT_DUPES_BASE_DIR,
+        metavar="DIR",
+        help=(
+            "Replacement for Plex's internal '/data/' path prefix (default: "
+            f"{DEFAULT_DUPES_BASE_DIR}). Only used by the 'duplicates' kind."
+        ),
     )
     set_func(special, list_special)
 
@@ -1133,8 +1458,8 @@ def _build_collection_commands(sub: Any) -> None:
         ),
         epilog=(
             "Examples:\n"
-            "  plexadm collection add-title '01: Category: Solo' 'masturbation' --skip-scenes\n"
-            "  plexadm collection add-search '01: Category: Oil' 'Oily'\n"
+            "  plexadm collection add-title '01: Composition: Solo' 'masturbation' --skip-scenes\n"
+            "  plexadm collection add-search '01: Prop: Oil' 'Oily'\n"
             "  plexadm collection copy 'Old Name' 'New Name'\n"
             "  plexadm collection sync-unrated"
         ),
@@ -1149,7 +1474,7 @@ def _build_collection_commands(sub: Any) -> None:
             "Walk every video and add the ones whose title contains PATTERN\n"
             "(case-insensitive substring match) to COLLECTION."
         ),
-        epilog="Example:\n  plexadm collection add-title '01: Category: Oil' 'oily' --skip-scenes",
+        epilog="Example:\n  plexadm collection add-title '01: Prop: Oil' 'oily' --skip-scenes",
     )
     add_title.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_title.add_argument("pattern", metavar="PATTERN", help="Substring to match in the video title.")
@@ -1174,10 +1499,27 @@ def _build_collection_commands(sub: Any) -> None:
             "are not already in COLLECTION. Faster than `add-title` for big libraries\n"
             "but matches per Plex's search semantics, not a pure substring."
         ),
-        epilog="Example:\n  plexadm collection add-search '01: Category: Fuck Machine' 'fuckmachine'",
+        epilog="Example:\n  plexadm collection add-search '01: Prop: Fuck Machine' 'fuckmachine'",
     )
     add_search.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_search.add_argument("pattern", metavar="PATTERN", help="Text passed to the Plex title search.")
+    add_search.add_argument(
+        "--exclude-collection",
+        action="append",
+        metavar="COLLECTION",
+        help="Skip matches already in COLLECTION (repeatable). Use for keyword matches that "
+        "would otherwise conflict with an existing, more reliable tag - e.g. a title-text match "
+        "for Solo should not override a video already tagged '01: Composition: MF Only'.",
+    )
+    add_search.add_argument(
+        "--exclude-collection-prefix",
+        action="append",
+        metavar="PREFIX",
+        help="Skip matches already in any collection whose title starts with PREFIX (repeatable, "
+        "checked client-side). Use to exclude a whole family at once - e.g. "
+        "--exclude-collection-prefix '01: Composition:' for Solo, instead of listing every "
+        "individual composition collection with --exclude-collection.",
+    )
     set_func(add_search, add_search_results)
 
     add_writer = _make_sub(
@@ -1188,7 +1530,7 @@ def _build_collection_commands(sub: Any) -> None:
             "Walk every video and add the ones whose writer list contains an exact\n"
             "(case-insensitive) match for PATTERN to COLLECTION."
         ),
-        epilog="Example:\n  plexadm collection add-writer '01: Category: Extreme Throating' 'Tiptobase69'",
+        epilog="Example:\n  plexadm collection add-writer '01: Activity: Extreme Throating' 'Tiptobase69'",
     )
     add_writer.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_writer.add_argument("pattern", metavar="WRITER", help="Exact writer name to match (case-insensitive).")
@@ -1207,6 +1549,12 @@ def _build_collection_commands(sub: Any) -> None:
     )
     add_writers.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_writers.add_argument("file", metavar="FILE", help="Path to a writer-list file (one name per line).")
+    add_writers.add_argument(
+        "--single-writer-only",
+        action="store_true",
+        help="Skip videos with more than one credited writer (e.g. for Solo, where a listed "
+        "performer co-starring in a multi-writer scene should not tag that scene Solo).",
+    )
     set_func(add_writers, add_writers_file)
 
     copy = _make_sub(
@@ -1236,35 +1584,63 @@ def _build_collection_commands(sub: Any) -> None:
         "remove-title",
         help="Remove videos whose title matches PATTERN from COLLECTION.",
         description="Walk COLLECTION and remove every video whose title contains PATTERN (case-insensitive).",
-        epilog="Example:\n  plexadm collection remove-title '01: Category: Solo' 'duo'",
+        epilog="Example:\n  plexadm collection remove-title '01: Composition: Solo' 'duo'",
     )
     remove_title.add_argument("collection", metavar="COLLECTION", help="Collection to remove from.")
     remove_title.add_argument("pattern", metavar="PATTERN", help="Substring to match in the video title.")
     set_func(remove_title, remove_matching_titles)
 
-    add_short = _make_sub(
+    add_duration = _make_sub(
         collection_sub,
-        "add-short",
-        help="Add every short-duration video to COLLECTION.",
-        description="Add every video whose duration is below --max-duration-ms to COLLECTION.",
-        epilog="Example:\n  plexadm collection add-short '01: Duration: Short' --max-duration-ms 60000",
+        "add-duration",
+        help="Add every video matching a duration bound (and optional ad hoc filters) to COLLECTION.",
+        description=(
+            "Add every video whose duration is below --max-duration-ms and/or above\n"
+            "--min-duration-ms to COLLECTION. If neither bound is given, defaults to\n"
+            f"--max-duration-ms {DEFAULT_SHORT_VIDEO_MAX_DURATION_MS} (short videos), matching this\n"
+            "command's old name/behavior as 'add-short'.\n\n"
+            "--filters takes a JSON object of additional Plex advanced-search conditions,\n"
+            "AND-combined with the duration bound(s) - the same dict shape accepted by\n"
+            '`LibrarySection.search(filters=...)` (e.g. \'{"studio": "Independent Content", '
+            '"collection!": "01: Theme: Live Stream"}\').'
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm collection add-duration '01: Duration: Short' --max-duration-ms 60000\n"
+            "  plexadm collection add-duration '00D: Review: Indie Long No Livestream' "
+            "--min-duration-ms 3600000 "
+            '--filters \'{"studio": "Independent Content", "collection!": "01: Theme: Live Stream"}\''
+        ),
     )
-    add_short.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
-    add_short.add_argument(
+    add_duration.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
+    add_duration.add_argument(
         "--max-duration-ms",
         type=int,
-        default=90_000,
+        default=None,
         metavar="MS",
-        help="Maximum video duration in milliseconds (default: 90000, i.e. 90s).",
+        help=f"Maximum video duration in milliseconds (default: {DEFAULT_SHORT_VIDEO_MAX_DURATION_MS} if "
+        "--min-duration-ms is also omitted; otherwise unbounded).",
     )
-    set_func(add_short, add_duration_collection)
+    add_duration.add_argument(
+        "--min-duration-ms",
+        type=int,
+        default=None,
+        metavar="MS",
+        help="Minimum video duration in milliseconds (default: unbounded).",
+    )
+    add_duration.add_argument(
+        "--filters",
+        metavar="JSON",
+        help="Extra Plex advanced-search filters as a JSON object, AND-combined with the duration bound(s).",
+    )
+    set_func(add_duration, add_duration_collection)
 
     add_orgy = _make_sub(
         collection_sub,
         "add-orgy",
         help="Add videos with 4+ writers to COLLECTION.",
         description="Add every video with at least --min-writers writers to COLLECTION.",
-        epilog="Example:\n  plexadm collection add-orgy '01: Category: Orgy'",
+        epilog="Example:\n  plexadm collection add-orgy '01: Composition: Orgy'",
     )
     add_orgy.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     add_orgy.add_argument(
@@ -1281,7 +1657,7 @@ def _build_collection_commands(sub: Any) -> None:
         "add-vertical",
         help="Add every vertically-oriented video to COLLECTION.",
         description="Add every video whose first media is taller than it is wide (height > width) to COLLECTION.",
-        epilog="Example:\n  plexadm collection add-vertical '01: Format: Vertical'",
+        epilog="Example:\n  plexadm collection add-vertical '01: Category: Vertical Video'",
     )
     add_vertical.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     set_func(add_vertical, add_vertical_collection)
@@ -1324,26 +1700,27 @@ def _build_collection_commands(sub: Any) -> None:
     )
     set_func(sync_no_studio_parser, sync_no_studio)
 
-    sync_ppv_parser = _make_sub(
+    add_ppv_parser = _make_sub(
         collection_sub,
-        "sync-ppv",
-        help=f"Keep COLLECTION in sync with filenames matching '{PPV_FILENAME_PATTERN}' (default: '{PPV_COLLECTION}').",
+        "add-ppv",
+        help=f"Add videos whose filename matches '{PPV_FILENAME_PATTERN}' to COLLECTION (default: '{PPV_COLLECTION}').",
         description=(
             "Add every video whose filename matches "
-            f"'{PPV_FILENAME_PATTERN}' that is missing from COLLECTION, and remove every video in "
-            f"COLLECTION whose filename no longer matches. Defaults to '{PPV_COLLECTION}'. Plex has "
-            "no native filename filter, so matching happens in Python, not as a Plex search."
+            f"'{PPV_FILENAME_PATTERN}' that is missing from COLLECTION. Defaults to '{PPV_COLLECTION}'. Plex has "
+            "no native filename filter, so matching happens in Python, not as a Plex search. Add-only: a "
+            "filename no longer matching the pattern (e.g. after a manual rename) doesn't mean the video "
+            "stopped being valid PPV content, so this never removes existing members."
         ),
-        epilog="Example:\n  plexadm collection sync-ppv",
+        epilog="Example:\n  plexadm collection add-ppv",
     )
-    sync_ppv_parser.add_argument(
+    add_ppv_parser.add_argument(
         "collection",
         nargs="?",
         default=PPV_COLLECTION,
         metavar="COLLECTION",
         help=f"Target collection name (default: '{PPV_COLLECTION}').",
     )
-    set_func(sync_ppv_parser, sync_ppv)
+    set_func(add_ppv_parser, add_ppv)
 
     lock_titles_parser = _make_sub(
         collection_sub,
@@ -1359,6 +1736,37 @@ def _build_collection_commands(sub: Any) -> None:
     lock_titles_parser.add_argument("collection", metavar="COLLECTION", help="Target collection name.")
     set_func(lock_titles_parser, lock_collection_titles)
 
+    rename_categories_parser = _make_sub(
+        collection_sub,
+        "rename-categories",
+        help="Rename existing '01: Category:' collections into the Activity/Composition/"
+        "Cumshot/Prop/Theme/Attributes taxonomy.",
+        description=(
+            "Renames every real '01: Category:' collection per the hand-classified table in\n"
+            "plexadm.stash_backfill_tags._EXISTING_CATEGORY_RENAMES (the same table the\n"
+            "'plexadm stash unmapped-tags' report's rename-suggestions section is built from).\n"
+            "Only renames collections that actually exist today; anything left unclassified\n"
+            "(format tags, a likely studio name, etc.) is untouched.\n\n"
+            "Composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) are skipped by\n"
+            "default: 'plexadm stash backfill-tags' matches these against Stash tags by exact\n"
+            "name, and the Stash side isn't renamed by this command, so renaming them here\n"
+            "would silently break that matching. Pass --include-composition once the Stash\n"
+            "tags have a matching rename in place.\n\n"
+            "Run every other script that references a renamed collection by its old name\n"
+            "(set_tags_based_on_title.sh, copy_collections.sh, set_tags_based_on_writers.sh,\n"
+            "mass_process.sh) needs to already be updated before running this for real, or\n"
+            "they'll start failing to find their target collections."
+        ),
+        epilog="Example:\n  plexadm collection rename-categories --dry-run",
+    )
+    rename_categories_parser.add_argument(
+        "--include-composition",
+        action="store_true",
+        help="Also rename composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) - only "
+        "safe once the corresponding Stash tags have been renamed to match.",
+    )
+    set_func(rename_categories_parser, rename_categories)
+
     sync_lesbian_single_writer_parser = _make_sub(
         collection_sub,
         "sync-lesbian-single-writer",
@@ -1369,7 +1777,7 @@ def _build_collection_commands(sub: Any) -> None:
         description=(
             f"Add every '{LESBIAN_COLLECTION}' member with exactly one credited writer to "
             "COLLECTION (any studio, including Independent Content), and remove anything in "
-            "COLLECTION that no longer matches (left '01: Category: Lesbian' or gained a second "
+            "COLLECTION that no longer matches (left '01: Composition: Lesbian' or gained a second "
             "writer). This is a review/cataloging collection only - it "
             f"never removes anything from '{LESBIAN_COLLECTION}' itself.\n"
             f"Defaults to '{LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION}'."
@@ -1384,6 +1792,34 @@ def _build_collection_commands(sub: Any) -> None:
         help=f"Target collection name (default: '{LESBIAN_SINGLE_WRITER_REVIEW_COLLECTION}').",
     )
     set_func(sync_lesbian_single_writer_parser, sync_lesbian_single_writer)
+
+    sync_cumshot_absent_parser = _make_sub(
+        collection_sub,
+        "sync-cumshot-absent",
+        help=f"Flag sexual, non-female-only videos with no Cumshot collection in COLLECTION "
+        f"(default: '{CUMSHOT_ABSENT_REVIEW_COLLECTION}').",
+        description=(
+            "Add every video that isn't in any Cumshot collection (Facial, Bukkake, Cum In "
+            "Mouth, ...), isn't Solo/Lesbian/FF Only/Female Only (no male performer present, "
+            "so no cumshot to have), and isn't Non-Sexual, to COLLECTION - and remove anything "
+            "in COLLECTION that no longer matches. This is a review/cataloging collection "
+            "only - it never touches Cumshot collection membership itself.\n\n"
+            "Checks both the pre- and post-rename_categories() collection names, so this "
+            "works whether or not that migration has run yet. FF Only/Female Only aren't "
+            "populated by anything today, so the female-only exclusion currently only "
+            "actually excludes Solo/Lesbian.\n\n"
+            f"Defaults to '{CUMSHOT_ABSENT_REVIEW_COLLECTION}'."
+        ),
+        epilog="Example:\n  plexadm collection sync-cumshot-absent",
+    )
+    sync_cumshot_absent_parser.add_argument(
+        "collection",
+        nargs="?",
+        default=CUMSHOT_ABSENT_REVIEW_COLLECTION,
+        metavar="COLLECTION",
+        help=f"Target collection name (default: '{CUMSHOT_ABSENT_REVIEW_COLLECTION}').",
+    )
+    set_func(sync_cumshot_absent_parser, sync_cumshot_absent)
 
 
 def _build_studio_commands(sub: Any) -> None:
@@ -1533,6 +1969,31 @@ def _build_smart_collection_commands(sub: Any) -> None:
     )
     set_func(sync, sync_smart_collections)
 
+    clone = _make_sub(
+        smart_sub,
+        "clone",
+        help="Clone a smart collection under a new name, AND-combined with an extra filter.",
+        description=(
+            "Read SOURCE's existing smart-filter tree and create TARGET as a new smart\n"
+            "collection with the same conditions plus --add-filter AND-combined in.\n"
+            "SOURCE must be a smart collection; TARGET must not already exist."
+        ),
+        epilog=(
+            "Example:\n"
+            "  plexadm smart-collections clone '00D: Review: No Hair Color' "
+            "'00D: Review: No Hair Color (Indie)' --add-filter '{\"studio\": \"Independent\"}'"
+        ),
+    )
+    clone.add_argument("source", metavar="SOURCE", help="Existing smart collection to clone from.")
+    clone.add_argument("target", metavar="TARGET", help="New smart collection name to create.")
+    clone.add_argument(
+        "--add-filter",
+        required=True,
+        metavar="JSON",
+        help="Extra Plex advanced-search filter as a JSON object, AND-combined with SOURCE's filters.",
+    )
+    set_func(clone, clone_smart_collection)
+
     rename_collection_parser = _make_sub(
         smart_sub,
         "rename",
@@ -1556,6 +2017,41 @@ def _build_smart_collection_commands(sub: Any) -> None:
     )
     set_func(rename_collection_parser, rename_collections)
 
+    retarget_ppv_parser = _make_sub(
+        smart_sub,
+        "retarget-ppv",
+        help="Retire a writer-specific PPV collection in favor of a shared PPV collection.",
+        description=(
+            "Move every video in --old-collection into --new-collection (skipping ones\n"
+            "already there, then removing them all from --old-collection). Then find\n"
+            "every smart collection whose title contains --name-contains and whose filter\n"
+            "is exactly 'collection = OLD', and repoint it at\n"
+            "'collection = NEW AND writer = WRITER'. Smart collections that reference\n"
+            "OLD alongside other conditions are left alone and reported for manual review."
+        ),
+        epilog=(
+            "Example:\n"
+            "  plexadm smart-collections retarget-ppv --writer 'WRITER NAME' "
+            f"--old-collection 'WRITER PPV COLLECTION' --new-collection '{PPV_COLLECTION}' --name-contains 'WRITER'"
+        ),
+    )
+    retarget_ppv_parser.add_argument(
+        "--writer", required=True, metavar="WRITER", help="Writer name to combine with NEW in the retargeted filter."
+    )
+    retarget_ppv_parser.add_argument(
+        "--old-collection", required=True, metavar="OLD", help="Writer-specific PPV collection to retire."
+    )
+    retarget_ppv_parser.add_argument(
+        "--new-collection", required=True, metavar="NEW", help="Shared PPV collection to move videos into."
+    )
+    retarget_ppv_parser.add_argument(
+        "--name-contains",
+        required=True,
+        metavar="TEXT",
+        help="Only retarget smart collections whose title contains this text (case-insensitive).",
+    )
+    set_func(retarget_ppv_parser, retarget_writer_ppv)
+
 
 def _build_tools_commands(sub: Any) -> None:
     tools = _make_sub(
@@ -1566,8 +2062,10 @@ def _build_tools_commands(sub: Any) -> None:
         epilog=(
             "Examples:\n"
             "  plexadm tools find-missing-file '/data/NSFW Scenes/Alice/foo.mp4'\n"
+            "  plexadm tools rename-gen-script > rename.sh\n"
             "  plexadm tools fix-dl-scene-name 'scene.mp4' --prefix 'Alice'\n"
-            "  plexadm tools upload-vids --remote-host truenas"
+            "  plexadm tools upload-vids --remote-host truenas\n"
+            "  plexadm tools dupes-report"
         ),
     )
     tools_sub = _add_subparsers(tools, dest="tools_command", title="tools subcommands")
@@ -1581,6 +2079,34 @@ def _build_tools_commands(sub: Any) -> None:
     )
     missing.add_argument("path", metavar="PATH", help="Absolute on-disk path to look up.")
     set_func(missing, find_missing_file)
+
+    rename_script = _make_sub(
+        tools_sub,
+        "rename-gen-script",
+        help="Generate `mv` commands for videos whose filename doesn't match their Plex title.",
+        description=(
+            "For each video whose filename does not match its Plex title, print an `mv`\n"
+            "command that renames it into place. Videos with multiple file locations are\n"
+            "skipped, since it's ambiguous which one to rename.\n"
+            "\n"
+            "For a human-readable report of the same mismatches instead, use\n"
+            "`plexadm list renames`."
+        ),
+        epilog="Example:\n  plexadm tools rename-gen-script > rename.sh",
+    )
+    rename_script.add_argument(
+        "filter_text",
+        nargs="?",
+        metavar="FILTER",
+        help="Only include videos whose title or file path contains this substring.",
+    )
+    rename_script.add_argument(
+        "--base-dir",
+        default=SCENE_BASE_DIR,
+        metavar="DIR",
+        help=f"Base directory prefix to strip from file paths (default: {SCENE_BASE_DIR}).",
+    )
+    set_func(rename_script, rename_gen_script)
 
     dl = _make_sub(
         tools_sub,
@@ -1679,6 +2205,46 @@ def _build_tools_commands(sub: Any) -> None:
     )
     upload.set_defaults(func=upload_vids)
 
+    dupes = _make_sub(
+        tools_sub,
+        "dupes-report",
+        help="Generate a markdown report of Plex duplicate=true videos with delete recommendations.",
+        description=(
+            "Search for every video Plex flags duplicate=true (multiple file versions\n"
+            "attached to one item) and write a markdown report listing each file's full\n"
+            "path, duration, size, and resolution, plus whether the item's title and sort\n"
+            "title are locked fields.\n"
+            "\n"
+            "Each group gets a recommendation, never an automatic deletion:\n"
+            "  - durations don't match (>1s apart)   -> needs manual review\n"
+            "  - durations match, a PPV file is the highest resolution\n"
+            "                                        -> delete the non-PPV file(s)\n"
+            "  - durations match, no PPV file present -> delete the lowest-resolution/size\n"
+            "                                             file(s)\n"
+            "  - durations match, a PPV file exists but isn't the highest resolution\n"
+            "                                        -> needs manual review"
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm tools dupes-report\n"
+            "  plexadm tools dupes-report --output reference/dupes_report.md\n"
+            "  plexadm tools dupes-report --base-dir /other/mount/plexdata/"
+        ),
+    )
+    dupes.add_argument(
+        "--output",
+        default="reference/dupes_report.md",
+        metavar="PATH",
+        help="Markdown report output path (default: reference/dupes_report.md).",
+    )
+    dupes.add_argument(
+        "--base-dir",
+        default=DEFAULT_DUPES_BASE_DIR,
+        metavar="DIR",
+        help=f"Replacement for Plex's internal '/data/' path prefix (default: {DEFAULT_DUPES_BASE_DIR}).",
+    )
+    set_func(dupes, tools_dupes_report)
+
 
 def _build_top_command(sub: Any) -> None:
     top_help = {
@@ -1733,6 +2299,19 @@ def _build_top_command(sub: Any) -> None:
 
 
 def _build_stash_commands(sub: Any) -> None:
+    from plexadm.stash_backfill_tags import (
+        apply_review as stash_apply_review,
+    )
+    from plexadm.stash_backfill_tags import (
+        backfill_tags as stash_backfill_tags,
+    )
+    from plexadm.stash_backfill_tags import (
+        rename_tags as stash_rename_tags,
+    )
+    from plexadm.stash_backfill_tags import (
+        unmapped_tags as stash_unmapped_tags,
+    )
+
     stash_parser = _make_sub(
         sub,
         "stash",
@@ -1757,7 +2336,7 @@ def _build_stash_commands(sub: Any) -> None:
             "rating, play count) to each matched Stash scene.\n"
             "\n"
             "Only Plex collections prefixed '01: ' are mapped to Stash tags;\n"
-            "the prefix is stripped (e.g. '01: Category: Blowjob' → 'Category: Blowjob').\n"
+            "the prefix is stripped (e.g. '01: Activity: Blowjob' → 'Activity: Blowjob').\n"
             "\n"
             "Outputs a per-scene change log and exports a CSV listing scenes that\n"
             "still need enrichment (matched with no Plex data, or Stash scenes with\n"
@@ -1788,7 +2367,7 @@ def _build_stash_commands(sub: Any) -> None:
     reconcile_parser.add_argument(
         "--path",
         metavar="PREFIX",
-        help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/00 Rin).",
+        help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/Studio Name).",
     )
     reconcile_parser.add_argument(
         "--log-level",
@@ -1820,6 +2399,163 @@ def _build_stash_commands(sub: Any) -> None:
     )
     set_func(reconcile_parser, stash_reconcile)
 
+    backfill_parser = _make_sub(
+        stash_sub,
+        "backfill-tags",
+        help="Backfill Plex composition collections from matched Stash scene tags.",
+        description=(
+            "Reads every Plex item in the configured library section, matches Stash\n"
+            "scenes by file path, and immediately adds missing, unambiguous\n"
+            "Composition/Hair memberships plus accepted full-taxonomy suggestions to Plex,\n"
+            "creating taxonomy collections as needed. Potential removals and internally\n"
+            "ambiguous Stash tags are written to a JSON review file and are never removed\n"
+            "by this command."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm stash backfill-tags --dry-run --limit 25\n"
+            "  plexadm stash backfill-tags --review-output reference/stash_backfill_review.json"
+        ),
+    )
+    backfill_parser.add_argument(
+        "--limit",
+        metavar="N",
+        type=int,
+        help="Stop after processing N Plex items (useful for test runs before a full run).",
+    )
+    backfill_parser.add_argument(
+        "--path",
+        metavar="PREFIX",
+        help="Only process Plex items whose file path starts with PREFIX.",
+    )
+    backfill_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    backfill_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config.",
+    )
+    backfill_parser.add_argument(
+        "--review-output",
+        metavar="PATH",
+        default="reference/stash_backfill_review.json",
+        dest="review_output",
+        help="Path for staged removals and ambiguous entries (default: reference/stash_backfill_review.json).",
+    )
+    backfill_parser.add_argument(
+        "--report-output",
+        metavar="PATH",
+        default="reference/stash_backfill_report.md",
+        dest="report_output",
+        help="Markdown run report path (default: reference/stash_backfill_report.md).",
+    )
+    set_func(backfill_parser, stash_backfill_tags)
+
+    unmapped_tags_parser = _make_sub(
+        stash_sub,
+        "unmapped-tags",
+        help="Report Stash tags that have no matching Plex collection.",
+        description=(
+            "Fetches every Stash tag and compares its mapped collection title\n"
+            "against the collections that currently exist in the configured Plex\n"
+            "library. Writes every gap to a markdown report sorted by scene count."
+        ),
+        epilog="Example:\n  plexadm stash unmapped-tags --output reference/stash_unmapped_tags.md",
+    )
+    unmapped_tags_parser.add_argument(
+        "--output",
+        metavar="PATH",
+        default="reference/stash_unmapped_tags.md",
+        help="Markdown report path (default: reference/stash_unmapped_tags.md).",
+    )
+    unmapped_tags_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config.",
+    )
+    unmapped_tags_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    set_func(unmapped_tags_parser, stash_unmapped_tags)
+
+    rename_tags_parser = _make_sub(
+        stash_sub,
+        "rename-tags",
+        help="Rename the Stash tags backing the composition taxonomy (Solo, FFM, Lesbian, etc.).",
+        description=(
+            "Renames the Stash tags that classify_scene() reads for composition backfill\n"
+            "(e.g. 'Category: Solo' -> 'Composition: Solo') to match the new Plex taxonomy.\n"
+            "\n"
+            "This is a prerequisite for `plexadm collection rename-categories\n"
+            "--include-composition`: composition matching compares Stash tag names and\n"
+            "Plex-collection-derived tag names by exact string, so renaming the Plex\n"
+            "collections without also renaming these Stash tags breaks that matching.\n"
+            "Run this first, update GROUP_SINGLE_FEMALE/GROUP_MULTI_FEMALE_HEADCOUNT/\n"
+            "GROUP_MULTI_FEMALE_ACTIVITY in stash_backfill_tags.py to the new names in the\n"
+            "same change, then run rename-categories --include-composition."
+        ),
+        epilog="Example:\n  plexadm stash rename-tags --dry-run",
+    )
+    rename_tags_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config.",
+    )
+    rename_tags_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    set_func(rename_tags_parser, stash_rename_tags)
+
+    apply_review_parser = _make_sub(
+        stash_sub,
+        "apply-review",
+        help="Apply human-reviewed composition-category removals to Plex.",
+        description=(
+            "Reads a JSON review file produced by `stash backfill-tags` and removes\n"
+            "the surviving remove-candidate memberships. Ambiguous entries are\n"
+            "skipped unless --include-ambiguous is supplied and the human reviewer\n"
+            "has added a collection_to_remove field."
+        ),
+        epilog="Example:\n  plexadm stash apply-review reference/stash_backfill_review.json --dry-run",
+    )
+    apply_review_parser.add_argument(
+        "review_file",
+        metavar="REVIEW_FILE",
+        help="Human-reviewed JSON file produced by `stash backfill-tags`.",
+    )
+    apply_review_parser.add_argument(
+        "--include-ambiguous",
+        action="store_true",
+        help="Also apply ambiguous entries that a reviewer gave a collection_to_remove field.",
+    )
+    apply_review_parser.add_argument(
+        "--log-level",
+        metavar="LEVEL",
+        default="WARNING",
+        dest="log_level",
+        help="Python logging level: DEBUG, INFO, WARNING (default), ERROR.",
+    )
+    set_func(apply_review_parser, stash_apply_review)
+
     sync_tags_parser = _make_sub(
         stash_sub,
         "sync-tags",
@@ -1849,6 +2585,80 @@ def _build_stash_commands(sub: Any) -> None:
         help="Override the Stash base URL from config.",
     )
     set_func(sync_tags_parser, stash_sync_tags)
+
+
+def _build_inventory_commands(sub: Any) -> None:
+    inventory_parser = _make_sub(
+        sub,
+        "inventory",
+        help="Snapshot and diff every video's full collection membership over time.",
+        description=(
+            "Distinct from plexadm's own audit trail (which only records what plexadm itself\n"
+            "did): this records what the state actually looks like right now, regardless of\n"
+            "what changed it - so drift from any source (a stray Plex Web edit, an agent, "
+            "anything) can be pinpointed by diffing snapshots, rather than reconstructed after\n"
+            "the fact from server logs. Requires an [inventory] section (at least 'url') in\n"
+            "the config file, pointing at an OpenSearch cluster."
+        ),
+        epilog=("Examples:\n  plexadm inventory snapshot\n  plexadm inventory diff"),
+    )
+    inventory_sub = _add_subparsers(inventory_parser, dest="inventory_command", title="inventory subcommands")
+
+    snapshot_parser = _make_sub(
+        inventory_sub,
+        "snapshot",
+        help="Record one document per video with its current full state.",
+        description=(
+            "Write one document per video to the configured OpenSearch index, capturing\n"
+            "rating_key, title, title_sort, date_added, studio, writers, directors, the full\n"
+            "sorted list of collections it currently belongs to, and its file path(s), tagged\n"
+            "with a shared run_id/timestamp for this run. Also correlates each video's file\n"
+            "path(s) against Stash's own path index and records the matching Stash scene id(s)\n"
+            "by default (~15-20% slower than skipping it) - unless no [stash] endpoint is\n"
+            "configured, in which case Stash correlation is always skipped regardless of flags."
+        ),
+        epilog=("Examples:\n  plexadm inventory snapshot\n  plexadm inventory snapshot --no-stash-ids"),
+    )
+    snapshot_parser.add_argument(
+        "--no-stash-ids",
+        action="store_false",
+        dest="with_stash_ids",
+        help="Skip correlating each video's file path(s) against Stash's own path index - on by "
+        "default, since it pages the entire Stash library over GraphQL and is noticeably slower "
+        "(~15-20%%) than a plain snapshot.",
+    )
+    snapshot_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config. Only takes effect when the config file "
+        "already has a [stash] endpoint configured and --no-stash-ids wasn't passed - it cannot "
+        "force Stash correlation on when the config file has none configured at all.",
+    )
+    set_func(snapshot_parser, inventory_snapshot)
+
+    diff_parser = _make_sub(
+        inventory_sub,
+        "diff",
+        help="Compare two snapshots and report every video whose collections changed.",
+        description=(
+            "Defaults to the two most recent snapshots. For each video whose collection set\n"
+            "changed, cross-checks plexadm's own audit trail (when it's configured with an\n"
+            "OpenSearch sink) for a matching add/remove event in that time window, and flags\n"
+            "any change with none as UNATTRIBUTED - the case where something other than\n"
+            "plexadm changed it."
+        ),
+        epilog="Example:\n  plexadm inventory diff",
+    )
+    diff_parser.add_argument("--run-a", dest="run_a", metavar="RUN_ID", default=None, help="Older snapshot run_id.")
+    diff_parser.add_argument("--run-b", dest="run_b", metavar="RUN_ID", default=None, help="Newer snapshot run_id.")
+    diff_parser.add_argument(
+        "--no-attribution",
+        action="store_true",
+        help="Skip cross-checking the plexadm-audit trail; just report raw changes.",
+    )
+    set_func(diff_parser, inventory_diff)
 
 
 def main(argv: list[str] | None = None) -> int:

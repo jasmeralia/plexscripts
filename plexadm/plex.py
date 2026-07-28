@@ -11,6 +11,25 @@ from plexadm.console import warn
 
 LOCKED_COLLECTION = "99: LOCKED"
 
+# Format/technical-metadata collections, not content descriptors - membership here reflects a
+# fact about the file itself (duration, orientation, rating, studio presence, filename), not a
+# judgment call about the content, so '99: LOCKED' videos should still get tagged into them like
+# any other video. Distinct from every other collection, where LOCKED means "never touch this
+# video's membership, full stop."
+LOCK_BYPASS_COLLECTIONS = frozenset(
+    {
+        "01: Category: Short Videos",
+        "01: Category: Vertical Video",
+        "00C: Unrated",
+        "00A: NO STUDIO",
+        "01: Category: PPV",
+    }
+)
+
+# LOCKED_COLLECTION itself is exempt too - toggling '99: LOCKED' membership is how a video's
+# lock gets set/unset in the first place, so it can't be subject to its own guard.
+_LOCK_GUARD_EXEMPT = LOCK_BYPASS_COLLECTIONS | {LOCKED_COLLECTION}
+
 
 class PlexContext:
     def __init__(self, config: PlexConfig):
@@ -87,7 +106,7 @@ def _mutation_level_and_details(dry_run: bool, details: dict[str, Any]) -> tuple
 
 def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
-    if str(collection.title) != LOCKED_COLLECTION:
+    if str(collection.title) not in _LOCK_GUARD_EXEMPT:
         item_list = _drop_locked(item_list)
     if item_list:
         if not dry_run:
@@ -109,7 +128,7 @@ def add_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -
 
 def remove_items(collection: Any, items: Iterable[Any], *, dry_run: bool = False) -> int:
     item_list = list(items)
-    if str(collection.title) != LOCKED_COLLECTION:
+    if str(collection.title) not in _LOCK_GUARD_EXEMPT:
         item_list = _drop_locked(item_list)
     if item_list:
         if not dry_run:
@@ -152,10 +171,13 @@ def set_studio(video: Any, studio: str, *, dry_run: bool = False) -> bool:
 def lock_title_and_sort_title(video: Any, *, dry_run: bool = False) -> bool:
     """Lock title and sort title to their current values, so agent refresh/matching can't
     silently overwrite manually-curated titles (e.g. merged-duplicate items whose title was
-    picked by hand from among several release names)."""
-    if has_collection(video, LOCKED_COLLECTION):
-        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
-        return False
+    picked by hand from among several release names).
+
+    Deliberately not subject to the `99: LOCKED` collection-membership guard (unlike
+    `rename_title`, which actually changes the title value): this only locks each field to
+    whatever it already is, so it preserves existing metadata rather than altering it - the
+    exact thing `99: LOCKED` exists to protect against doesn't apply here.
+    """
     title = str(video.title)
     sort_title = str(getattr(video, "titleSort", None) or title)
     if not dry_run:
@@ -166,6 +188,33 @@ def lock_title_and_sort_title(video: Any, *, dry_run: bool = False) -> bool:
             action="lock_title",
             level=level,
             title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details=details,
+        )
+    )
+    return True
+
+
+def rename_title(video: Any, new_title: str, *, dry_run: bool = False) -> bool:
+    """Rename a video's title and sort title together, then lock both.
+
+    Real bug found live: two Rin-writer videos' rendered titles used mismatched capitalization
+    of the same writer name across otherwise-identical scenes, purely a title-text typo (their
+    actual `writer` tag was already consistent). Locks both fields after renaming for the same
+    reason as `lock_title_and_sort_title` - so agent refresh/matching can't silently revert it.
+    """
+    if has_collection(video, LOCKED_COLLECTION):
+        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
+        return False
+    old_title = str(video.title)
+    if not dry_run:
+        video.edit(**{"title.value": new_title, "title.locked": 1, "titleSort.value": new_title, "titleSort.locked": 1})
+    level, details = _mutation_level_and_details(dry_run, {"old_title": old_title})
+    log_event(
+        AuditEvent(
+            action="rename_title",
+            level=level,
+            title=new_title,
             rating_key=getattr(video, "ratingKey", None),
             details=details,
         )
@@ -193,22 +242,111 @@ def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) ->
 
 
 def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False) -> None:
+    """Rename a collection's title AND sort title together.
+
+    Real bug found live: the taxonomy migration's bulk rename only ever called editTitle(),
+    leaving every renamed collection's titleSort pointing at its old name - e.g. "01: Activity:
+    Anal" sorted as "01: Category: Anal", grouping it with collections it no longer belongs
+    with. A rename with no sort_title override always means "this is now called X", so title and
+    sort title should always move together unless a caller explicitly wants something else.
+    """
     old_title = str(collection.title)
     if not dry_run:
         collection.editTitle(new_title)
+        collection.editSortTitle(new_title)
     level, details = _mutation_level_and_details(dry_run, {"old_title": old_title})
     log_event(AuditEvent(action="rename_collection", level=level, title=new_title, details=details))
+
+
+def create_collection(section: Any, *, title: str, items: Iterable[Any], dry_run: bool = False) -> None:
+    """Create a regular (non-smart) collection seeded with items.
+
+    Plex requires at least one item to create a manual collection at all - there's no "create
+    empty, add items later" path for these, unlike smart collections. Distinct audit action
+    name from `create_smart_collection`'s "create_collection" so the two are distinguishable in
+    the audit trail after the fact.
+    """
+    item_list = list(items)
+    if title not in _LOCK_GUARD_EXEMPT:
+        item_list = _drop_locked(item_list)
+    if not dry_run:
+        section.createCollection(title=title, items=item_list)
+    level, details = _mutation_level_and_details(dry_run, {"item_count": len(item_list)})
+    log_event(AuditEvent(action="create_manual_collection", level=level, title=title, details=details))
+
+
+def delete_collection(collection: Any, *, dry_run: bool = False) -> None:
+    title = str(collection.title)
+    if not dry_run:
+        collection.delete()
+    level, details = _mutation_level_and_details(dry_run, {})
+    log_event(AuditEvent(action="delete_collection", level=level, title=title, details=details))
+
+
+def collection_filter_key(section: Any, title: str) -> str:
+    """Resolve a collection's title to the ID Plex's smart filter query language expects.
+
+    That ID comes from `section.listFilterChoices("collection")` - a *different* ID space from
+    the collection's own `.ratingKey`. Confirmed live: passing `.ratingKey` doesn't error, it
+    silently matches a different, unrelated collection instead (a 5-item one instead of the
+    intended 1985-item one), which is a much worse failure mode than a clear error.
+    """
+    matches = [choice.key for choice in section.listFilterChoices("collection") if choice.title == title]
+    if not matches:
+        raise ValueError(f"No collection filter choice found for {title!r} - check the title is exact.")
+    if len(matches) > 1:
+        raise ValueError(f"Multiple collection filter choices found for {title!r} - expected exactly one.")
+    return matches[0]
+
+
+def _resolve_collection_filter(section: Any, filters: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a top-level "collection" smart-filter value given as a title string via
+    `collection_filter_key`. Callers should always pass the collection's title as a plain
+    string here, the same way "writer" and "studio" filters already take plain name strings
+    elsewhere in this file - if a caller passes an int, it's trusted as already-resolved and
+    left untouched.
+    """
+    if "collection" not in filters or not isinstance(filters["collection"], str):
+        return filters
+    return {**filters, "collection": collection_filter_key(section, filters["collection"])}
 
 
 def create_smart_collection(
     section: Any,
     *,
     title: str,
-    sort: str,
+    sort: Any,
     filters: dict[str, Any],
     dry_run: bool = False,
 ) -> None:
+    filters = _resolve_collection_filter(section, filters)
     if not dry_run:
         section.createCollection(title=title, smart=True, sort=sort, filters=filters)
     level, details = _mutation_level_and_details(dry_run, {"filters": filters})
     log_event(AuditEvent(action="create_collection", level=level, title=title, details=details))
+
+
+def update_smart_collection_filters(
+    collection: Any,
+    *,
+    section: Any,
+    sort: Any,
+    filters: dict[str, Any],
+    dry_run: bool = False,
+) -> None:
+    """Replace an existing smart collection's filters (and sort) by deleting and recreating it.
+
+    Real bug found live: plexapi's `Collection.updateFilters()` can leave the collection's
+    cached membership index permanently stuck at 0 items, even though the new filter is valid
+    (the identical query run fresh via `section.search()` returns the correct results) - and
+    this survives both `collection.refresh()` and a full Plex container restart. Deleting and
+    recreating the collection with the same title/sort/filters reliably fixes it, since a
+    freshly created smart collection builds its index at creation time - the same code path
+    every other smart collection already relies on. This loses the collection's ratingKey and
+    any hand-set custom artwork, but every smart collection in this codebase is looked up by
+    title (never a stored ratingKey) and is auto-managed/derived rather than hand-curated, so
+    neither loss matters here.
+    """
+    title = str(collection.title)
+    delete_collection(collection, dry_run=dry_run)
+    create_smart_collection(section, title=title, sort=sort, filters=filters, dry_run=dry_run)

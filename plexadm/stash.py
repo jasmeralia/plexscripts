@@ -28,6 +28,18 @@ query FindScenes($page: Int!, $per_page: Int!) {
 }
 """
 
+_ALL_TAGS = """
+query AllTags {
+  allTags { id name scene_count stash_ids { endpoint stash_id } }
+}
+"""
+
+_CONFIGURED_STASH_BOXES = """
+query ConfiguredStashBoxes {
+  configuration { general { stashBoxes { name endpoint } } }
+}
+"""
+
 _FIND_PERFORMER = """
 query FindPerformer($name: String!) {
   findPerformers(
@@ -76,6 +88,12 @@ mutation CreateTag($name: String!) {
 _UPDATE_SCENE = """
 mutation UpdateScene($input: SceneUpdateInput!) {
   sceneUpdate(input: $input) { id }
+}
+"""
+
+_UPDATE_TAG = """
+mutation UpdateTag($input: TagUpdateInput!) {
+  tagUpdate(input: $input) { id name }
 }
 """
 
@@ -154,6 +172,14 @@ class StashClient:
             page += 1
         return index
 
+    def all_tags(self) -> list[dict[str, Any]]:
+        """Return every Stash tag with its id, name, scene_count, and stash_ids (external stash-box links)."""
+        return self._gql(_ALL_TAGS)["allTags"]  # type: ignore[no-any-return]
+
+    def configured_stash_boxes(self) -> list[dict[str, Any]]:
+        """Return this instance's configured stash-box connections (name + endpoint)."""
+        return self._gql(_CONFIGURED_STASH_BOXES)["configuration"]["general"]["stashBoxes"]  # type: ignore[no-any-return]
+
     def find_or_create_performer(self, name: str) -> str:
         if name in self._performer_cache:
             return self._performer_cache[name]
@@ -197,6 +223,9 @@ class StashClient:
         update = dict(fields)
         update["id"] = scene_id
         self._gql(_UPDATE_SCENE, {"input": update})
+
+    def rename_tag(self, tag_id: str, new_name: str) -> None:
+        self._gql(_UPDATE_TAG, {"input": {"id": tag_id, "name": new_name}})
 
     def sync_play_history(self, scene_id: str, timestamps: list[str]) -> None:
         """Replace Stash play history with the given ISO8601 timestamps from Plex."""

@@ -52,6 +52,26 @@ For remote syslog, set `address = host:port`; Docker containers generally do not
 
 Every audit event carries a `level` (`INFO`, `WARNING`, or `ERROR`), which is mapped to the matching native severity on the syslog and journal sinks (e.g. an `ERROR` event reaches syslog at the `err` priority, not `info`). Plex mutations are logged at `INFO`. In addition to mutations, plexadm logs two non-mutation event types to the same sink: any uncaught exception during a command is logged at `ERROR` (`action = "error"`), and a `Ctrl-C` interrupt is logged at `WARNING` (`action = "interrupted"`) — both so a crashed or aborted run leaves a trace instead of only a stderr message.
 
+### Inventory (`plexadm inventory`)
+
+Distinct from audit logging, which only records what plexadm itself did: `plexadm inventory snapshot` records what the library's collection membership actually looks like right now, regardless of what changed it. `plexadm inventory diff` compares two snapshots and reports every video whose collections changed, cross-checking the audit trail (when it's on the `opensearch` sink) for a matching event - a change with none is flagged `UNATTRIBUTED`, meaning something other than plexadm changed it (a stray Plex Web edit, an agent, etc.).
+
+Requires its own `[inventory]` section, independent of the `[logging]` sink choice:
+
+```ini
+[inventory]
+url = https://opensearch.example.com:9200
+index = plexadm-inventory
+username = plexadm
+password = your-password
+verify_tls = true
+```
+
+```bash
+plexadm inventory snapshot
+plexadm inventory diff
+```
+
 ## Install
 
 Install local development dependencies into `.venv/`:
@@ -247,13 +267,12 @@ Special list kinds:
 
 - `uncategorized`
 - `uncollected`
-- `multipart`
 - `merged`
 - `potential-indie`
 - `multi-f-without-category`
 - `no-composition`
 - `no-hair`
-- `no-moneyshot`
+- `duplicates`
 
 Examples:
 
@@ -261,8 +280,14 @@ Examples:
 plexadm list special uncategorized
 plexadm list special no-hair
 plexadm list special uncollected
-plexadm list special multipart
+plexadm list special duplicates
 ```
+
+`duplicates` prints the title of every video Plex flags `duplicate=true` (multiple file
+versions attached to one item), followed by each file's path with the `/data/` prefix
+replaced by `--base-dir` (default: `/mnt/myzmirror/plexdata/`). For sizes, durations,
+resolutions, and a delete recommendation instead of just paths, use
+[`plexadm tools dupes-report`](#tools).
 
 ### Renames
 
@@ -273,13 +298,6 @@ plexadm list renames
 plexadm list renames "TUSHY"
 ```
 
-Output shell `mv` commands instead of a human-readable diff:
-
-```bash
-plexadm list renames --script
-plexadm list renames --script "TUSHY"
-```
-
 Override the base directory prefix stripped from file paths (default: `/data/NSFW Scenes/`):
 
 ```bash
@@ -287,6 +305,9 @@ plexadm list renames --base-dir "/other/path/"
 ```
 
 Message, Post, PPV, and titles containing `?` are excluded automatically.
+
+This command only reports; it never mutates anything. To generate a `mv` script from the same
+underlying data, use [`plexadm tools rename-gen-script`](#tools) instead.
 
 ## Collection Commands
 
@@ -327,16 +348,22 @@ This is what `scripts/set_tags_based_on_title.sh` uses.
 Scan titles for a writer pattern, confirm the Plex writer exactly matches, then add to a collection:
 
 ```bash
-plexadm collection add-writer "01: Category: Solo" "Writer Name"
+plexadm collection add-writer "01: Composition: Solo" "Writer Name"
 ```
 
 Add all videos matching any writer in a file:
 
 ```bash
-plexadm collection add-writers "01: Category: Solo" reference/writers_solo.txt
+plexadm collection add-writers "01: Composition: Solo" reference/writers_solo.txt
 ```
 
-Writer files are newline-delimited.
+Writer files are newline-delimited. Pass `--single-writer-only` to skip videos with more than one
+credited writer - use this for Solo, so a listed performer co-starring in someone else's scene
+doesn't get that scene tagged Solo too:
+
+```bash
+plexadm collection add-writers --single-writer-only "01: Composition: Solo" reference/writers_solo.txt
+```
 
 ### Copy Between Collections
 
@@ -383,7 +410,7 @@ plexadm collection add-short "01: Category: Short Videos" --max-duration-ms 1200
 Add videos where media height is greater than width:
 
 ```bash
-plexadm collection add-vertical "01: Category: Vertical"
+plexadm collection add-vertical "01: Category: Vertical Video"
 ```
 
 ### Sync Unrated Collection
@@ -414,20 +441,21 @@ The default collection is `00A: NO STUDIO`:
 plexadm collection sync-no-studio
 ```
 
-### Sync PPV Collection
+### Add PPV Collection
 
-Add videos whose filename matches `*- PPV *` and remove videos that no longer match. Plex has no
-native filter for filename/file path, so the match happens in Python against each media part's
-filename rather than as a Plex search filter:
+Add videos whose filename matches `*- PPV *`. Plex has no native filter for filename/file path, so
+the match happens in Python against each media part's filename rather than as a Plex search
+filter. Add-only: a filename no longer matching the pattern (e.g. after a manual rename) doesn't
+mean the video stopped being valid PPV content, so existing members are never removed:
 
 ```bash
-plexadm collection sync-ppv "01: Category: PPV"
+plexadm collection add-ppv "01: Category: PPV"
 ```
 
 The default collection is `01: Category: PPV`:
 
 ```bash
-plexadm collection sync-ppv
+plexadm collection add-ppv
 ```
 
 ### Lock Titles
@@ -438,6 +466,70 @@ items whose title was chosen by hand from among several release names):
 
 ```bash
 plexadm collection lock-titles "00A: DUPES"
+```
+
+Applies even to `99: LOCKED` items: it only locks each field to whatever value it already has,
+so it preserves existing metadata rather than altering it, unlike the collection-membership
+changes that guard exists to block.
+
+### Rename Categories (one-time taxonomy migration)
+
+Renames existing `01: Category:` collections into the emerging Activity/Composition/Cumshot/
+Prop/Theme/Attributes taxonomy, per the hand-classified table in
+`plexadm.stash_backfill_tags._EXISTING_CATEGORY_RENAMES` (the same table
+`plexadm stash unmapped-tags`'s rename-suggestions section is built from). Only renames
+collections that actually exist; anything left unclassified (format tags, a likely studio name,
+etc.) is untouched.
+
+Composition collections (Solo, MMF, FFM, Lesbian, Orgy, ...) are skipped by default -
+`plexadm stash backfill-tags` matches these against Stash tags by exact name, so renaming them
+here without also renaming the matching Stash tags would silently break that matching:
+
+```bash
+plexadm collection rename-categories --dry-run
+plexadm collection rename-categories
+```
+
+Pass `--include-composition` once the corresponding Stash tags have a matching rename in place.
+`plexadm stash rename-tags` renames the Stash side (`Category: Solo` → `Composition: Solo`, etc.)
+via GraphQL - run it, then update `GROUP_SINGLE_FEMALE`/`GROUP_MULTI_FEMALE_HEADCOUNT`/
+`GROUP_MULTI_FEMALE_ACTIVITY` in `stash_backfill_tags.py` to the new names in the same change,
+before passing `--include-composition` here:
+
+```bash
+plexadm stash rename-tags --dry-run
+plexadm stash rename-tags
+```
+
+**Status: complete.** All `01: Category:` collections have been migrated except the 4 left
+deliberately unclassified (Beautiful Agony, Non-Sexual, Short Videos, Vertical Video) and PPV.
+The commands above remain as the documented procedure in case a newly-added collection ever
+needs the same treatment.
+
+**This is a one-time migration, not part of `mass_process.sh`.** `scripts/rename_categories.sh`
+wraps it with logging (defaults to a dry-run preview; pass `--apply` to actually rename). Every
+other script that references a renamed collection by its old name
+(`set_tags_based_on_title.sh`, `copy_collections.sh`, `set_tags_based_on_writers.sh`,
+`mass_process.sh`) was updated to the new names in the same change that added this command - run
+the rename before the next `mass_process.sh` run, or those will fail to find their target
+collections.
+
+### Sync Cumshot Absent Review Collection
+
+Add every sexual, non-female-only video with no Cumshot collection (Facial, Bukkake, Cum In
+Mouth, ...) to a review collection, and remove anything that no longer matches. "Non-female-only"
+excludes Solo/Lesbian/FF Only/Female Only - no male performer present, so no cumshot to have -
+and Non-Sexual content is excluded too. Checks both the pre- and post-`rename-categories` name
+for every Cumshot collection, so it works whether or not that migration has run yet:
+
+```bash
+plexadm collection sync-cumshot-absent "00D: Review: Cumshot Absent"
+```
+
+The default collection is `00D: Review: Cumshot Absent`:
+
+```bash
+plexadm collection sync-cumshot-absent
 ```
 
 ## Studio Commands
@@ -550,6 +642,17 @@ Rename collections using a Python regular expression replacement:
 plexadm smart-collections rename "^Old Prefix: " "New Prefix: "
 ```
 
+### Clone A Smart Collection
+
+Clone an existing smart collection under a new name, AND-combining its filters with an extra one:
+
+```bash
+plexadm smart-collections clone "00D: Review: No Hair Color" "00D: Review: No Hair Color (Indie)" \
+  --add-filter '{"studio": "Independent"}'
+```
+
+SOURCE must already be a smart collection; TARGET must not already exist.
+
 ## Top Reports
 
 Show top category collections:
@@ -592,6 +695,35 @@ Find which Plex item references a file path:
 ```bash
 plexadm tools find-missing-file "/path/to/file.mp4"
 ```
+
+Generate `mv` commands for videos whose filename doesn't match their Plex title (the script-
+generation counterpart to `plexadm list renames`, which only reports):
+
+```bash
+plexadm tools rename-gen-script > rename.sh
+plexadm tools rename-gen-script "TUSHY" --base-dir "/other/path/"
+```
+
+Videos with multiple file locations are skipped, since it's ambiguous which one to rename;
+`plexadm list renames` flags those with a WARNING instead.
+
+Generate a markdown report of Plex `duplicate=true` videos (multiple file versions attached to
+one item), with a delete recommendation per group:
+
+```bash
+plexadm tools dupes-report
+plexadm tools dupes-report --output reference/dupes_report.md --base-dir "/other/mount/plexdata/"
+```
+
+For each duplicate-flagged video, the report lists every file's full path (`/data/` replaced by
+`--base-dir`, default `/mnt/myzmirror/plexdata/`), duration, size, and resolution, plus whether
+the item's title and sort title are locked fields. Recommendations are a starting point for
+manual review, never an automatic deletion:
+
+- durations don't match (more than 1 second apart) -> needs manual review
+- durations match and a PPV file is the highest resolution -> delete the non-PPV file(s)
+- durations match and no file contains PPV -> delete the lowest-resolution/size file(s)
+- durations match and a PPV file exists but isn't the highest resolution -> needs manual review
 
 Generate a download scene name:
 
@@ -643,6 +775,7 @@ Important scripts:
 - `scripts/copy_collections.sh`: collection and studio propagation rules
 - `scripts/set_unrated.sh`: unrated collection sync with log output
 - `scripts/set_ppv.sh`: PPV filename-pattern collection sync with log output
+- `scripts/rename_categories.sh`: one-time taxonomy rename migration - NOT part of mass_process.sh
 - `scripts/top_*.sh`: convenience reports
 
 Run the full batch:
