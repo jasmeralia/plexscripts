@@ -2459,10 +2459,10 @@ def backfill_tags(args: Any) -> int:
     candidates = [tag for tag in tags if not _has_existing_plex_match(tag, existing_titles)]
     unmapped = [tag for tag in candidates if tag.get("stash_ids") or []]
     apply_map: dict[str, list[str]] = {}
-    for tag in unmapped:
-        targets = _apply_targets(str(tag["name"]), resolve_titles)
+    for stash_tag in unmapped:
+        targets = _apply_targets(str(stash_tag["name"]), resolve_titles)
         if targets:
-            apply_map[str(tag["name"])] = targets
+            apply_map[str(stash_tag["name"])] = targets
 
     limit: int | None = getattr(args, "limit", None)
     path_filter: str | None = getattr(args, "path", None)
