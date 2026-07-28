@@ -468,8 +468,17 @@ class TestTagalongTargets:
         assert _tagalong_targets("Anal Dildo") == ["01: Category: Anal", "01: Prop: Sex Toys"]
 
     def test_clothing_and_generic_objects_get_no_tagalong(self) -> None:
-        for tag_name in ("Lingerie", "Stockings", "Skirt", "Mirror", "Handcuffs", "Whip"):
+        for tag_name in ("Lingerie", "Stockings", "Skirt", "Mirror"):
             assert _tagalong_targets(tag_name) == []
+
+    def test_bdsm_gear_words_add_fetish_target(self) -> None:
+        # Confirmed by direct user request: Handcuffs/Leash/Whip each "ADD as a Prop, and MERGE
+        # it to <Prop> + Fetish" - unlike the plain clothing/generic-object props above.
+        assert _tagalong_targets("Handcuffs") == ["01: Category: Fetish"]
+        assert _tagalong_targets("Leash") == ["01: Category: Fetish"]
+        assert _tagalong_targets("Whip") == ["01: Category: Fetish"]
+        # "Gags" was only asked to become its own Prop ("Gag"), not also tagged into Fetish.
+        assert _tagalong_targets("Gags") == []
 
     def test_with_tagalong_does_not_duplicate_an_already_present_target(self) -> None:
         assert _with_tagalong("Anal Missionary", ["01: Category: Anal"]) == ["01: Category: Anal"]
@@ -676,22 +685,42 @@ class TestQualifiedVariantsCollapseIntoTheBaseCollection:
         for tag_name in (
             "Standing Blowjob",
             "Sloppy Blowjob",
-            "Missionary Blowjob",
-            "Cowgirl Blowjob",
             "Chipmunk Blowjob",
             "Head Pushing Blowjob",
             "Hands-free Blowjob",
-            "Inverted Blowjob",
             "Triple Blowjob",
-            "Side Fuck Blowjob",
-            "Spooning Blowjob",
             "Blowjob Only",
             "Blowjob - POV",
             "Blowjob Nose Pinch",
-            "Ball Sucking During Blowjob",
             "Dick Licking",
         ):
             assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_blowjob_position_cluster_needs_both_blowjob_and_the_position(self) -> None:
+        # "Missionary Blowjob"/"Cowgirl Blowjob"/"Side Fuck Blowjob"/"Spooning Blowjob"/"Ball
+        # Sucking During Blowjob" - the qualifier is itself an independently-tracked Activity
+        # (same upgrade as the Anal cluster below), so these need both legs, not just Blowjob.
+        blowjob = "01: Category: Blowjob"
+        cases = {
+            "Missionary Blowjob": "01: Activity: Missionary",
+            "Cowgirl Blowjob": "01: Activity: Cowgirl",
+            "Side Fuck Blowjob": "01: Activity: Side Fuck",
+            "Spooning Blowjob": "01: Activity: Spooning",
+            "Ball Sucking During Blowjob": "01: Activity: Ball Sucking",
+        }
+        for tag_name, position in cases.items():
+            assert _suggested_action(tag_name, {blowjob, position}) == f"merge -> {blowjob} + {position}"
+            # Stays "add" until both legs are real, not just Blowjob.
+            assert _suggested_action(tag_name, {blowjob}) == "add"
+
+    def test_inverted_blowjob_promotes_to_its_own_collection_plus_blowjob(self) -> None:
+        # Unlike the qualifier-only variants above, "Inverted Blowjob" gets its own new Activity
+        # collection (confirmed by direct user request) as well as landing in base Blowjob.
+        inverted = "01: Activity: Inverted Blowjob"
+        blowjob = "01: Category: Blowjob"
+        assert _suggested_action("Inverted Blowjob", {inverted, blowjob}) == f"merge -> {inverted} + {blowjob}"
+        assert _suggest_new_collection_name("Inverted Blowjob") == inverted
+        assert _suggested_action("Inverted Blowjob", {blowjob}) == "add"
 
     def test_dildo_blowjob_also_needs_sex_toys(self) -> None:
         # "Dildo Blowjob" contains the toy tag-along word "dildo" - it must also require
@@ -747,32 +776,44 @@ class TestQualifiedVariantsCollapseIntoTheBaseCollection:
         )
 
     def test_anal_cluster_merges_into_bare_anal(self) -> None:
+        # These stay Anal-only: no independently-tracked Activity counterpart exists for any of
+        # them (unlike the Missionary/Cowgirl/etc. cluster below).
         target = "01: Category: Anal"
         for tag_name in (
             "All Anal",
-            "Anal Missionary",
-            "Anal Missionary - POV",
             "Anal Gape",
-            "Anal Reverse Cowgirl",
-            "Anal Doggy Style",
-            "Anal Doggy Style - POV",
-            "Anal Cowgirl",
-            "Anal Cowgirl - POV",
-            "Anal Spooning",
-            "Anal Side Fuck",
             "Anal Bulldog",
             "Anal Full Nelson",
             "Anal Orgasm",
-            "Anal Lazy Reverse Cowgirl",
-            "Anal Squatting Reverse Cowgirl",
             "Anal Loophole",
-            "Anal Piledriver",
-            "Anal Spit Roast",
             "Anal Winking",
             "Anal Hooks",
             "Anal Stretching",
         ):
             assert _suggested_action(tag_name, {target}) == f"merge -> {target}"
+
+    def test_anal_position_cluster_needs_both_anal_and_the_position(self) -> None:
+        # "Anal Missionary"/"Anal Cowgirl"/etc. - the position is itself an independently-tracked
+        # Activity, so these need both legs, not just Anal. Confirmed by direct user correction:
+        # these used to collapse into Anal alone even after their position became a tracked
+        # Activity Add candidate in its own right.
+        anal = "01: Category: Anal"
+        cases = {
+            "Anal Missionary": "01: Activity: Missionary",
+            "Anal Reverse Cowgirl": "01: Activity: Reverse Cowgirl",
+            "Anal Lazy Reverse Cowgirl": "01: Activity: Reverse Cowgirl",
+            "Anal Squatting Reverse Cowgirl": "01: Activity: Reverse Cowgirl",
+            "Anal Doggy Style": "01: Activity: Doggy Style",
+            "Anal Cowgirl": "01: Activity: Cowgirl",
+            "Anal Spooning": "01: Activity: Spooning",
+            "Anal Side Fuck": "01: Activity: Side Fuck",
+            "Anal Piledriver": "01: Activity: Piledriver",
+            "Anal Spit Roast": "01: Activity: Spit Roast",
+        }
+        for tag_name, position in cases.items():
+            assert _suggested_action(tag_name, {anal, position}) == f"merge -> {anal} + {position}"
+            # Stays "add" until both legs are real, not just Anal.
+            assert _suggested_action(tag_name, {anal}) == "add"
 
     def test_anal_tags_with_their_own_good_suggestion_are_not_merged(self) -> None:
         # These already get a specific Activity/Prop suggestion via keyword match - merging them
@@ -875,10 +916,14 @@ class TestNewSkipsThisRound:
             "Licking",
             "Grinding",
             "Breast Touching",
-            "Nipple Touching",
             "Kissing",
         ):
             assert _suggested_action(tag_name, set()) == "skip"
+        # Reclassified from Skip - "Nipple Touching"/"Nipple Pinching" -> Nipple Play (confirmed
+        # by direct user request, 2026-07-27 skip-list review).
+        nipple_play = "01: Category: Nipple Play"
+        for tag_name in ("Nipple Touching", "Nipple Pinching"):
+            assert _suggested_action(tag_name, {nipple_play}) == f"merge -> {nipple_play}"
 
     def test_foot_licking_merges_into_foot_fetish_instead_of_being_dropped(self) -> None:
         assert _suggested_action("Foot Licking", {"01: Category: Foot Fetish"}) == "merge -> 01: Category: Foot Fetish"
@@ -957,10 +1002,24 @@ class TestFifthRoundMergesAndAttributes:
     def test_anal_pov_variants_prefer_the_more_specific_split_over_the_bare_anal_merge(self) -> None:
         anal = "01: Category: Anal"
         pov = "01: Theme: POV"
-        for tag_name in ("Anal Cowgirl - POV", "Anal Doggy Style - POV", "Anal Missionary - POV"):
-            assert _suggested_action(tag_name, {anal, pov}) == f"merge -> {anal} + {pov}"
-            # Before POV exists, falls back to the plain bare-Anal merge from an earlier round.
-            assert _suggested_action(tag_name, {anal}) == f"merge -> {anal}"
+        cases = {
+            "Anal Cowgirl - POV": "01: Activity: Cowgirl",
+            "Anal Doggy Style - POV": "01: Activity: Doggy Style",
+            "Anal Missionary - POV": "01: Activity: Missionary",
+            "Anal Reverse Cowgirl - POV": "01: Activity: Reverse Cowgirl",
+        }
+        for tag_name, position in cases.items():
+            # Needs all three legs - Anal + the position + POV - confirmed by direct user
+            # correction (the position leg used to be missing here even when the position was
+            # separately tracked for the bare "anal X" entries).
+            assert _suggested_action(tag_name, {anal, position, pov}) == f"merge -> {anal} + {position} + {pov}"
+            # Before POV exists (but the position does), falls back to the bare "anal X" 2-leg
+            # merge from the cluster above, dropping POV.
+            assert _suggested_action(tag_name, {anal, position}) == f"merge -> {anal} + {position}"
+            # Before the position exists at all, there's no single-target Anal-only fallback
+            # left (unlike the old behavior) - stays "add".
+            assert _suggested_action(tag_name, {anal}) == "add"
+            assert _suggested_action(tag_name, {anal, pov}) == "add"
 
     def test_attributes_body_descriptors(self) -> None:
         for tag_name in ("Hairless Pussy", "Natural Tits", "Big Tits", "Hairy Pussy", "Big Dick", "Long Hair"):
@@ -1426,10 +1485,12 @@ class TestUnmappedTags:
 
         report = output.read_text(encoding="utf-8")
         assert "## Pending Collections" in report
-        # "Anal Cowgirl - POV" already merges into bare Anal today (falls back since POV isn't
-        # real) - it must still show up here as an upgrade candidate, annotated with its current
-        # target, not just tags that are fully stuck in "add".
-        assert "Anal Cowgirl - POV (currently -> 01: Category: Anal)" in report
+        # "Anal Cowgirl - POV" already merges into Anal + Cowgirl today (falls back to the 2-leg
+        # "anal cowgirl" rule since POV isn't real - "01: Activity: Cowgirl" resolves via the
+        # accepted-collections snapshot even though it isn't a real Plex collection either) - it
+        # must still show up here as an upgrade candidate, annotated with its current target, not
+        # just tags that are fully stuck in "add".
+        assert "Anal Cowgirl - POV (currently -> 01: Category: Anal + 01: Activity: Cowgirl)" in report
         assert "Cowgirl - POV" in report
         # "01: Activity: Cowgirl" no longer appears as its own pending row: it's one of the
         # 2026-07-25 accepted Add suggestions (_ACCEPTED_ADD_COLLECTIONS), so it now resolves as

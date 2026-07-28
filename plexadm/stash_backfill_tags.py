@@ -10,8 +10,9 @@ from pathlib import Path
 from typing import Any
 
 from plexadm.cli import EXCLUDED_COMPOSITION_COLLECTIONS, EXCLUDED_HAIR_COLLECTIONS, dry_run_note
-from plexadm.config import load_config
+from plexadm.config import load_config, load_logging_config
 from plexadm.console import info, ok, warn
+from plexadm.logging_setup import configure_command_logging
 from plexadm.plex import PlexContext, add_items, reload_if_partial, remove_items
 from plexadm.stash import StashClient
 from plexadm.stash_reconcile import _collection_to_tag
@@ -316,7 +317,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "grinding",
     "touching",
     "breast touching",
-    "nipple touching",
     "kissing",
     # Confirmed by direct user request: category clothing tags without an existing
     # collection aren't worth tracking, and every other "add" suggestion under 10 scenes
@@ -327,10 +327,8 @@ _SKIP_EXACT_TAG_NAMES = {
     "ahegao",
     "airplane position",
     "airtight",
-    "alien",
     "all sex",
     "alternating penetration",
-    "anally plugged sex",
     "animal print",
     "anime character",
     "ankle boots",
@@ -353,7 +351,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "bangs",
     "bar",
     "bathtub",
-    "bdsm",
     "beach",
     "beauty mark",
     "big areolas",
@@ -362,7 +359,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "bikini panties",
     "birthday",
     "bizarre",
-    "black on asian",
     "black on white",
     "blazer",
     "boat",
@@ -432,13 +428,8 @@ _SKIP_EXACT_TAG_NAMES = {
     "defined abs",
     "denim shorts",
     "doggy 9",
-    "doggy style (dp)",
     "dominant",
     "domination",
-    "double cowgirl",
-    "double digit penetration",
-    "double fisting",
-    "double handjob (2 penises)",
     "dreadlocks",
     "dress",
     "drool",
@@ -456,7 +447,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "eye contact",
     "eye makeup",
     "eyebrow piercing",
-    "facesitting on him",
     "fan written",
     "fantasy",
     "farting",
@@ -466,13 +456,10 @@ _SKIP_EXACT_TAG_NAMES = {
     "female boss",
     "femdom",
     "femsub",
-    "first dp scene",
-    "first lesbian experience",
     "first straight scene",
     "fishnet",
     "fishnet one-piece",
     "fishnet pantyhose",
-    "fishnet stockings",
     "fishnet top",
     "fitting room",
     "flashing",
@@ -481,17 +468,12 @@ _SKIP_EXACT_TAG_NAMES = {
     "floor",
     "fondling",
     "food",
-    "foot in pussy",
-    "foot on head doggy style",
-    "foot play",
-    "foot worship",
     "friend's dad",
     "friendly fire",
     "friends",
     "full bush",
     "full nelson",
     "g-string",
-    "gags",
     "garage",
     "garden",
     "garter",
@@ -499,7 +481,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "gauges",
     "genre fiction",
     "girl next door",
-    "girl-girl doggy style",
     "girlfriend",
     "goddess",
     "gripping asshole",
@@ -513,7 +494,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "hairy labia",
     "halloween",
     "hand in panties",
-    "handcuffs",
     "hands-free orgasm",
     "heavily tattooed",
     "high-heeled sandals",
@@ -539,7 +519,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "landing strip",
     "large labia",
     "lazy reverse cowgirl",
-    "leash",
     "leather",
     "leggings",
     "legs up missionary",
@@ -556,14 +535,11 @@ _SKIP_EXACT_TAG_NAMES = {
     "manual masturbation",
     "married",
     "mask",
-    "masseur",
-    "masseuse",
     "mattress",
     "medical play",
     "members only",
     "military woman",
     "mirror",
-    "missionary (dp)",
     "moaning",
     "mountain",
     "multicolored hair",
@@ -572,9 +548,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "multiple cumshots (2+ penises)",
     "multiple cumshots (2+ targets)",
     "multiple ejaculations",
-    "multiple facials",
-    "multiple facials (2+ penises)",
-    "multiple facials (2+ targets)",
     "multiple orgasms",
     "muscular woman",
     "music",
@@ -583,14 +556,12 @@ _SKIP_EXACT_TAG_NAMES = {
     "neighbors",
     "nerd",
     "new year",
-    "nipple pinching",
     "no bra",
     "no underwear",
     "non-american accent",
     "non-nude",
     "non-nude female",
     "nurse",
-    "nuru massage",
     "object insertion",
     "office",
     "one-piece",
@@ -602,7 +573,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "over-the-knee socks",
     "panties",
     "panties on",
-    "panties to the side",
     "pantyhose",
     "partial paywall",
     "passion",
@@ -613,7 +583,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "pencil skirt",
     "pendant necklace",
     "perky nipples",
-    "photoshoot",
     "pigtails",
     "pink areolas",
     "pink clothing",
@@ -630,8 +599,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "pussy gape",
     "pussy slide",
     "pussy stacking",
-    "pussy to other's mouth",
-    "pussy to other's pussy",
     "pyjamas",
     "rain",
     "real couple",
@@ -641,7 +608,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "reluctance",
     "remaster",
     "restaurant",
-    "restraints",
     "revenge",
     "reverse piledriver",
     "ripped",
@@ -655,7 +621,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "sauna",
     "school",
     "schoolgirl",
-    "schoolgirl outfit",
     "screaming orgasm",
     "secretary",
     "seducer",
@@ -672,10 +637,8 @@ _SKIP_EXACT_TAG_NAMES = {
     "short hair (male)",
     "short skirt",
     "shorts",
-    "side cowgirl",
     "side shot",
     "side winder",
-    "slapping",
     "slow mo",
     "slutty",
     "smiling",
@@ -694,17 +657,11 @@ _SKIP_EXACT_TAG_NAMES = {
     "spread legs",
     "spread pussy",
     "squatting",
-    "squatting cowgirl",
-    "squatting reverse cowgirl",
     "stairs",
-    "stand and carry (dp)",
-    "standing missionary",
-    "standing sex (dp)",
     "stealing",
     "stomach bulge",
     "stretch marks",
     "stuck sex",
-    "student",
     "studio",
     "studio debut",
     "submission",
@@ -717,7 +674,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "super woman",
     "sweater",
     "sweaty",
-    "swimming",
     "swimsuit",
     "swingers",
     "switch",
@@ -741,7 +697,6 @@ _SKIP_EXACT_TAG_NAMES = {
     "toe ring",
     "toe sucking",
     "trailer",
-    "train (oral sex)",
     "trans fucks trans",
     "trans top",
     "transparent clothing",
@@ -765,13 +720,11 @@ _SKIP_EXACT_TAG_NAMES = {
     "visible pussy",
     "waitress",
     "wands",
-    "washing",
     "watch",
     "watching porn",
     "wet panties",
     "wet pussy",
     "wet t-shirt",
-    "whip",
     "white on black",
     "wife",
     "wild",
@@ -866,23 +819,19 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     # it - the position/qualifier itself isn't a distinct tracked axis. Confirmed by direct user
     # review ("many of these are just '<adjective> <existing tag>'"): Blowjob, Rimming, Massage,
     # and 69 clusters below. Substring matching deliberately covers the "- POV" siblings of each
-    # for free (e.g. "anal missionary" also matches "Anal Missionary - POV").
+    # for free (e.g. "anal missionary" also matches "Anal Missionary - POV"). Missionary/Cowgirl/
+    # Side Fuck/Spooning Blowjob and Inverted Blowjob moved to _MULTI_TARGET_MERGE_PHRASES - same
+    # "qualifier is itself an independently-tracked Activity" upgrade as the Anal cluster above.
     "standing blowjob": "01: Category: Blowjob",
     "sloppy blowjob": "01: Category: Blowjob",
-    "missionary blowjob": "01: Category: Blowjob",
-    "cowgirl blowjob": "01: Category: Blowjob",
     "chipmunk blowjob": "01: Category: Blowjob",
     "head pushing blowjob": "01: Category: Blowjob",
     "hands-free blowjob": "01: Category: Blowjob",
-    "inverted blowjob": "01: Category: Blowjob",
     "triple blowjob": "01: Category: Blowjob",
     "dildo blowjob": "01: Category: Blowjob",
-    "side fuck blowjob": "01: Category: Blowjob",
-    "spooning blowjob": "01: Category: Blowjob",
     "blowjob only": "01: Category: Blowjob",
     "blowjob - pov": "01: Category: Blowjob",
     "blowjob nose pinch": "01: Category: Blowjob",
-    "ball sucking during blowjob": "01: Category: Blowjob",
     "dick licking": "01: Category: Blowjob",
     "rimming her": "01: Category: Rimming",
     "rimming him": "01: Category: Rimming",
@@ -901,22 +850,17 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     # "Anal X" where X isn't itself independently tracked - single-target merge into Anal.
     # "Anal Fingering"/"Anal Toys"/"Anal Fisting"/etc. are deliberately excluded here since they
     # already get a good, specific Activity/Prop suggestion instead - not part of what was
-    # confirmed, and merging them here would only lose that specificity.
-    "anal missionary": "01: Category: Anal",
+    # confirmed, and merging them here would only lose that specificity. Missionary/Reverse
+    # Cowgirl/Doggy Style/Cowgirl/Spooning/Side Fuck/Piledriver/Spit Roast used to live here too,
+    # back when none of them were independently tracked - now that they're all approved Activity
+    # Add candidates in their own right, those moved to _MULTI_TARGET_MERGE_PHRASES instead (see
+    # below) so "Anal Missionary" etc. resolve to Anal + the position, not just Anal. Bulldog and
+    # Full Nelson stay here since neither is independently tracked yet.
     "anal gape": "01: Category: Anal",
-    "anal reverse cowgirl": "01: Category: Anal",
-    "anal doggy style": "01: Category: Anal",
-    "anal cowgirl": "01: Category: Anal",
-    "anal spooning": "01: Category: Anal",
-    "anal side fuck": "01: Category: Anal",
     "anal bulldog": "01: Category: Anal",
     "anal full nelson": "01: Category: Anal",
     "anal orgasm": "01: Category: Anal",
-    "anal lazy reverse cowgirl": "01: Category: Anal",
-    "anal squatting reverse cowgirl": "01: Category: Anal",
     "anal loophole": "01: Category: Anal",
-    "anal piledriver": "01: Category: Anal",
-    "anal spit roast": "01: Category: Anal",
     "anal winking": "01: Category: Anal",
     "anal hooks": "01: Category: Anal",
     "anal stretching": "01: Category: Anal",
@@ -948,13 +892,60 @@ _CATEGORY_MERGE_PHRASES: dict[str, str] = {
     "dildo": "01: Prop: Dildo",
     # "Grinding on face is redundant with face sitting" already established this exact pattern
     # (see above) - the directional "on Her" variant is the same concept, just StashDB's more
-    # specific phrasing. "Facesitting on Him" is a separate, already-skip-listed tag and is
-    # unaffected (different exact name).
+    # specific phrasing. "Facesitting on Him" is the same pattern, just the other direction -
+    # see below.
     "facesitting on her": "01: Category: Face Sitting",
+    "facesitting on him": "01: Category: Face Sitting",
     # Forward-declared per the 2026-07-25 review's "All Anal" precedent immediately above this
     # block: "All Vaginal" is the same "no other act type present" descriptor, one level down
     # from the base act. Won't fire until "01: Activity: Vaginal Sex" is a real collection.
     "all vaginal": "01: Activity: Vaginal Sex",
+    # Reclassified from Skip - 2026-07-27 review of the skip list. Fetish (BDSM umbrella).
+    "bdsm": "01: Category: Fetish",
+    "restraints": "01: Category: Fetish",
+    # Ethnicity descriptor, same bucket as "asian woman" above.
+    "black on asian": "01: Attributes: Asian",
+    "washing": "01: Category: Water",
+    "swimming": "01: Category: Water",
+    "student": "01: Category: Teacher/Tutor",
+    "schoolgirl outfit": "01: Category: Teacher/Tutor",
+    "masseur": "01: Category: Massage",
+    "masseuse": "01: Category: Massage",
+    "nuru massage": "01: Category: Massage",
+    "anally plugged sex": "01: Category: Butt Plug",
+    # Position/qualifier variants of positions that are themselves tracked Activity Add
+    # candidates - same pattern as the Anal/Blowjob clusters above, just not Anal/Blowjob-
+    # prefixed.
+    "standing missionary": "01: Activity: Missionary",
+    "squatting cowgirl": "01: Activity: Cowgirl",
+    "side cowgirl": "01: Activity: Cowgirl",
+    "squatting reverse cowgirl": "01: Activity: Reverse Cowgirl",
+    # "(DP)" variants that only need the Double Penetration leg, not also their base position -
+    # confirmed by direct user request (unlike "Doggy Style (DP)"/"Missionary (DP)" below, which
+    # do need both legs).
+    "first dp scene": "01: Activity: Double Penetration",
+    "stand and carry (dp)": "01: Activity: Double Penetration",
+    "standing sex (dp)": "01: Activity: Double Penetration",
+    "pussy to other's pussy": "01: Category: Tribbing",
+    "pussy to other's mouth": "01: Category: Pussy Eating",
+    # "the other Double XYZ entries should just map to XYZ" - confirmed by direct user request,
+    # "Double Digit Penetration" excepted (maps to Fingering instead, per the same request).
+    "double digit penetration": "01: Category: Fingering",
+    "double cowgirl": "01: Activity: Cowgirl",
+    "double fisting": "01: Category: Fisting",
+    "double handjob (2 penises)": "01: Category: Handjob",
+    # "Foot XYZ -> Foot Fetish" - confirmed by direct user request, applied literally (including
+    # "Foot on Head Doggy Style", which stays Foot Fetish-only rather than also picking up Doggy
+    # Style - the user generalized this one without carving out an exception for it).
+    "foot worship": "01: Category: Foot Fetish",
+    "foot in pussy": "01: Category: Foot Fetish",
+    "foot on head doggy style": "01: Category: Foot Fetish",
+    "foot play": "01: Category: Foot Fetish",
+    "nipple pinching": "01: Category: Nipple Play",
+    "nipple touching": "01: Category: Nipple Play",
+    # Substring covers the "(2+ Penises)"/"(2+ Targets)" variants too, same as "double facial".
+    "multiple facials": "01: Category: Facial",
+    "alien": "01: Category: Cosplay",
 }
 
 # A tag that legitimately overlaps two existing collections at once (e.g. "Open Mouth Facial"
@@ -997,15 +988,23 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     "anal masturbation": ["01: Category: Anal", "01: Activity: Masturbation"],
     "self pussy fingering": ["01: Activity: Masturbation", "01: Category: Fingering"],
     # "Almost every POV should be split" (the his/hers gender-direction ones are the exception -
-    # see _SUGGESTED_NAME_OVERRIDES). "01: Theme: POV" doesn't exist yet, so none of these fire
-    # today - each forward-declares the split so it activates once POV is created. Order here
-    # matters: the more specific "anal X - pov" entries must be listed (and therefore matched)
-    # before their bare "X - pov" siblings, since phrase matching is substring-based and
-    # first-match-wins within this dict - "cowgirl - pov" is itself a substring of "anal cowgirl
-    # - pov" and of "reverse cowgirl - pov", so those must come first too.
-    "anal cowgirl - pov": ["01: Category: Anal", "01: Theme: POV"],
-    "anal doggy style - pov": ["01: Category: Anal", "01: Theme: POV"],
-    "anal missionary - pov": ["01: Category: Anal", "01: Theme: POV"],
+    # see _SUGGESTED_NAME_OVERRIDES). Each forward-declares the split so it activates once every
+    # listed target is created. Order here matters: the more specific "anal X - pov" entries must
+    # be listed (and therefore matched) before their bare "X - pov" siblings, since phrase
+    # matching is substring-based and first-match-wins within this dict - "cowgirl - pov" is
+    # itself a substring of "anal cowgirl - pov" and of "reverse cowgirl - pov", so those must
+    # come first too. The "anal X - pov" entries need all three legs (Anal + the position +
+    # POV), not just Anal + POV - confirmed by direct user correction after the position leg was
+    # missed here even though the same position is separately tracked for the bare "anal X"
+    # entries below.
+    "anal cowgirl - pov": ["01: Category: Anal", "01: Activity: Cowgirl", "01: Theme: POV"],
+    "anal doggy style - pov": ["01: Category: Anal", "01: Activity: Doggy Style", "01: Theme: POV"],
+    "anal missionary - pov": ["01: Category: Anal", "01: Activity: Missionary", "01: Theme: POV"],
+    "anal reverse cowgirl - pov": [
+        "01: Category: Anal",
+        "01: Activity: Reverse Cowgirl",
+        "01: Theme: POV",
+    ],
     "blowjob - pov": ["01: Category: Blowjob", "01: Theme: POV"],
     "reverse cowgirl - pov": ["01: Activity: Reverse Cowgirl", "01: Theme: POV"],
     "cowgirl - pov": ["01: Activity: Cowgirl", "01: Theme: POV"],
@@ -1017,6 +1016,33 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     # a real, already-existing target, so this one only depends on POV to activate.
     "titjob - pov": ["01: Category: Tit Fucking", "01: Theme: POV"],
     "doggy style - pov": ["01: Activity: Doggy Style", "01: Theme: POV"],
+    # "Anal X" where X is itself an independently-tracked position (unlike the Gape/Bulldog/etc.
+    # cluster in _CATEGORY_MERGE_PHRASES, which stay Anal-only) - confirmed by direct user
+    # correction: these were wrongly left as single-target Anal-only merges even after their
+    # position counterpart became a tracked Activity Add candidate in its own right. Must be
+    # listed after their "- pov" siblings above (same specific-before-general ordering).
+    "anal missionary": ["01: Category: Anal", "01: Activity: Missionary"],
+    "anal reverse cowgirl": ["01: Category: Anal", "01: Activity: Reverse Cowgirl"],
+    "anal lazy reverse cowgirl": ["01: Category: Anal", "01: Activity: Reverse Cowgirl"],
+    "anal squatting reverse cowgirl": ["01: Category: Anal", "01: Activity: Reverse Cowgirl"],
+    "anal doggy style": ["01: Category: Anal", "01: Activity: Doggy Style"],
+    "anal cowgirl": ["01: Category: Anal", "01: Activity: Cowgirl"],
+    "anal spooning": ["01: Category: Anal", "01: Activity: Spooning"],
+    "anal side fuck": ["01: Category: Anal", "01: Activity: Side Fuck"],
+    "anal piledriver": ["01: Category: Anal", "01: Activity: Piledriver"],
+    "anal spit roast": ["01: Category: Anal", "01: Activity: Spit Roast"],
+    # Same "qualifier is itself an independently-tracked Activity" upgrade, Blowjob cluster.
+    "missionary blowjob": ["01: Category: Blowjob", "01: Activity: Missionary"],
+    "cowgirl blowjob": ["01: Category: Blowjob", "01: Activity: Cowgirl"],
+    "side fuck blowjob": ["01: Category: Blowjob", "01: Activity: Side Fuck"],
+    "spooning blowjob": ["01: Category: Blowjob", "01: Activity: Spooning"],
+    "ball sucking during blowjob": ["01: Category: Blowjob", "01: Activity: Ball Sucking"],
+    # Forward-declared: "Inverted Blowjob" gets its own new Activity collection (its own name
+    # already resolves there via the "blowjob" keyword in _ACTIVITY_KEYWORDS - see
+    # _suggest_new_collection_name) as well as landing in the base Blowjob collection, rather
+    # than collapsing into Blowjob alone like the qualifier-only variants above. Confirmed by
+    # direct user request.
+    "inverted blowjob": ["01: Activity: Inverted Blowjob", "01: Category: Blowjob"],
     # Confirmed by direct user request (2026-07-25 review): "(DP)" variants split into the base
     # position plus the existing Double Penetration activity, rather than getting their own
     # dedicated "Cowgirl (DP)" collection. Neither target is a real collection yet (Cowgirl is
@@ -1027,6 +1053,24 @@ _MULTI_TARGET_MERGE_PHRASES: dict[str, list[str]] = {
     # cowgirl - pov" vs "cowgirl - pov" above.
     "reverse cowgirl (dp)": ["01: Activity: Reverse Cowgirl", "01: Activity: Double Penetration"],
     "cowgirl (dp)": ["01: Activity: Cowgirl", "01: Activity: Double Penetration"],
+    "doggy style (dp)": ["01: Activity: Doggy Style", "01: Activity: Double Penetration"],
+    "missionary (dp)": ["01: Activity: Missionary", "01: Activity: Double Penetration"],
+    # "Blowbang would be Gangbang+Blowjob" precedent above - same idea, StashDB's other name for
+    # a gangbang-oral-only scene. Confirmed by direct user request.
+    "train (oral sex)": ["01: Category: Blowjob", "01: Category: Gangbang"],
+    # Confirmed by direct user request: headcount/composition tags, not folded into the generic
+    # "twosome (lesbian)" rule above since neither of these is a twosome.
+    "first lesbian experience": [
+        "01: Composition: FF Only",
+        "01: Category: Lesbian",
+        "01: Composition: Female Only",
+    ],
+    "girl-girl doggy style": [
+        "01: Composition: FF Only",
+        "01: Category: Lesbian",
+        "01: Composition: Female Only",
+        "01: Activity: Doggy Style",
+    ],
 }
 
 # Exact whole-tag-name (not substring) merges: "black" alone is too short/common a substring to
@@ -1120,6 +1164,14 @@ _SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
     # Respelled per direct user request ("facefuck (no space)").
     "face fuck": "01: Activity: Facefuck",
     "side fuck": "01: Activity: Side Fuck",
+    # Confirmed by direct user request: "ADD Prop: Gag and MERGE Gags -> Gag" - singularized
+    # display name rather than the generic "01: Prop: Gags" the "gags" _PROP_KEYWORDS entry
+    # would otherwise produce verbatim from the tag's own (plural) name.
+    "gags": "01: Prop: Gag",
+    # Confirmed by direct user request: no _ACTIVITY_KEYWORDS word matches "Panties to the Side"
+    # (it would otherwise fall to the generic "01: Category:" default), so the Activity prefix
+    # needs to be forced explicitly.
+    "panties to the side": "01: Activity: Panties to the Side",
     # "Almost every POV should be split... the only exception would be POV: His vs POV: Hers" -
     # these three don't pair with a specific act, so they get their own dedicated collection
     # instead of a multi-target split. "POV: Mixed" is this tool's own extrapolation of the same
@@ -1243,6 +1295,12 @@ _SUGGESTED_NAME_OVERRIDES: dict[str, str] = {
 _ANAL_TAGALONG_TARGET = "01: Category: Anal"
 _TOY_TAGALONG_TARGET = "01: Prop: Sex Toys"
 _TOY_TAGALONG_WORDS = frozenset({"dildo", "toy", "toys", "sybian"})
+# BDSM gear props that also belong in the general Fetish bucket - confirmed by direct user
+# request (Handcuffs/Leash/Whip, each "ADD as a Prop, and MERGE it to <Prop> + Fetish"). "Gag"/
+# "Gags" deliberately excluded: that one was only asked to become its own Prop (via
+# _SUGGESTED_NAME_OVERRIDES), not also tagged into Fetish.
+_FETISH_TAGALONG_TARGET = "01: Category: Fetish"
+_FETISH_TAGALONG_WORDS = frozenset({"handcuffs", "leash", "whip"})
 
 
 def _tagalong_targets(tag_name: str) -> list[str]:
@@ -1253,6 +1311,8 @@ def _tagalong_targets(tag_name: str) -> list[str]:
         extra.append(_ANAL_TAGALONG_TARGET)
     if words & _TOY_TAGALONG_WORDS:
         extra.append(_TOY_TAGALONG_TARGET)
+    if words & _FETISH_TAGALONG_WORDS:
+        extra.append(_FETISH_TAGALONG_TARGET)
     return extra
 
 
@@ -1953,6 +2013,18 @@ _ACCEPTED_ADD_COLLECTIONS: frozenset[str] = frozenset(
         "01: Theme: Romance",
         "01: Theme: Softcore",
         "01: Theme: Sports",
+        # Second accepted-snapshot round, confirmed by direct user request (2026-07-27 skip-list
+        # review): brand-new collection names introduced in that round, not previously suggested
+        # as an "Add" so not part of the 2026-07-25 snapshot above.
+        "01: Activity: Panties to the Side",
+        "01: Prop: Fishnet Stockings",
+        "01: Prop: Handcuffs",
+        "01: Prop: Gag",
+        "01: Category: Photoshoot",
+        "01: Activity: Slapping",
+        "01: Activity: Inverted Blowjob",
+        "01: Prop: Leash",
+        "01: Prop: Whip",
     }
 )
 
@@ -2266,7 +2338,7 @@ def _decision_entries(
 
 def backfill_tags(args: Any) -> int:
     log_level = getattr(args, "log_level", "WARNING").upper()
-    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING), format="%(levelname)s: %(message)s")
+    configure_command_logging(log_level, load_logging_config(args.config))
 
     cfg = load_config(args.config)
     endpoint = getattr(args, "stash_endpoint", None) or cfg.stash_endpoint
@@ -2378,7 +2450,7 @@ def backfill_tags(args: Any) -> int:
 
 def unmapped_tags(args: Any) -> int:
     log_level = getattr(args, "log_level", "WARNING").upper()
-    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING), format="%(levelname)s: %(message)s")
+    configure_command_logging(log_level, load_logging_config(args.config))
 
     cfg = load_config(args.config)
     endpoint = getattr(args, "stash_endpoint", None) or cfg.stash_endpoint
@@ -2432,7 +2504,7 @@ def rename_tags(args: Any) -> int:
     real, or backfill-tags will stop finding any composition tags at all in the interim.
     """
     log_level = getattr(args, "log_level", "WARNING").upper()
-    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING), format="%(levelname)s: %(message)s")
+    configure_command_logging(log_level, load_logging_config(args.config))
 
     cfg = load_config(args.config)
     endpoint = getattr(args, "stash_endpoint", None) or cfg.stash_endpoint
@@ -2465,7 +2537,7 @@ def rename_tags(args: Any) -> int:
 
 def apply_review(args: Any) -> int:
     log_level = getattr(args, "log_level", "WARNING").upper()
-    logging.basicConfig(level=getattr(logging, log_level, logging.WARNING), format="%(levelname)s: %(message)s")
+    configure_command_logging(log_level, load_logging_config(args.config))
 
     entries = _load_review(args.review_file)
     include_ambiguous = getattr(args, "include_ambiguous", False)
