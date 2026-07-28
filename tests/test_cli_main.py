@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from plexadm import audit, cli
 from plexadm.audit import AuditEvent
 
@@ -15,6 +17,26 @@ def _fake_parser(args: argparse.Namespace) -> MagicMock:
 
 def _events_by_action(mock_log_event: MagicMock, action: str) -> list[AuditEvent]:
     return [call.args[0] for call in mock_log_event.call_args_list if call.args[0].action == action]
+
+
+class TestDryRunFlagHonorsEnvVar:
+    # Real gap found live (2026-07-28): --dry-run's help text has always claimed
+    # PLEXADM_DRY_RUN=1 was honored, but nothing ever actually read the env var - confirmed by
+    # checking argparse's own default before the fix.
+    def test_defaults_to_false_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PLEXADM_DRY_RUN", raising=False)
+        args = cli.build_parser().parse_args(["inventory", "snapshot"])
+        assert args.dry_run is False
+
+    def test_env_var_sets_the_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PLEXADM_DRY_RUN", "1")
+        args = cli.build_parser().parse_args(["inventory", "snapshot"])
+        assert args.dry_run is True
+
+    def test_explicit_flag_still_wins_when_env_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PLEXADM_DRY_RUN", raising=False)
+        args = cli.build_parser().parse_args(["inventory", "snapshot", "--dry-run"])
+        assert args.dry_run is True
 
 
 class TestMainErrorAndInterruptLogging:

@@ -18,30 +18,46 @@ def _client(config: InventoryConfig) -> Any:
     )
 
 
-def take_snapshot(ctx: PlexContext, config: InventoryConfig, *, dry_run: bool = False) -> int:
-    """Record one document per video, capturing its full current collection membership.
+def take_snapshot(ctx: PlexContext, config: InventoryConfig, *, dry_run: bool = False, stash: Any | None = None) -> int:
+    """Record one document per video, capturing its full current state.
 
     Distinct purpose from plexadm.audit: audit records "what did plexadm do"; this records "what
     does the state actually look like right now, regardless of what changed it" - the ground
     truth needed to notice and pinpoint drift from any source, not just plexadm's own mutations.
+
+    `stash`, when given a `StashClient`, additionally correlates each video's file path(s) against
+    Stash's own path index to record the matching Stash scene id(s) - the same by-path matching
+    `plexadm.stash_reconcile` already uses. This is deliberately opt-in and not part of the plain
+    snapshot: `stash.all_scenes()` pages the entire Stash library over GraphQL, which is slow
+    enough that it shouldn't be a routine part of every mass_process.sh run.
     """
     run_id = datetime.now(UTC).isoformat(timespec="seconds")
     videos = ctx.all_videos(reload=True)
-    actions = [
-        {
-            "_index": config.index,
-            "_source": {
-                "run_id": run_id,
-                "timestamp": run_id,
-                "rating_key": video.ratingKey,
-                "title": str(video.title),
-                "studio": getattr(video, "studio", None),
-                "writers": sorted(str(w) for w in getattr(video, "writers", None) or []),
-                "collections": sorted(collection_titles(video)),
-            },
+    stash_index: dict[str, str] | None = None
+    if stash is not None:
+        stash_index = {path: scene["id"] for path, scene in stash.all_scenes().items()}
+
+    actions = []
+    for video in videos:
+        file_paths = sorted(str(loc) for loc in (getattr(video, "locations", None) or []))
+        added_at = getattr(video, "addedAt", None)
+        source: dict[str, Any] = {
+            "run_id": run_id,
+            "timestamp": run_id,
+            "rating_key": video.ratingKey,
+            "title": str(video.title),
+            "title_sort": str(getattr(video, "titleSort", None) or ""),
+            "studio": getattr(video, "studio", None),
+            "writers": sorted(str(w) for w in getattr(video, "writers", None) or []),
+            "directors": sorted(str(d) for d in getattr(video, "directors", None) or []),
+            "collections": sorted(collection_titles(video)),
+            "file_paths": file_paths,
+            "date_added": added_at.isoformat() if added_at else None,
         }
-        for video in videos
-    ]
+        if stash_index is not None:
+            source["stash_ids"] = sorted({stash_index[path] for path in file_paths if path in stash_index})
+        actions.append({"_index": config.index, "_source": source})
+
     if dry_run:
         return len(actions)
 

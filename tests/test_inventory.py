@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -10,10 +11,14 @@ from plexadm.inventory import _fetch_run_ids, diff_snapshots, take_snapshot
 def _video(**kwargs: object) -> SimpleNamespace:
     defaults: dict[str, object] = {
         "title": "Test Video",
+        "titleSort": "Test Video",
         "ratingKey": 1,
         "studio": None,
         "writers": [],
+        "directors": [],
         "collections": [],
+        "locations": [],
+        "addedAt": None,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -25,10 +30,14 @@ class TestTakeSnapshot:
         ctx.all_videos.return_value = [
             _video(
                 title="A",
+                titleSort="A Video",
                 ratingKey=1,
                 studio="Independent Content",
                 writers=["Alice"],
+                directors=["Bob"],
                 collections=["01: Composition: Solo", "01: Theme: Cosplay"],
+                locations=["/data/A/scene.mp4"],
+                addedAt=datetime(2026, 7, 20, 12, 30, 0),
             ),
             _video(title="B", ratingKey=2, collections=[]),
         ]
@@ -41,8 +50,17 @@ class TestTakeSnapshot:
         actions = mock_bulk.call_args.args[1]
         assert actions[0]["_index"] == "plexadm-inventory"
         assert actions[0]["_source"]["rating_key"] == 1
+        assert actions[0]["_source"]["title_sort"] == "A Video"
         assert actions[0]["_source"]["collections"] == ["01: Composition: Solo", "01: Theme: Cosplay"]
         assert actions[0]["_source"]["writers"] == ["Alice"]
+        assert actions[0]["_source"]["directors"] == ["Bob"]
+        assert actions[0]["_source"]["file_paths"] == ["/data/A/scene.mp4"]
+        assert actions[0]["_source"]["date_added"] == "2026-07-20T12:30:00"
+        # No addedAt on video B - stays None rather than erroring.
+        assert actions[1]["_source"]["date_added"] is None
+        # No `stash` client given - stash_ids is omitted entirely, not an empty list, so it's
+        # distinguishable from "correlated but matched nothing".
+        assert "stash_ids" not in actions[0]["_source"]
 
     def test_dry_run_does_not_write(self) -> None:
         ctx = MagicMock()
@@ -54,6 +72,28 @@ class TestTakeSnapshot:
 
         assert count == 1
         mock_bulk.assert_not_called()
+
+    def test_with_stash_client_correlates_file_paths_to_scene_ids(self) -> None:
+        ctx = MagicMock()
+        ctx.all_videos.return_value = [
+            _video(ratingKey=1, locations=["/data/A/scene.mp4", "/data/A/scene-remux.mp4"]),
+            _video(ratingKey=2, locations=["/data/B/other.mp4"]),
+        ]
+        stash = MagicMock()
+        stash.all_scenes.return_value = {
+            "/data/A/scene.mp4": {"id": "101"},
+            "/data/A/scene-remux.mp4": {"id": "101"},
+        }
+        config = InventoryConfig(url="http://localhost:9200")
+
+        with patch("plexadm.inventory._client"), patch("opensearchpy.helpers.bulk", return_value=(2, [])) as mock_bulk:
+            take_snapshot(ctx, config, stash=stash)
+
+        actions = mock_bulk.call_args.args[1]
+        # Both file paths point at the same scene - deduplicated to a single id.
+        assert actions[0]["_source"]["stash_ids"] == ["101"]
+        # No path matched in Stash's index - correlated but empty, not omitted.
+        assert actions[1]["_source"]["stash_ids"] == []
 
 
 class TestFetchRunIds:

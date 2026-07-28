@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from plexadm import __version__, audit
-from plexadm.config import load_inventory_config, load_logging_config
+from plexadm.config import load_inventory_config, load_logging_config, resolve_bool_setting
 from plexadm.console import fail, info, ok, warn
 from plexadm.dupes_report import DEFAULT_DUPES_BASE_DIR, _translate_path
 from plexadm.dupes_report import dupes_report as tools_dupes_report
@@ -756,7 +756,32 @@ def inventory_snapshot(args: argparse.Namespace) -> int:
 
     ctx = build_context(args)
     config = _require_inventory_config(args)
-    count = take_snapshot(ctx, config, dry_run=args.dry_run)
+
+    stash = None
+    if getattr(args, "with_stash_ids", True):
+        from plexadm.config import load_config
+        from plexadm.stash import StashClient
+
+        cfg = load_config(args.config)
+        if not cfg.stash_endpoint:
+            # Config file presence is the sole gate here, not --stash-endpoint: enabled-by-
+            # default Stash correlation shouldn't silently start hitting an endpoint nobody
+            # configured just because it was passed on the command line for some other reason.
+            # Only warn if a flag suggests the user was actually trying to force it - a plain
+            # "no [stash] config at all" run stays silent, since skipping is just the default
+            # behavior working as intended.
+            if getattr(args, "stash_endpoint", None):
+                print(
+                    warn(
+                        "Stash is not configured in the config file - ignoring --stash-endpoint "
+                        "and skipping Stash correlation. Add stashEndpoint to your config to "
+                        "enable it by default."
+                    )
+                )
+        else:
+            stash = StashClient(getattr(args, "stash_endpoint", None) or cfg.stash_endpoint)
+
+    count = take_snapshot(ctx, config, dry_run=args.dry_run, stash=stash)
     print(ok(f"{count} video snapshots written to '{config.index}'.{dry_run_note(args)}"))
     return 0
 
@@ -1088,6 +1113,12 @@ def add_common_parser(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
+        # Real gap found live (2026-07-28): this help text has claimed PLEXADM_DRY_RUN=1 was
+        # honored since it was first written, but nothing ever actually read the env var - the
+        # flag's default was hardcoded to store_true's usual False. Fixed by resolving the
+        # default through resolve_bool_setting instead, the same env-wins-over-config-or-default
+        # helper quiet_opensearch_log uses.
+        default=resolve_bool_setting("PLEXADM_DRY_RUN", False),
         help=(
             "Report what would be added, removed, or edited without changing Plex. "
             "Also honored via the PLEXADM_DRY_RUN=1 environment variable, so it can be "
@@ -2575,13 +2606,34 @@ def _build_inventory_commands(sub: Any) -> None:
     snapshot_parser = _make_sub(
         inventory_sub,
         "snapshot",
-        help="Record one document per video with its current full collection membership.",
+        help="Record one document per video with its current full state.",
         description=(
             "Write one document per video to the configured OpenSearch index, capturing\n"
-            "rating_key, title, studio, writers, and the full sorted list of collections it\n"
-            "currently belongs to, tagged with a shared run_id/timestamp for this run."
+            "rating_key, title, title_sort, date_added, studio, writers, directors, the full\n"
+            "sorted list of collections it currently belongs to, and its file path(s), tagged\n"
+            "with a shared run_id/timestamp for this run. Also correlates each video's file\n"
+            "path(s) against Stash's own path index and records the matching Stash scene id(s)\n"
+            "by default (~15-20% slower than skipping it) - unless no [stash] endpoint is\n"
+            "configured, in which case Stash correlation is always skipped regardless of flags."
         ),
-        epilog="Example:\n  plexadm inventory snapshot",
+        epilog=("Examples:\n  plexadm inventory snapshot\n  plexadm inventory snapshot --no-stash-ids"),
+    )
+    snapshot_parser.add_argument(
+        "--no-stash-ids",
+        action="store_false",
+        dest="with_stash_ids",
+        help="Skip correlating each video's file path(s) against Stash's own path index - on by "
+        "default, since it pages the entire Stash library over GraphQL and is noticeably slower "
+        "(~15-20%%) than a plain snapshot.",
+    )
+    snapshot_parser.add_argument(
+        "--stash-endpoint",
+        metavar="URL",
+        dest="stash_endpoint",
+        default=None,
+        help="Override the Stash base URL from config. Only takes effect when the config file "
+        "already has a [stash] endpoint configured and --no-stash-ids wasn't passed - it cannot "
+        "force Stash correlation on when the config file has none configured at all.",
     )
     set_func(snapshot_parser, inventory_snapshot)
 
