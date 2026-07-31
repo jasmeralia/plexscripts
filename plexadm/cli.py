@@ -697,20 +697,119 @@ def set_writers_from_titles(args: argparse.Namespace) -> int:
     return 0
 
 
+def _generated_studio_filter_values(collections: list[Any]) -> dict[str, set[str]]:
+    """Return the studio spellings used by existing auto-generated smart collections.
+
+    Studio is a free-text Plex field, so its filter vocabulary can contain values that differ
+    only by case. The collection's actual filter is the authority here, not its title: using the
+    title would be wrong for the specially named ``02: Independent Content`` collection and for
+    any collection whose display title was edited independently of its filter.
+    """
+    values: dict[str, set[str]] = {}
+    standard_prefix = "02: studio: "
+    independent_title = f"02: {INDEPENDENT_STUDIO}".casefold()
+    for collection in collections:
+        title = str(collection.title)
+        if title.casefold() != independent_title and not title.casefold().startswith(standard_prefix):
+            continue
+        reload_if_partial(collection)
+        if not getattr(collection, "smart", False):
+            continue
+        try:
+            conditions = collection.filters().get("filters", {})
+        except Exception as exc:
+            print(warn(f"Unable to read smart collection filters for '{title}': {exc}"))
+            continue
+        if not isinstance(conditions, dict) or set(conditions) != {"studio"}:
+            continue
+        studio = conditions["studio"]
+        if isinstance(studio, str) and studio:
+            values.setdefault(studio.casefold(), set()).add(studio)
+    return values
+
+
+def _canonical_studio_spellings(videos: list[Any], collections: list[Any]) -> tuple[dict[str, str], set[str]]:
+    """Choose one non-arbitrary spelling for every case-insensitive studio group.
+
+    An existing generated smart collection's filter wins. For a brand-new studio with multiple
+    spellings, use the uniquely most common spelling already present in the library. A tie is
+    deliberately left unresolved so an unattended run never imposes an arbitrary case style.
+    """
+    counts_by_folded: dict[str, Counter[str]] = {}
+    for video in videos:
+        studio = getattr(video, "studio", None)
+        if studio:
+            value = str(studio)
+            counts_by_folded.setdefault(value.casefold(), Counter())[value] += 1
+
+    collection_values = _generated_studio_filter_values(collections)
+    canonical: dict[str, str] = {}
+    unresolved: set[str] = set()
+    for folded, counts in counts_by_folded.items():
+        filter_values = collection_values.get(folded, set())
+        if len(filter_values) == 1:
+            canonical[folded] = next(iter(filter_values))
+            continue
+        if len(filter_values) > 1:
+            ranked_filters = sorted(
+                ((value, counts.get(value, 0)) for value in filter_values), key=lambda item: (-item[1], item[0])
+            )
+            if ranked_filters[0][1] > ranked_filters[1][1]:
+                canonical[folded] = ranked_filters[0][0]
+                choices = ", ".join(f"{value!r} ({count})" for value, count in ranked_filters)
+                print(
+                    warn(
+                        "Smart collection studio filters differ only by case; "
+                        f"using the uniquely most common library spelling: {choices}."
+                    )
+                )
+                continue
+            choices = ", ".join(f"{value!r} ({count})" for value, count in ranked_filters)
+            print(
+                warn(
+                    f"Conflicting smart collection studio filters have no unique library majority: {choices}; skipping."
+                )
+            )
+            unresolved.add(folded)
+            continue
+
+        ranked = counts.most_common()
+        if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
+            choices = ", ".join(f"{value!r} ({count})" for value, count in ranked)
+            print(warn(f"Studio spellings differ only by case with no unique majority: {choices}; skipping."))
+            unresolved.add(folded)
+            continue
+        canonical[folded] = ranked[0][0]
+    return canonical, unresolved
+
+
 def sync_smart_collections(args: argparse.Namespace) -> int:
     ctx = build_context(args)
+    videos = ctx.all_videos(reload=True)
+    collections = list(ctx.section.collections())
+    canonical_studios, unresolved_studios = _canonical_studio_spellings(videos, collections)
     studios: set[str] = set()
     writers: set[str] = set()
-    for video in ctx.all_videos(reload=True):
-        if getattr(video, "studio", None):
-            studios.add(video.studio)
+    normalized = 0
+    for video in videos:
+        studio = getattr(video, "studio", None)
+        if studio:
+            current = str(studio)
+            folded = current.casefold()
+            if folded not in unresolved_studios:
+                canonical = canonical_studios[folded]
+                if current != canonical:
+                    print(warn(f"Normalizing studio for '{video.title}': {current!r} -> {canonical!r}"))
+                    if set_studio(video, canonical, dry_run=args.dry_run):
+                        normalized += 1
+                studios.add(canonical)
         for writer in getattr(video, "writers", []) or []:
             writers.add(str(writer).strip())
-    existing = {str(collection.title).lower() for collection in ctx.section.collections()}
+    existing = {str(collection.title).casefold() for collection in collections}
     created = 0
     for studio in sorted(studios):
         title = f"02: {studio}" if studio == INDEPENDENT_STUDIO else f"02: Studio: {studio}"
-        if title.lower() not in existing:
+        if title.casefold() not in existing:
             print(warn(f"Creating smart collection '{title}'"))
             create_smart_collection(
                 ctx.section,
@@ -720,9 +819,10 @@ def sync_smart_collections(args: argparse.Namespace) -> int:
                 dry_run=args.dry_run,
             )
             created += 1
+            existing.add(title.casefold())
     for writer in sorted(writers):
         title = f"03: Star: {writer}"
-        if title.lower() not in existing:
+        if title.casefold() not in existing:
             print(warn(f"Creating smart collection '{title}'"))
             create_smart_collection(
                 ctx.section,
@@ -732,6 +832,8 @@ def sync_smart_collections(args: argparse.Namespace) -> int:
                 dry_run=args.dry_run,
             )
             created += 1
+            existing.add(title.casefold())
+    print(ok(f"Studio values normalized: {normalized}{dry_run_note(args)}"))
     print(ok(f"Newly created smart collections: {created}{dry_run_note(args)}"))
     return 0
 
@@ -1934,10 +2036,11 @@ def _build_writers_commands(sub: Any) -> None:
     set_and_sync = _make_sub(
         writers_sub,
         "set-and-sync",
-        help="Run `writers set-from-titles` then `smart-collections sync`.",
+        help="Set writers, normalize studio casing, then sync smart collections.",
         description=(
             "Convenience for the common end-of-import flow: derive writers from\n"
-            "titles, then create any missing studio/writer smart collections."
+            "titles, normalize case-only studio variants using existing smart\n"
+            "collection filters, then create missing studio/writer collections."
         ),
         epilog="Example:\n  plexadm writers set-and-sync",
     )
@@ -1959,9 +2062,11 @@ def _build_smart_collection_commands(sub: Any) -> None:
     sync = _make_sub(
         smart_sub,
         "sync",
-        help="Create missing '02: Studio:' and '03: Star:' smart collections.",
+        help="Normalize studio casing and create missing studio/writer smart collections.",
         description=(
-            "Scan every video and create any missing smart collection of the form\n"
+            "Scan every video, normalize case-only studio variants to the spelling\n"
+            "in an existing generated smart collection's filter, and create any\n"
+            "missing smart collection of the form\n"
             f"'02: Studio: <studio>' (or '02: {INDEPENDENT_STUDIO}' for indie) and\n"
             "'03: Star: <writer>'. Existing collections are left alone."
         ),

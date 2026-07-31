@@ -236,6 +236,119 @@ class TestCumshotAbsentExclusionNames:
         assert "01: Category: Compilation" in cli._cumshot_absent_exclusion_names()
 
 
+class TestSyncSmartCollections:
+    @staticmethod
+    def _video(title: str, studio: str) -> MagicMock:
+        return MagicMock(title=title, studio=studio, writers=[])
+
+    @staticmethod
+    def _studio_collection(title: str, studio_filter: str) -> MagicMock:
+        collection = MagicMock(title=title, smart=True)
+        collection.filters.return_value = {"filters": {"studio": studio_filter}}
+        return collection
+
+    def test_existing_collection_filter_is_the_canonical_studio_spelling(self) -> None:
+        canonical = self._video("Canonical", "EXAMPLE STUDIO")
+        variant = self._video("Variant", "Example Studio")
+        collection = self._studio_collection("02: Studio: EXAMPLE STUDIO", "EXAMPLE STUDIO")
+        ctx = MagicMock()
+        ctx.all_videos.return_value = [canonical, variant]
+        ctx.section.collections.return_value = [collection]
+        args = argparse.Namespace(config=None, dry_run=False)
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "set_studio", return_value=True) as mock_set_studio,
+            patch.object(cli, "create_smart_collection") as mock_create,
+        ):
+            assert cli.sync_smart_collections(args) == 0
+
+        mock_set_studio.assert_called_once_with(variant, "EXAMPLE STUDIO", dry_run=False)
+        mock_create.assert_not_called()
+
+    def test_special_independent_collection_uses_its_filter_not_its_title(self) -> None:
+        variant = self._video("Variant", "independent content")
+        collection = self._studio_collection("02: Independent Content", "Independent Content")
+        ctx = MagicMock()
+        ctx.all_videos.return_value = [variant]
+        ctx.section.collections.return_value = [collection]
+        args = argparse.Namespace(config=None, dry_run=True)
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "set_studio", return_value=True) as mock_set_studio,
+            patch.object(cli, "create_smart_collection") as mock_create,
+        ):
+            assert cli.sync_smart_collections(args) == 0
+
+        mock_set_studio.assert_called_once_with(variant, "Independent Content", dry_run=True)
+        mock_create.assert_not_called()
+
+    def test_new_case_variants_use_unique_majority_and_create_one_collection(self) -> None:
+        first = self._video("First", "Example Studio")
+        second = self._video("Second", "Example Studio")
+        variant = self._video("Variant", "example studio")
+        ctx = MagicMock()
+        ctx.all_videos.return_value = [first, second, variant]
+        ctx.section.collections.return_value = []
+        args = argparse.Namespace(config=None, dry_run=False)
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "set_studio", return_value=True) as mock_set_studio,
+            patch.object(cli, "create_smart_collection") as mock_create,
+        ):
+            assert cli.sync_smart_collections(args) == 0
+
+        mock_set_studio.assert_called_once_with(variant, "Example Studio", dry_run=False)
+        mock_create.assert_called_once_with(
+            ctx.section,
+            title="02: Studio: Example Studio",
+            sort="titleSort:asc",
+            filters={"studio": "Example Studio"},
+            dry_run=False,
+        )
+
+    def test_library_majority_resolves_conflicting_existing_filter_spellings(self) -> None:
+        first = self._video("First", "EXAMPLE STUDIO")
+        second = self._video("Second", "EXAMPLE STUDIO")
+        variant = self._video("Variant", "Example Studio")
+        upper_collection = self._studio_collection("02: Studio: EXAMPLE STUDIO", "EXAMPLE STUDIO")
+        mixed_collection = self._studio_collection("02: Studio: Example Studio", "Example Studio")
+        ctx = MagicMock()
+        ctx.all_videos.return_value = [first, second, variant]
+        ctx.section.collections.return_value = [upper_collection, mixed_collection]
+        args = argparse.Namespace(config=None, dry_run=False)
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "set_studio", return_value=True) as mock_set_studio,
+            patch.object(cli, "create_smart_collection") as mock_create,
+        ):
+            assert cli.sync_smart_collections(args) == 0
+
+        mock_set_studio.assert_called_once_with(variant, "EXAMPLE STUDIO", dry_run=False)
+        mock_create.assert_not_called()
+
+    def test_new_case_variants_with_tied_counts_are_left_for_review(self) -> None:
+        upper = self._video("Upper", "EXAMPLE STUDIO")
+        mixed = self._video("Mixed", "Example Studio")
+        ctx = MagicMock()
+        ctx.all_videos.return_value = [upper, mixed]
+        ctx.section.collections.return_value = []
+        args = argparse.Namespace(config=None, dry_run=False)
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "set_studio") as mock_set_studio,
+            patch.object(cli, "create_smart_collection") as mock_create,
+        ):
+            assert cli.sync_smart_collections(args) == 0
+
+        mock_set_studio.assert_not_called()
+        mock_create.assert_not_called()
+
+
 class TestAddSearchResults:
     def test_exclude_collection_adds_plex_side_filters(self) -> None:
         collection = MagicMock(title="01: Composition: Solo")
