@@ -610,7 +610,7 @@ This is the first step in `scripts/mass_process.sh`.
 
 ### Sync Smart Collections
 
-Create missing smart collections for all discovered studios and writers:
+Normalize case-only studio variants and create missing smart collections for all discovered studios and writers:
 
 ```bash
 plexadm smart-collections sync
@@ -633,6 +633,14 @@ Writer smart collections are named:
 ```text
 02: Independent Content
 ```
+
+For a studio whose spelling differs only by capitalization, an existing generated smart
+collection's `studio` filter is canonical and matching video metadata is corrected to that
+spelling. If no collection exists yet, a unique most-common spelling is used; tied spellings are
+reported and skipped rather than choosing an arbitrary case style. If stale collections already
+provide conflicting case-only filters, a unique library majority resolves the conflict; a tie is
+again skipped. These studio edits use the same dry-run, audit logging, and `99: LOCKED`
+protections as other `plexadm` metadata changes.
 
 ### Rename Collections
 
