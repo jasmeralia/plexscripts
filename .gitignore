@@ -16,3 +16,4 @@ reference/*.md
 reference/*.txt
 .claude
 *.csv
+.kanna
