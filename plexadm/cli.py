@@ -428,19 +428,15 @@ def sync_lesbian_single_writer(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cumshot_absent_exclusion_names() -> set[str]:
-    # Local import: stash_backfill_tags imports EXCLUDED_COMPOSITION_COLLECTIONS/
-    # EXCLUDED_HAIR_COLLECTIONS from this module, so a top-level import here would be circular.
-    from plexadm.stash_backfill_tags import _EXISTING_CATEGORY_RENAMES
-
-    # Both the pre- and post-rename_categories() name for every Cumshot collection, so this
-    # works correctly whether or not that migration has run yet.
-    cumshot_names = {
-        name
-        for old, new in _EXISTING_CATEGORY_RENAMES.items()
-        if new.startswith("01: Cumshot: ")
-        for name in (old, new)
-    }
+def _cumshot_absent_exclusion_names(section: Any) -> set[str]:
+    # Live prefix match against Plex's actual current collections, not the static
+    # _EXISTING_CATEGORY_RENAMES migration table - that table only lists Cumshot collections
+    # that happened to exist under an old "01: Category: X" name before being renamed, so any
+    # Cumshot collection created directly (never renamed from Category) was invisible to it.
+    # Confirmed live (2026-09-13): only 15 of 42 real "01: Cumshot: " collections were ever in
+    # that rename table, so the previous approach missed the other 27 both for flagging
+    # (false positives) and for un-flagging once a video was properly tagged.
+    cumshot_names = {str(c.title) for c in section.collections() if str(c.title).startswith("01: Cumshot: ")}
     # "No male performer present" - a cumshot (in the sense this review collection cares
     # about) structurally can't happen. Solo/Lesbian are real, populated collections today;
     # FF Only/Female Only don't exist yet (no backfill logic populates them yet) but are
@@ -465,8 +461,8 @@ def sync_cumshot_absent(args: argparse.Namespace) -> int:
     likely either missing a cumshot tag entirely or a case the exclusions below should have
     caught but didn't. This is a review/cataloging collection only: it never touches Cumshot
     collection membership itself."""
-    excluded_names = _cumshot_absent_exclusion_names()
     ctx = build_context(args)
+    excluded_names = _cumshot_absent_exclusion_names(ctx.section)
     collection = ctx.collection(args.collection)
     exclusion_filters = [not_in_collection(name) for name in sorted(excluded_names)]
     to_add = ctx.search(filters=and_filter(*exclusion_filters, not_in_collection(collection.title)), reload=True)
@@ -1208,8 +1204,8 @@ def add_common_parser(parser: argparse.ArgumentParser) -> None:
         metavar="PATH",
         help=(
             "Path to the Plex config file. "
-            "If omitted, plexadm searches the default locations "
-            "(~/.config/plexadm/config.yaml, /etc/plexadm/config.yaml)."
+            "If omitted, defaults to ~/.plexconfig.ini, or the path in the "
+            "PLEXADM_CONFIG environment variable if set."
         ),
     )
     parser.add_argument(
@@ -2453,14 +2449,21 @@ def _build_stash_commands(sub: Any) -> None:
             "you already scanned Stash yourself and want a faster run.\n"
             "\n"
             "Writes are applied immediately. Use --limit for a test run against a\n"
-            "small subset before pointing this at the full library."
+            "small subset before pointing this at the full library.\n"
+            "\n"
+            "--added-in-last-days N filters to Plex items added in the last N days\n"
+            "(a server-side Plex query, not a full-library walk) - use this for routine\n"
+            "runs that only need to catch up on recently-added content. Because it's a\n"
+            "partial scan like --limit, the 'Stash scenes with no Plex match' scope is\n"
+            "skipped in this mode too."
         ),
         epilog=(
             "Examples:\n"
             "  plexadm stash reconcile --limit 25\n"
             "  plexadm stash reconcile --log-level INFO\n"
             "  plexadm stash reconcile --csv-output scope.csv\n"
-            "  plexadm stash reconcile --skip-scan"
+            "  plexadm stash reconcile --skip-scan\n"
+            "  plexadm stash reconcile --added-in-last-days 7"
         ),
     )
     reconcile_parser.add_argument(
@@ -2473,6 +2476,14 @@ def _build_stash_commands(sub: Any) -> None:
         "--path",
         metavar="PREFIX",
         help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/Studio Name).",
+    )
+    reconcile_parser.add_argument(
+        "--added-in-last-days",
+        metavar="N",
+        type=int,
+        dest="added_in_last_days",
+        help="Only process Plex items added in the last N days (server-side Plex filter on addedAt, "
+        "instead of walking the full library). Combine with --path to further narrow the set.",
     )
     reconcile_parser.add_argument(
         "--log-level",

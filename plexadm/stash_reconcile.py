@@ -89,12 +89,18 @@ def reconcile(args: Any) -> int:
     plex_ctx = PlexContext(cfg)
     limit: int | None = getattr(args, "limit", None)
     path_filter: str | None = getattr(args, "path", None)
+    added_in_last_days: int | None = getattr(args, "added_in_last_days", None)
+    partial_scan = limit is not None or added_in_last_days is not None
     stats = _Stats()
     matched_stash_ids: set[str] = set()
     processed = 0
 
-    print(info("Scanning Plex library..."))
-    videos = plex_ctx.all_videos()
+    if added_in_last_days is not None:
+        print(info(f"Scanning Plex library (added in the last {added_in_last_days} day(s))..."))
+        videos = plex_ctx.search(filters={"addedAt>>": f"{added_in_last_days}d"})
+    else:
+        print(info("Scanning Plex library..."))
+        videos = plex_ctx.all_videos()
     total = len(videos)
     last_progress_at = time.monotonic()
     progress_interval = float(getattr(args, "progress_interval", 60) or 60)
@@ -201,17 +207,22 @@ def reconcile(args: Any) -> int:
 
         stats.updated += 1
 
-    # Stash scenes with no matching Plex item — only meaningful without --limit
+    # Stash scenes with no matching Plex item — only meaningful for a full-library scan
     unmatched_stash: list[dict[str, Any]] = []
-    if limit is None:
+    if not partial_scan:
         for scene_id, scene in stash_scenes_by_id.items():
             if scene_id not in matched_stash_ids:
                 unmatched_stash.append(scene)
 
     print(ok(f"Scenes updated: {stats.updated}"))
     print(info(f"Matched but no usable Plex metadata: {len(stats.matched_no_data)}"))
-    if limit is not None:
-        print(info("(Stash scenes with no Plex match: skipped — run without --limit for complete scope)"))
+    if partial_scan:
+        print(
+            info(
+                "(Stash scenes with no Plex match: skipped — run without --limit/--added-in-last-days "
+                "for complete scope)"
+            )
+        )
     else:
         print(info(f"Stash scenes with no Plex match: {len(unmatched_stash)}"))
 

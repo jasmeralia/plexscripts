@@ -899,6 +899,12 @@ class TestArgumentDispatch:
             (["tools", "fix-dl-scene-name", "clip.mp4"], cli.fix_dl_scene_name, "filename", "clip.mp4"),
             (["top", "studios", "--limit", "3"], cli.print_top, "limit", 3),
             (["stash", "reconcile", "--limit", "2"], cli.stash_reconcile, "limit", 2),
+            (
+                ["stash", "reconcile", "--added-in-last-days", "7"],
+                cli.stash_reconcile,
+                "added_in_last_days",
+                7,
+            ),
             (["inventory", "diff", "--run-a", "one"], cli.inventory_diff, "run_a", "one"),
         ],
     )

@@ -4,6 +4,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "${SCRIPT_DIR}/plexadm-env.sh"
 "$PLEXADM" collection add-search "01: Activity: Anal" "Anal"
 "$PLEXADM" collection add-search "01: Activity: Anal" "butt fuck"
+"$PLEXADM" collection add-search "01: Activity: Anal" "sodomy"
+"$PLEXADM" collection add-search "01: Activity: Anal" "sodomiz"
 "$PLEXADM" collection add-search "01: Theme: Blackmail" "blackmail"
 "$PLEXADM" collection add-search "01: Activity: Blowjob" " BJ "
 "$PLEXADM" collection add-search "01: Activity: Blowjob" " Blow "

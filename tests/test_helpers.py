@@ -56,12 +56,20 @@ def test_matches_ppv_filename_handles_no_locations() -> None:
     assert _matches_ppv_filename(SimpleNamespace()) is False
 
 
-def test_cumshot_absent_exclusion_names_covers_both_pre_and_post_rename_forms() -> None:
-    names = _cumshot_absent_exclusion_names()
-    # A real Cumshot collection: both the pre- and post-rename_categories() name must be
-    # present, so this works whether or not that migration has run yet.
-    assert "01: Category: Facial" in names
+def test_cumshot_absent_exclusion_names_covers_every_live_cumshot_collection() -> None:
+    # Live prefix match, not a static/historical name list - a Cumshot collection never present
+    # in the old rename table (e.g. one created directly, not renamed from "01: Category:")
+    # must still be picked up.
+    section = SimpleNamespace(
+        collections=lambda: [
+            SimpleNamespace(title="01: Cumshot: Facial"),
+            SimpleNamespace(title="01: Cumshot: Creampie"),
+            SimpleNamespace(title="01: Composition: MMF"),
+        ]
+    )
+    names = _cumshot_absent_exclusion_names(section)
     assert "01: Cumshot: Facial" in names
+    assert "01: Cumshot: Creampie" in names
     # Female-only exclusions: the two real, populated ones today, plus the not-yet-existing
     # ones so this starts excluding them automatically once they're created.
     assert "01: Category: Solo" in names
