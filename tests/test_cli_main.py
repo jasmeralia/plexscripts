@@ -233,7 +233,9 @@ class TestCumshotAbsentExclusionNames:
     def test_excludes_compilations(self) -> None:
         # A compilation aggregates clips from many separate sources/scenes, so it isn't expected
         # to carry one single cumshot tag the way a normal scene would.
-        assert "01: Category: Compilation" in cli._cumshot_absent_exclusion_names()
+        section = MagicMock()
+        section.collections.return_value = []
+        assert "01: Category: Compilation" in cli._cumshot_absent_exclusion_names(section)
 
 
 class TestSyncSmartCollections:

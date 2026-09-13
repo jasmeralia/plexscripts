@@ -34,6 +34,7 @@ def _args(tmp_path: Path, **overrides: object) -> SimpleNamespace:
         "stash_endpoint": None,
         "limit": None,
         "path": None,
+        "added_in_last_days": None,
         "log_level": "info",
         "csv_output": str(tmp_path / "scope.csv"),
         "skip_scan": True,
@@ -190,3 +191,63 @@ def test_reconcile_path_filter_and_limit_stop_processing_and_skip_unmatched_scop
     stash.update_scene.assert_called_once_with("1", {"title": "Wanted", "director": "Director"})
     assert "skipped" in capsys.readouterr().out
     assert (tmp_path / "scope.csv").read_text(encoding="utf-8").splitlines() == ["bucket,stash_scene_id,path"]
+
+
+def test_reconcile_added_in_last_days_uses_server_side_filter_and_skips_unmatched_scope(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    scene = {"id": "1", "files": [{"path": "/wanted/one.mp4"}], "performers": [], "tags": []}
+    unmatched_scene = {"id": "2", "files": [{"path": "/other/unmatched.mp4"}], "performers": [], "tags": []}
+    stash = MagicMock()
+    stash.all_scenes.return_value = {"/wanted/one.mp4": scene, "/other/unmatched.mp4": unmatched_scene}
+    plex = MagicMock()
+    plex.search.return_value = [_video(title="Recent", directors=["Director"], locations=["/wanted/one.mp4"])]
+    cfg = PlexConfig("plex", "32400", "token", "Videos", stash_endpoint="http://stash:9999")
+
+    with (
+        patch.object(stash_reconcile, "load_logging_config", return_value=MagicMock()),
+        patch.object(stash_reconcile, "configure_command_logging"),
+        patch.object(stash_reconcile, "load_config", return_value=cfg),
+        patch.object(stash_reconcile, "StashClient", return_value=stash),
+        patch.object(stash_reconcile, "PlexContext", return_value=plex),
+        patch.object(stash_reconcile, "_fetch_plex_cover", return_value=None),
+    ):
+        assert stash_reconcile.reconcile(_args(tmp_path, added_in_last_days=7)) == 0
+
+    plex.search.assert_called_once_with(filters={"addedAt>>": "7d"})
+    plex.all_videos.assert_not_called()
+    stash.update_scene.assert_called_once_with("1", {"title": "Recent", "director": "Director"})
+    output = capsys.readouterr().out
+    assert "added in the last 7 day(s)" in output
+    assert "skipped" in output
+    assert (tmp_path / "scope.csv").read_text(encoding="utf-8").splitlines() == ["bucket,stash_scene_id,path"]
+
+
+def test_reconcile_single_scene_with_view_history_syncs_play_history(tmp_path: Path) -> None:
+    scene = {"id": "1", "files": [{"path": "/watched.mp4"}], "performers": [], "tags": []}
+    stash = MagicMock()
+    stash.all_scenes.return_value = {"/watched.mp4": scene}
+    history = [SimpleNamespace(viewedAt=datetime(2026, 3, 4, 5, 6, 7))]
+    plex = MagicMock()
+    plex.all_videos.return_value = [
+        _video(
+            title="Watched",
+            studio="Example Studio",
+            viewCount=1,
+            locations=["/watched.mp4"],
+            history=MagicMock(return_value=history),
+        )
+    ]
+    cfg = PlexConfig("plex", "32400", "token", "Videos", stash_endpoint="http://stash:9999")
+
+    with (
+        patch.object(stash_reconcile, "load_logging_config", return_value=MagicMock()),
+        patch.object(stash_reconcile, "configure_command_logging"),
+        patch.object(stash_reconcile, "load_config", return_value=cfg),
+        patch.object(stash_reconcile, "StashClient", return_value=stash),
+        patch.object(stash_reconcile, "PlexContext", return_value=plex),
+        patch.object(stash_reconcile, "_fetch_plex_cover", return_value=None),
+    ):
+        assert stash_reconcile.reconcile(_args(tmp_path)) == 0
+
+    stash.sync_play_history.assert_called_once_with("1", ["2026-03-04T05:06:07Z"])
