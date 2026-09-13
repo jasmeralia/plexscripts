@@ -1,5 +1,6 @@
 plexapi
 requests
 opensearch-py
+python-dotenv
 
 pydantic-settings>=2.15.0
