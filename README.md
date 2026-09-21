@@ -95,6 +95,7 @@ sudo make install-system
 That installs:
 
 - `/usr/local/bin/plexadm`
+- `/usr/local/lib/plexadm/.venv` (isolated runtime dependencies)
 - `/usr/local/bin/plexadm-scripts/*.sh`
 - `/usr/local/share/plexadm/reference`
 - bash, zsh, and fish completion definitions in their system completion directories

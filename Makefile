@@ -8,6 +8,7 @@ MYPY := $(VENV)/bin/mypy
 PYTEST := $(VENV)/bin/pytest
 INSTALL_BIN := /usr/local/bin
 INSTALL_LIB := /usr/local/lib/plexadm
+INSTALL_VENV := $(INSTALL_LIB)/.venv
 INSTALL_SHARE := /usr/local/share/plexadm
 
 .PHONY: help install install-system lintfix lint test clean
@@ -27,8 +28,11 @@ install:
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements-dev.txt
 
-install-system: install
+install-system:
 	install -d $(INSTALL_LIB)
+	python3 -m venv $(INSTALL_VENV)
+	$(INSTALL_VENV)/bin/python -m pip install --upgrade pip
+	$(INSTALL_VENV)/bin/python -m pip install -r requirements.txt
 	cp -R plexadm $(INSTALL_LIB)/
 	install -m 0755 bin/plexadm $(INSTALL_BIN)/plexadm
 	install -d $(INSTALL_BIN)/plexadm-scripts
@@ -36,9 +40,9 @@ install-system: install
 	install -d $(INSTALL_SHARE)/reference
 	find reference -maxdepth 1 -type f \( -name '*.txt' -o -name '*.json' \) -exec install -m 0644 {} $(INSTALL_SHARE)/reference/ \;
 	install -d $(INSTALL_SHARE)/completions
-	$(VENV)/bin/register-python-argcomplete --shell bash plexadm > $(INSTALL_SHARE)/completions/plexadm.bash
-	$(VENV)/bin/register-python-argcomplete --shell zsh plexadm > $(INSTALL_SHARE)/completions/plexadm.zsh
-	$(VENV)/bin/register-python-argcomplete --shell fish plexadm > $(INSTALL_SHARE)/completions/plexadm.fish
+	$(INSTALL_VENV)/bin/register-python-argcomplete --shell bash plexadm > $(INSTALL_SHARE)/completions/plexadm.bash
+	$(INSTALL_VENV)/bin/register-python-argcomplete --shell zsh plexadm > $(INSTALL_SHARE)/completions/plexadm.zsh
+	$(INSTALL_VENV)/bin/register-python-argcomplete --shell fish plexadm > $(INSTALL_SHARE)/completions/plexadm.fish
 	install -d /usr/local/share/bash-completion/completions
 	install -m 0644 $(INSTALL_SHARE)/completions/plexadm.bash /usr/local/share/bash-completion/completions/plexadm
 	install -d /usr/local/share/zsh/site-functions
