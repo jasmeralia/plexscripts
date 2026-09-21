@@ -706,6 +706,14 @@ def rename_writer(args: argparse.Namespace) -> int:
         new_title = replace_writer_in_title(video.title, args.old, args.new)
         rename_title(video, new_title, dry_run=args.dry_run)
         remove_writer(video, [args.old], dry_run=args.dry_run)
+        if not args.dry_run:
+            # plexapi's addWriter rebuilds the full tag list from the object's locally
+            # cached `writers` property - without reloading here, it would still see OLD
+            # in that cache (removeWriter's edit call doesn't refresh it) and resend it
+            # alongside NEW, silently undoing the removal above. Real bug found live: a
+            # 78-item Unknown->TBD migration left every video with both "Unknown" and
+            # "TBD" as writers until this reload was added.
+            video.reload()
         if add_writer(video, [args.new], dry_run=args.dry_run):
             changed += 1
     print(ok(f"{changed} videos updated.{dry_run_note(args)}"))

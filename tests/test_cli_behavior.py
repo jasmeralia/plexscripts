@@ -23,6 +23,7 @@ def _video(title: str, **overrides: object) -> SimpleNamespace:
         "studio": None,
         "collections": [],
         "locations": [],
+        "reload": MagicMock(),
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -430,6 +431,44 @@ class TestStudioAndWriterHandlers:
         rename_title.assert_called_once_with(video, "Alice, Bob - Example", dry_run=False)
         remove_writer.assert_called_once_with(video, ["TBD"], dry_run=False)
         add_writer.assert_called_once_with(video, ["Bob"], dry_run=False)
+
+    def test_rename_writer_reloads_between_remove_and_add_so_add_does_not_resurrect_old(self) -> None:
+        # Real bug found live: plexapi's addWriter rebuilds the full tag list from the
+        # object's locally cached `writers` property. Without a reload between
+        # remove_writer and add_writer, that cache still holds OLD (removeWriter's edit
+        # call doesn't refresh it), so add_writer would resend OLD alongside NEW and
+        # silently undo the removal.
+        video = _video("Alice, TBD - Example", writers=["Alice", "TBD"])
+        ctx = MagicMock()
+        ctx.search.return_value = [video]
+        manager = MagicMock()
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "rename_title"),
+            patch.object(cli, "remove_writer", new=manager.remove_writer),
+            patch.object(cli, "add_writer", new=manager.add_writer),
+        ):
+            manager.add_writer.return_value = True
+            video.reload = manager.reload
+            assert cli.rename_writer(_args(old="TBD", new="Bob")) == 0
+
+        assert [call[0] for call in manager.mock_calls] == ["remove_writer", "reload", "add_writer"]
+
+    def test_rename_writer_skips_reload_in_dry_run(self) -> None:
+        video = _video("Alice, TBD - Example", writers=["Alice", "TBD"])
+        ctx = MagicMock()
+        ctx.search.return_value = [video]
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "rename_title"),
+            patch.object(cli, "remove_writer"),
+            patch.object(cli, "add_writer", return_value=True),
+        ):
+            assert cli.rename_writer(_args(old="TBD", new="Bob", dry_run=True)) == 0
+
+        video.reload.assert_not_called()
 
     def test_rename_writer_does_not_count_a_skipped_video(self) -> None:
         video = _video("Alice, TBD - Example", writers=["Alice", "TBD"])
