@@ -34,6 +34,7 @@ install-system:
 	$(INSTALL_VENV)/bin/python -m pip install --upgrade pip
 	$(INSTALL_VENV)/bin/python -m pip install -r requirements.txt
 	cp -R plexadm $(INSTALL_LIB)/
+	chmod -R a+rX $(INSTALL_VENV) $(INSTALL_LIB)/plexadm
 	install -m 0755 bin/plexadm $(INSTALL_BIN)/plexadm
 	install -d $(INSTALL_BIN)/plexadm-scripts
 	find scripts -maxdepth 1 -type f -name '*.sh' -exec install -m 0755 {} $(INSTALL_BIN)/plexadm-scripts/ \;
