@@ -11,14 +11,16 @@ if os.environ.get("PLEXADM_DRY_RUN") and "--dry-run" not in sys.argv:
     sys.argv.append("--dry-run")
 
 repo_root = Path(__file__).resolve().parents[1]
+installed_lib = Path("/usr/local/lib/plexadm")
 
-venv_site = next(iter((repo_root / ".venv" / "lib").glob("python*/site-packages")), None) if (repo_root / ".venv").exists() else None
-if venv_site and str(venv_site) not in sys.path:
-    sys.path.insert(0, str(venv_site))
+for venv_root in (repo_root / ".venv", installed_lib / ".venv"):
+    venv_site = next(iter((venv_root / "lib").glob("python*/site-packages")), None) if venv_root.exists() else None
+    if venv_site and str(venv_site) not in sys.path:
+        sys.path.insert(0, str(venv_site))
+        break
 
 sys.path.insert(0, str(repo_root))
 
-installed_lib = Path("/usr/local/lib/plexadm")
 if installed_lib.exists():
     sys.path.insert(0, str(installed_lib))
 
