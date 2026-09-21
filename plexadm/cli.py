@@ -31,14 +31,16 @@ from plexadm.plex import (
     lock_title_and_sort_title,
     reload_if_partial,
     remove_items,
+    remove_writer,
     rename_collection,
+    rename_title,
     set_studio,
     update_smart_collection_filters,
 )
 from plexadm.progress import progress_prefix
 from plexadm.stash_reconcile import reconcile as stash_reconcile
 from plexadm.stash_sync_tags import sync_tags as stash_sync_tags
-from plexadm.writers import missing_title_writers, read_writer_file, writers_from_title
+from plexadm.writers import missing_title_writers, read_writer_file, replace_writer_in_title, writers_from_title
 
 NO_STUDIO_COLLECTION = "00A: NO STUDIO"
 UNRATED_COLLECTION = "00C: Unrated"
@@ -689,6 +691,23 @@ def set_writers_from_titles(args: argparse.Namespace) -> int:
             print(warn(f"{progress_prefix(index, len(videos))}Adding writers to '{video.title}': {', '.join(missing)}"))
             if add_writer(video, writers_from_title(video.title), dry_run=args.dry_run):
                 changed += 1
+    print(ok(f"{changed} videos updated.{dry_run_note(args)}"))
+    return 0
+
+
+def rename_writer(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    videos = ctx.search(filters={"writer": args.old}, reload=True)
+    changed = 0
+    for index, video in enumerate(videos, 1):
+        print(
+            warn(f"{progress_prefix(index, len(videos))}Renaming writer on '{video.title}': {args.old} -> {args.new}")
+        )
+        new_title = replace_writer_in_title(video.title, args.old, args.new)
+        rename_title(video, new_title, dry_run=args.dry_run)
+        remove_writer(video, [args.old], dry_run=args.dry_run)
+        if add_writer(video, [args.new], dry_run=args.dry_run):
+            changed += 1
     print(ok(f"{changed} videos updated.{dry_run_note(args)}"))
     return 0
 
@@ -2013,7 +2032,10 @@ def _build_writers_commands(sub: Any) -> None:
             "Commands that derive writers from video titles using the project's\n"
             "title-parsing rules (comma- and dash-separated names)."
         ),
-        epilog=("Examples:\n  plexadm writers set-from-titles\n  plexadm writers set-and-sync"),
+        epilog=(
+            "Examples:\n  plexadm writers set-from-titles\n  plexadm writers set-and-sync\n"
+            "  plexadm writers rename Unknown TBD"
+        ),
     )
     writers_sub = _add_subparsers(writers_parser, dest="writers_command", title="writers subcommands")
 
@@ -2041,6 +2063,22 @@ def _build_writers_commands(sub: Any) -> None:
         epilog="Example:\n  plexadm writers set-and-sync",
     )
     set_func(set_and_sync, set_writers_and_sync)
+
+    rename_writer_parser = _make_sub(
+        writers_sub,
+        "rename",
+        help="Rename a writer across every video that has it.",
+        description=(
+            "Find every video with an exact writer match on OLD and replace it with NEW: "
+            "in the writer segment of the title, the sort title, and the writer list. "
+            "Locks both title fields after editing. 'Unknown' is rejected as a "
+            "destination name - use 'TBD' instead."
+        ),
+        epilog="Example:\n  plexadm writers rename Unknown TBD",
+    )
+    rename_writer_parser.add_argument("old", metavar="OLD", help="Existing writer name.")
+    rename_writer_parser.add_argument("new", metavar="NEW", help="Replacement writer name.")
+    set_func(rename_writer_parser, rename_writer)
 
 
 def _build_smart_collection_commands(sub: Any) -> None:

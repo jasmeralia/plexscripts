@@ -3,11 +3,25 @@ from types import SimpleNamespace
 from plexadm.cli import _cumshot_absent_exclusion_names, _filters_reference_collection, _matches_ppv_filename
 from plexadm.filters import and_filter, writer_any
 from plexadm.progress import count_digits, progress_prefix
-from plexadm.writers import writers_from_title
+from plexadm.writers import replace_writer_in_title, writers_from_title
 
 
 def test_writers_from_title_handles_commas_and_dash_variants() -> None:
     assert writers_from_title("Alice, Bob – Example Title") == ["Alice", "Bob"]
+
+
+def test_replace_writer_in_title_replaces_exact_case_insensitive_match() -> None:
+    assert replace_writer_in_title("Alice, TBD - Example Title", "TBD", "Bob") == "Alice, Bob - Example Title"
+    assert replace_writer_in_title("Alice, tbd - Example Title", "TBD", "Bob") == "Alice, Bob - Example Title"
+
+
+def test_replace_writer_in_title_leaves_rest_of_title_untouched() -> None:
+    assert replace_writer_in_title("TBD - PPV Message - 123", "TBD", "Alice") == "Alice - PPV Message - 123"
+
+
+def test_replace_writer_in_title_only_touches_writer_segment() -> None:
+    # "TBD" appearing after the writer/title separator must not be touched.
+    assert replace_writer_in_title("Alice, Bob - Notes about TBD", "TBD", "Carol") == "Alice, Bob - Notes about TBD"
 
 
 def test_writer_any_ignores_empty_names() -> None:

@@ -15,6 +15,7 @@ from plexadm.plex import (
     delete_collection,
     lock_title_and_sort_title,
     remove_items,
+    remove_writer,
     rename_collection,
     rename_title,
     set_studio,
@@ -35,6 +36,7 @@ def _video(**kwargs: object) -> SimpleNamespace:
         "collections": [],
         "edit": MagicMock(),
         "addWriter": MagicMock(),
+        "removeWriter": MagicMock(),
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -247,6 +249,74 @@ class TestSetStudioAddWriterRenameCreate:
                 title=video.title,
                 rating_key=video.ratingKey,
                 details={"writers": ["Alice", "Bob"]},
+            )
+        )
+
+    def test_add_writer_rejects_unknown_and_logs_nothing_if_that_was_the_only_name(self) -> None:
+        video = _video()
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert add_writer(video, ["Unknown"]) is False
+            assert add_writer(video, ["unknown"]) is False
+
+        video.addWriter.assert_not_called()
+        mock_log.assert_not_called()
+
+    def test_add_writer_drops_unknown_but_adds_the_rest(self) -> None:
+        video = _video()
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert add_writer(video, ["Alice", "Unknown"]) is True
+
+        video.addWriter.assert_called_once_with(["Alice"], True)
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="add_writer",
+                title=video.title,
+                rating_key=video.ratingKey,
+                details={"writers": ["Alice"]},
+            )
+        )
+
+    def test_remove_writer_skips_locked_video(self) -> None:
+        video = _video(collections=[LOCKED_COLLECTION])
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert remove_writer(video, ["TBD"]) is False
+
+        video.removeWriter.assert_not_called()
+        mock_log.assert_not_called()
+
+    def test_remove_writer_dry_run_makes_no_edit_but_logs_at_debug(self) -> None:
+        video = _video()
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert remove_writer(video, ["TBD"], dry_run=True) is True
+
+        video.removeWriter.assert_not_called()
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="remove_writer",
+                level="DEBUG",
+                title=video.title,
+                rating_key=video.ratingKey,
+                details={"writers": ["TBD"], "dry_run": True},
+            )
+        )
+
+    def test_remove_writer_edits_and_logs(self) -> None:
+        video = _video()
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert remove_writer(video, ["TBD"]) is True
+
+        video.removeWriter.assert_called_once_with(["TBD"], True)
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="remove_writer",
+                title=video.title,
+                rating_key=video.ratingKey,
+                details={"writers": ["TBD"]},
             )
         )
 

@@ -120,3 +120,6 @@ def test_scene_tag_history_and_merge_mutations_preserve_inputs() -> None:
             "values": {"title": "Merged", "id": "10"},
         }
     }
+
+    client.merge_performers(["67"], "146")
+    assert client._gql.call_args.args[1] == {"input": {"source": ["67"], "destination": "146"}}
