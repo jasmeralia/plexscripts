@@ -413,6 +413,37 @@ class TestStudioAndWriterHandlers:
         set_writers.assert_called_once_with(args)
         sync.assert_called_once_with(args)
 
+    def test_rename_writer_replaces_title_and_writer_for_every_match(self) -> None:
+        video = _video("Alice, TBD - Example", writers=["Alice", "TBD"])
+        ctx = MagicMock()
+        ctx.search.return_value = [video]
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "rename_title") as rename_title,
+            patch.object(cli, "remove_writer") as remove_writer,
+            patch.object(cli, "add_writer", return_value=True) as add_writer,
+        ):
+            assert cli.rename_writer(_args(old="TBD", new="Bob")) == 0
+
+        ctx.search.assert_called_once_with(filters={"writer": "TBD"}, reload=True)
+        rename_title.assert_called_once_with(video, "Alice, Bob - Example", dry_run=False)
+        remove_writer.assert_called_once_with(video, ["TBD"], dry_run=False)
+        add_writer.assert_called_once_with(video, ["Bob"], dry_run=False)
+
+    def test_rename_writer_does_not_count_a_skipped_video(self) -> None:
+        video = _video("Alice, TBD - Example", writers=["Alice", "TBD"])
+        ctx = MagicMock()
+        ctx.search.return_value = [video]
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "rename_title"),
+            patch.object(cli, "remove_writer"),
+            patch.object(cli, "add_writer", return_value=False),
+        ):
+            assert cli.rename_writer(_args(old="TBD", new="Unknown")) == 0
+
 
 class TestListHandlers:
     @pytest.mark.parametrize("source", ["search", "collection", "studio", "writer", "no_studio", "all"])
@@ -895,6 +926,7 @@ class TestArgumentDispatch:
             (["collection", "add-title", "Target", "needle"], cli.add_matching_titles, "pattern", "needle"),
             (["studio", "rename", "Old", "New"], cli.rename_studio, "new", "New"),
             (["writers", "set-from-titles"], cli.set_writers_from_titles, "writers_command", "set-from-titles"),
+            (["writers", "rename", "Unknown", "TBD"], cli.rename_writer, "new", "TBD"),
             (["smart-collections", "sync"], cli.sync_smart_collections, "smart_command", "sync"),
             (["tools", "fix-dl-scene-name", "clip.mp4"], cli.fix_dl_scene_name, "filename", "clip.mp4"),
             (["top", "studios", "--limit", "3"], cli.print_top, "limit", 3),

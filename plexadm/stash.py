@@ -103,6 +103,12 @@ mutation MergeScenes($input: SceneMergeInput!) {
 }
 """
 
+_MERGE_PERFORMERS = """
+mutation MergePerformers($input: PerformerMergeInput!) {
+  performerMerge(input: $input) { id }
+}
+"""
+
 _RESET_PLAY_COUNT = """
 mutation ResetPlayCount($id: ID!) {
   sceneResetPlayCount(id: $id)
@@ -288,3 +294,9 @@ class StashClient:
                 }
             },
         )
+
+    def merge_performers(self, source_ids: list[str], destination_id: str) -> None:
+        """Merge source performers into destination - every scene referencing a source
+        performer is reassigned to destination, and the source performer records are
+        deleted."""
+        self._gql(_MERGE_PERFORMERS, {"input": {"source": source_ids, "destination": destination_id}})

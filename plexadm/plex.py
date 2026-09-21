@@ -223,15 +223,48 @@ def rename_title(video: Any, new_title: str, *, dry_run: bool = False) -> bool:
 
 
 def add_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) -> bool:
+    """Add writer_names to video's writer list.
+
+    Rejects "unknown" (case-insensitive) outright rather than adding it: this project's
+    canonical placeholder for an unidentified writer is "TBD" (see e.g.
+    `plexadm tools fix-dl-scene-name`'s default prefix), and this is the single
+    centralized point every writer addition goes through - blocking it here keeps a
+    second, redundant placeholder value from ever creeping back in, without needing the
+    same check duplicated at every call site.
+    """
+    filtered = [name for name in writer_names if name.strip().lower() != "unknown"]
+    if len(filtered) != len(writer_names):
+        print(warn(f"Skipping 'Unknown' writer on '{video.title}' - use 'TBD' instead"))
+    if not filtered:
+        return False
     if has_collection(video, LOCKED_COLLECTION):
         print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
         return False
     if not dry_run:
-        video.addWriter(writer_names, True)
-    level, details = _mutation_level_and_details(dry_run, {"writers": writer_names})
+        video.addWriter(filtered, True)
+    level, details = _mutation_level_and_details(dry_run, {"writers": filtered})
     log_event(
         AuditEvent(
             action="add_writer",
+            level=level,
+            title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details=details,
+        )
+    )
+    return True
+
+
+def remove_writer(video: Any, writer_names: list[str], *, dry_run: bool = False) -> bool:
+    if has_collection(video, LOCKED_COLLECTION):
+        print(warn(f"Skipping '{video.title}' - locked ('{LOCKED_COLLECTION}')"))
+        return False
+    if not dry_run:
+        video.removeWriter(writer_names, True)
+    level, details = _mutation_level_and_details(dry_run, {"writers": writer_names})
+    log_event(
+        AuditEvent(
+            action="remove_writer",
             level=level,
             title=video.title,
             rating_key=getattr(video, "ratingKey", None),

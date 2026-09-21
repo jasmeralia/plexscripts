@@ -13,6 +13,18 @@ def writers_from_title(title: str) -> list[str]:
     return sorted({writer.strip() for writer in writer_segment.split(",") if writer.strip()})
 
 
+def replace_writer_in_title(title: str, old: str, new: str) -> str:
+    """Replace an exact (case-insensitive) writer name within a title's writer segment
+    (the part before " - "), leaving the rest of the title untouched."""
+    normalized = normalize_title(title)
+    parts = normalized.split(" - ", 1)
+    writer_segment = parts[0]
+    rest = parts[1:]
+    names = [new if name.strip().lower() == old.strip().lower() else name.strip() for name in writer_segment.split(",")]
+    new_segment = ", ".join(names)
+    return " - ".join([new_segment, *rest])
+
+
 def read_writer_file(path: str | Path) -> list[str]:
     return [line.strip() for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
 
