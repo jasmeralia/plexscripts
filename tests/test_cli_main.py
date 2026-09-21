@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -40,6 +41,17 @@ class TestDryRunFlagHonorsEnvVar:
 
 
 class TestMainErrorAndInterruptLogging:
+    def test_filesystem_command_without_config_reaches_dispatch(self, tmp_path: Path) -> None:
+        audit._FAILURE_COUNT = 0
+        source = tmp_path / "WriterOne_ExampleTitle_1920x1080_30fps.mp4"
+        source.touch()
+
+        with patch.object(cli.shutil, "move") as move:
+            result = cli.main(["fixnames", "wowgirls", str(source)])
+
+        assert result == 0
+        move.assert_called_once_with(str(source), str(tmp_path / "Writer One - Example Title.mp4"))
+
     def test_exception_from_command_is_logged_as_error(self) -> None:
         def failing_command(_args: argparse.Namespace) -> int:
             raise RuntimeError("boom")

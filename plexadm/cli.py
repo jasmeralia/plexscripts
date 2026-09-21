@@ -13,7 +13,15 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+import argcomplete
+
 from plexadm import __version__, audit
+from plexadm.completion import (
+    complete_collections,
+    complete_studios,
+    complete_writers,
+    write_completion_cache,
+)
 from plexadm.config import load_inventory_config, load_logging_config, resolve_bool_setting
 from plexadm.console import fail, info, ok, warn
 from plexadm.dupes_report import DEFAULT_DUPES_BASE_DIR, _translate_path
@@ -51,6 +59,39 @@ CUMSHOT_ABSENT_REVIEW_COLLECTION = "00D: Review: Cumshot Absent"
 PPV_COLLECTION = "01: Category: PPV"
 PPV_FILENAME_PATTERN = "*- PPV *"
 DEFAULT_SHORT_VIDEO_MAX_DURATION_MS = 90_000
+
+WOWGIRLS_ALIASES = {
+    "Bella Spark": "Bella Spark aka Emma White",
+    "Emma White": "Bella Spark aka Emma White",
+    "Black Angel": "Black Angel aka Kate Rose",
+    "Kate Rose": "Black Angel aka Kate Rose",
+    "Catalina": "Catalina aka Crystal Gold",
+    "Crystal Gold": "Catalina aka Crystal Gold",
+    "Elin Flame": "Elin Flame aka Elin Holm",
+    "Elin Holm": "Elin Flame aka Elin Holm",
+    "Kamy": "Kamy aka Leona Mia",
+    "Leona Mia": "Kamy aka Leona Mia",
+    "Madison": "Karina Grand aka Madison",
+    # The live source script intentionally uses "Grant" as the input spelling.
+    "Karina Grant": "Karina Grand aka Madison",
+    "Leona Levi": "Leona Levi aka Zoi",
+    "Zoi": "Leona Levi aka Zoi",
+    "Clany": "Marceline Moore aka Clany",
+    "Marceline Moore": "Marceline Moore aka Clany",
+    "Mia Ferrari": "Mia Ferrari aka Shelly Bliss",
+    "Shelly Bliss": "Mia Ferrari aka Shelly Bliss",
+    "Divina": "Sheri Vi aka Divina",
+    "Sheri Vi": "Sheri Vi aka Divina",
+    "Spooky Boo Boo": "SpookyBooBoo aka Deloris Jean",
+    "Deloris Jean": "SpookyBooBoo aka Deloris Jean",
+    "Nancy A": "Nancy Ace",
+}
+
+ULTRALOVE_ALIASES = {
+    **WOWGIRLS_ALIASES,
+    "SpookyBooBoo": "SpookyBooBoo aka Deloris Jean",
+}
+ULTRALOVE_ALIASES.pop("Spooky Boo Boo")
 
 # The "01: Category:" taxonomy is being split into narrower prefixes (see
 # `plexadm collection rename-categories` / stash_backfill_tags._EXISTING_CATEGORY_RENAMES).
@@ -99,6 +140,12 @@ EXCLUDED_HAIR_COLLECTIONS = [
 
 def build_context(args: argparse.Namespace) -> PlexContext:
     return PlexContext.from_config(args.config)
+
+
+def refresh_completion_cache(args: argparse.Namespace) -> int:
+    path = write_completion_cache(build_context(args))
+    print(ok(f"Completion cache refreshed: {path}"))
+    return 0
 
 
 def print_title(video: Any) -> None:
@@ -1125,28 +1172,156 @@ def find_missing_file(args: argparse.Namespace) -> int:
     return 0
 
 
-def fix_dl_scene_name(args: argparse.Namespace) -> int:
-    start_name = "TBD - " if not args.prefix else f"{args.prefix} - "
-    path = Path(args.filename)
-    new_name = start_name + path.name
-    print(new_name)
+def _titleize_filename_part(text: str) -> str:
+    return " ".join(word.capitalize() for word in text.replace("_", " ").split())
+
+
+def _camel_to_spaced(text: str) -> str:
+    return re.sub(r"([a-z])([A-Z])", r"\1 \2", text)
+
+
+def dlscenes_name(filename: str, *, prefix: str | None = None) -> str:
+    match = re.match(r"Scene ([0-9]+) From .*", filename, flags=re.IGNORECASE)
+    if not match:
+        raise ValueError(f"Could not find a 'Scene N From' prefix in '{filename}'.")
+
+    scene_number = match.group(1)
+    start_name = f"{prefix or 'TBD'} - "
+    new_name = re.sub(
+        rf"^Scene {re.escape(scene_number)} From ",
+        start_name,
+        filename,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    new_name = re.sub(r" - (?:2160p|1080p|720p|480p|360p|Low)(?=\.mp4$)", "", new_name, flags=re.IGNORECASE)
+    new_name = re.sub(r" (?:Volume|Vol) ", " ", new_name, flags=re.IGNORECASE)
+    new_name = re.sub(r"(?:Vol|V)([0-9]+)\.mp4$", r"#\1.mp4", new_name, flags=re.IGNORECASE)
+    new_name = re.sub(r" ([0-9]+)\.mp4$", r" #\1.mp4", new_name, flags=re.IGNORECASE)
+    new_name = re.sub(r"(.*) - (.*) The\.mp4$", r"\1 - The \2.mp4", new_name, flags=re.IGNORECASE)
+    return re.sub(r"\.mp4$", f" (Scene #{scene_number}).mp4", new_name, flags=re.IGNORECASE)
+
+
+def wowgirls_name(filename: str) -> str:
+    stem = re.sub(r"\.mp4$", "", filename, flags=re.IGNORECASE)
+    stem = re.sub(r"_\d+fps$", "", stem, flags=re.IGNORECASE)
+    stem = re.sub(r"_\d+x\d+$", "", stem, flags=re.IGNORECASE)
+    parts = stem.split("_")
+    if len(parts) < 2:
+        raise ValueError(f"Could not find performer and title segments in '{filename}'.")
+
+    title = _camel_to_spaced(parts[-1])
+    writers = [WOWGIRLS_ALIASES.get(_camel_to_spaced(part), _camel_to_spaced(part)) for part in parts[:-1]]
+    return f"{', '.join(writers)} - {title}.mp4"
+
+
+def ultralove_name(filename: str) -> str:
+    stem = re.sub(r"\.mp4$", "", filename, flags=re.IGNORECASE)
+    title, separator, writer_info = stem.partition("_")
+    if not separator:
+        raise ValueError(f"Could not find title and performer segments in '{filename}'.")
+
+    writers = []
+    for writer_part in writer_info.split("_"):
+        if any(character.isdigit() for character in writer_part):
+            continue
+        titled = _titleize_filename_part(writer_part.replace("-", " "))
+        writers.append(ULTRALOVE_ALIASES.get(titled, titled))
+    if not writers:
+        raise ValueError(f"Could not find any performer segments in '{filename}'.")
+    return f"{', '.join(writers)} - {_titleize_filename_part(title.replace('-', ' '))}.mp4"
+
+
+def detect_naming_scheme(filename: str) -> str | None:
+    stem = re.sub(r"\.mp4$", "", Path(filename).name, flags=re.IGNORECASE)
+    if re.match(r"^Scene \d+ From ", stem, flags=re.IGNORECASE):
+        return "dlscenes"
+    if re.search(r"_\d+x\d+_\d+fps$", stem, flags=re.IGNORECASE):
+        return "wowgirls"
+    if re.search(r"_\d+x\d+$", stem, flags=re.IGNORECASE):
+        return "ultralove"
+    return None
+
+
+def _rename_fixed_file(source: Path, new_name: str) -> int:
+    if not source.is_file():
+        print(fail(f"File '{source}' does not exist."))
+        return 1
+    target = source.with_name(new_name)
+    if target.exists() and target != source:
+        print(fail(f"Refusing to overwrite existing file '{target}'."))
+        return 1
+    print(f"Renaming '{source}' to '{target}'...")
+    shutil.move(str(source), str(target))
     return 0
 
 
-def ultrafilms_titleize(text: str) -> str:
-    aliases = {
-        "Black Angel": "Black Angel aka Kate Rose",
-        "Kate Rose": "Black Angel aka Kate Rose",
-    }
-    titled = " ".join(part.capitalize() for part in re.split(r"[_\s]+", text.strip()))
-    return aliases.get(titled, titled)
+def _fixname_source_exists(source: Path) -> bool:
+    if source.is_file():
+        return True
+    print(fail(f"File '{source}' does not exist."))
+    return False
 
 
-def fix_ultrafilms_name(args: argparse.Namespace) -> int:
-    path = Path(args.filename)
-    stem = path.stem
-    print(f"{ultrafilms_titleize(stem)}{path.suffix}")
-    return 0
+def fix_dlscenes_name(args: argparse.Namespace) -> int:
+    source = Path(args.filename)
+    if not _fixname_source_exists(source):
+        return 1
+    try:
+        new_name = dlscenes_name(source.name, prefix=args.prefix)
+    except ValueError as exc:
+        print(fail(str(exc)))
+        return 1
+    return _rename_fixed_file(source, new_name)
+
+
+def fix_wowgirls_name(args: argparse.Namespace) -> int:
+    source = Path(args.filename)
+    if not _fixname_source_exists(source):
+        return 1
+    try:
+        new_name = wowgirls_name(source.name)
+    except ValueError as exc:
+        print(fail(str(exc)))
+        return 1
+    return _rename_fixed_file(source, new_name)
+
+
+def fix_ultralove_name(args: argparse.Namespace) -> int:
+    source = Path(args.filename)
+    if not _fixname_source_exists(source):
+        return 1
+    try:
+        new_name = ultralove_name(source.name)
+    except ValueError as exc:
+        print(fail(str(exc)))
+        return 1
+    return _rename_fixed_file(source, new_name)
+
+
+def fix_name_auto(args: argparse.Namespace) -> int:
+    source = Path(args.filename)
+    if not _fixname_source_exists(source):
+        return 1
+    scheme = detect_naming_scheme(source.name)
+    if scheme is None:
+        if " - " in source.stem:
+            print(info(f"'{source}' already looks like it's in the target format; nothing to do."))
+            return 0
+        print(fail(f"Could not detect dlscenes, wowgirls, or ultralove naming for '{source}'."))
+        return 1
+
+    transform = {
+        "dlscenes": lambda name: dlscenes_name(name, prefix=args.prefix),
+        "wowgirls": wowgirls_name,
+        "ultralove": ultralove_name,
+    }[scheme]
+    try:
+        new_name = transform(source.name)
+    except ValueError as exc:
+        print(fail(str(exc)))
+        return 1
+    return _rename_fixed_file(source, new_name)
 
 
 def gen_ofdl_names(args: argparse.Namespace) -> int:
@@ -1293,6 +1468,21 @@ def _add_subparsers(parser: argparse.ArgumentParser, *, dest: str, title: str) -
     )
 
 
+def _attach_dynamic_completers(parser: argparse.ArgumentParser) -> None:
+    completers = {
+        "COLLECTION": complete_collections,
+        "STUDIO": complete_studios,
+        "WRITER": complete_writers,
+    }
+    for action in parser._actions:
+        completer = completers.get(action.metavar) if isinstance(action.metavar, str) else None
+        if completer is not None:
+            action.completer = completer  # type: ignore[attr-defined]
+        if isinstance(action, argparse._SubParsersAction):
+            for subparser in action.choices.values():
+                _attach_dynamic_completers(subparser)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="plexadm",
@@ -1317,6 +1507,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Run `plexadm <command> -h` for details on any command."
         ),
     )
+    # Filesystem-only commands intentionally do not expose Plex configuration
+    # flags, but main() still configures the audit sink before dispatch.
+    parser.set_defaults(config=None)
     parser.add_argument(
         "--version",
         action="version",
@@ -1330,11 +1523,14 @@ def build_parser() -> argparse.ArgumentParser:
     _build_studio_commands(sub)
     _build_writers_commands(sub)
     _build_smart_collection_commands(sub)
+    _build_fixnames_commands(sub)
     _build_tools_commands(sub)
     _build_top_command(sub)
     _build_stash_commands(sub)
     _build_inventory_commands(sub)
+    _build_completion_commands(sub)
 
+    _attach_dynamic_completers(parser)
     return parser
 
 
@@ -2200,6 +2396,78 @@ def _build_smart_collection_commands(sub: Any) -> None:
     set_func(retarget_ppv_parser, retarget_writer_ppv)
 
 
+def _build_fixnames_commands(sub: Any) -> None:
+    fixnames = _make_sub(
+        sub,
+        "fixnames",
+        help="Rename downloaded videos into the library's standard filename format.",
+        description=(
+            "Rename one downloaded video in place using a known source naming scheme.\n"
+            "Use `auto` when the source scheme is not already known."
+        ),
+        epilog=(
+            "Examples:\n"
+            "  plexadm fixnames dlscenes 'Scene 3 From Example - 1080p.mp4' --prefix 'WRITER NAME'\n"
+            "  plexadm fixnames wowgirls 'WriterOne_ExampleTitle_1920x1080_30fps.mp4'\n"
+            "  plexadm fixnames ultralove 'example-title_writer-one_1920x1080.mp4'\n"
+            "  plexadm fixnames auto FILENAME"
+        ),
+    )
+    fixnames_sub = _add_subparsers(fixnames, dest="fixnames_command", title="fixnames subcommands")
+
+    dlscenes = _make_sub(
+        fixnames_sub,
+        "dlscenes",
+        help="Rename a Gamelink/Adult Empire `Scene N From ...` download.",
+        description=(
+            "Remove source resolution markers, normalize volume numbers, and append\n"
+            "the source scene number before renaming FILENAME in place."
+        ),
+    )
+    dlscenes.add_argument("filename", metavar="FILENAME", help="Downloaded video to rename in place.")
+    dlscenes.add_argument(
+        "--prefix",
+        metavar="PREFIX",
+        help="Writer/studio prefix for the new filename (default: 'TBD').",
+    )
+    dlscenes.set_defaults(func=fix_dlscenes_name)
+
+    wowgirls = _make_sub(
+        fixnames_sub,
+        "wowgirls",
+        help="Rename a Wow Girls camel-case download.",
+        description="Split camel-case performer/title segments and rename FILENAME in place.",
+    )
+    wowgirls.add_argument("filename", metavar="FILENAME", help="Downloaded video to rename in place.")
+    wowgirls.set_defaults(func=fix_wowgirls_name)
+
+    ultralove = _make_sub(
+        fixnames_sub,
+        "ultralove",
+        help="Rename an Ultrafilms or .love-site download.",
+        description="Split dash-separated title/performer segments and rename FILENAME in place.",
+    )
+    ultralove.add_argument("filename", metavar="FILENAME", help="Downloaded video to rename in place.")
+    ultralove.set_defaults(func=fix_ultralove_name)
+
+    auto = _make_sub(
+        fixnames_sub,
+        "auto",
+        help="Detect the source naming scheme and apply its rename.",
+        description=(
+            "Detect dlscenes, wowgirls, or ultralove from FILENAME and rename it in\n"
+            "place. Files already resembling the target format are left unchanged."
+        ),
+    )
+    auto.add_argument("filename", metavar="FILENAME", help="Downloaded video to detect and rename in place.")
+    auto.add_argument(
+        "--prefix",
+        metavar="PREFIX",
+        help="Writer/studio prefix when auto detects dlscenes (default: 'TBD').",
+    )
+    auto.set_defaults(func=fix_name_auto)
+
+
 def _build_tools_commands(sub: Any) -> None:
     tools = _make_sub(
         sub,
@@ -2210,7 +2478,6 @@ def _build_tools_commands(sub: Any) -> None:
             "Examples:\n"
             "  plexadm tools find-missing-file '/data/NSFW Scenes/Alice/foo.mp4'\n"
             "  plexadm tools rename-gen-script > rename.sh\n"
-            "  plexadm tools fix-dl-scene-name 'scene.mp4' --prefix 'Alice'\n"
             "  plexadm tools upload-vids --remote-host truenas\n"
             "  plexadm tools dupes-report"
         ),
@@ -2254,38 +2521,6 @@ def _build_tools_commands(sub: Any) -> None:
         help=f"Base directory prefix to strip from file paths (default: {SCENE_BASE_DIR}).",
     )
     set_func(rename_script, rename_gen_script)
-
-    dl = _make_sub(
-        tools_sub,
-        "fix-dl-scene-name",
-        help="Prefix a downloaded scene filename so it sorts under a known writer.",
-        description=(
-            "Print FILENAME prefixed with 'TBD - ' (or '<prefix> - ' if --prefix is given).\n"
-            "This is a pure transform; it does not move the file."
-        ),
-        epilog="Example:\n  plexadm tools fix-dl-scene-name 'scene.mp4' --prefix 'Alice'",
-    )
-    dl.add_argument("filename", metavar="FILENAME", help="Source filename to prefix.")
-    dl.add_argument(
-        "--prefix",
-        metavar="PREFIX",
-        help="Writer/studio prefix to insert before the filename (default: 'TBD').",
-    )
-    dl.set_defaults(func=fix_dl_scene_name)
-
-    ultra = _make_sub(
-        tools_sub,
-        "fix-ultrafilms-name",
-        help="Titleise an UltraFilms-style underscored filename.",
-        description=(
-            "Split FILENAME on whitespace/underscores, title-case every part, apply\n"
-            "the project's writer-name aliases, and print the result with the original\n"
-            "extension preserved."
-        ),
-        epilog="Example:\n  plexadm tools fix-ultrafilms-name 'kate_rose_scene.mp4'",
-    )
-    ultra.add_argument("filename", metavar="FILENAME", help="Source filename to titleise.")
-    ultra.set_defaults(func=fix_ultrafilms_name)
 
     ofdl_names = _make_sub(
         tools_sub,
@@ -2749,6 +2984,36 @@ def _build_stash_commands(sub: Any) -> None:
     set_func(sync_tags_parser, stash_sync_tags)
 
 
+def _build_completion_commands(sub: Any) -> None:
+    completion_parser = _make_sub(
+        sub,
+        "completion",
+        help="Manage cached Plex names used by shell tab-completion.",
+        description=(
+            "Refresh the local collection, studio, and writer name cache used by\n"
+            "bash, zsh, and fish completion. Tab completion itself never contacts Plex."
+        ),
+        epilog="Example:\n  plexadm completion refresh-cache",
+    )
+    completion_sub = _add_subparsers(
+        completion_parser,
+        dest="completion_command",
+        title="completion subcommands",
+    )
+    refresh = _make_sub(
+        completion_sub,
+        "refresh-cache",
+        help="Fetch collection, studio, and writer names from Plex for completion.",
+        description=(
+            "Fetch current collection, studio, and writer names from Plex and write\n"
+            "them to ~/.plexadm/completion-cache.json. Run this periodically to keep\n"
+            "dynamic name completion current."
+        ),
+        epilog="Example:\n  plexadm completion refresh-cache",
+    )
+    set_func(refresh, refresh_completion_cache)
+
+
 def _build_inventory_commands(sub: Any) -> None:
     inventory_parser = _make_sub(
         sub,
@@ -2825,6 +3090,7 @@ def _build_inventory_commands(sub: Any) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    argcomplete.autocomplete(parser)
     args = parser.parse_args(argv)
     audit.configure(load_logging_config(args.config))
     audit.set_invocation_context(rule=args.func.__name__, argv=sys.argv)

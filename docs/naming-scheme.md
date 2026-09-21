@@ -11,12 +11,12 @@ The videos that I am storing come from six major categories of sources, each of 
 
 (Some videos are a single scene video, in which case the `Scene X From` part is discarded.)
 
-### Ultrafilms/Wow Girls
+### Wow Girls
 
 * `Anjelica_SunnySkin_4096x2160_60fps.mp4`
 * `Anjelica_GinaGerson_BreakfastByThePool_1920x1080_30fps.mp4`
 
-### angels.love / sensual.love
+### Ultrafilms / angels.love / sensual.love / nancy.love
 
 `captivating-approach_mencia-francis_naomi-hill_3840x2160.mp4`
 
@@ -37,9 +37,9 @@ For other sources, the naming scheme varies quite a bit, usually based on the to
 
 ### My Scheme
 
-* `Anjelica - Sunny Skin.mp4` (formerly from Ultrafilms/Wow Girls)
-* `Anjelica, Gina Gerson - Breakfast By The Pool.mp4` (formerly from Ultrafilms/Wow Girls)
-* `Mencia Francis, Naomi Hill - Captivating Approach.mp4` (formerly from angels.love/sensual.love)
+* `Anjelica - Sunny Skin.mp4` (formerly from Wow Girls)
+* `Anjelica, Gina Gerson - Breakfast By The Pool.mp4` (formerly from Wow Girls)
+* `Mencia Francis, Naomi Hill - Captivating Approach.mp4` (formerly from Ultrafilms/.love sites)
 * `Asia Carrera - The Dinner Party (Scene #8).mp4` (formerly from Gamelink/Adult Empire)
 * `Joanna Angel - Gothsend #4 (Scene #1).mp4` (formerly from Gamelink/Adult Empire)
 * `Kenzie Reeves, Vina Sky - Commission.mp4` (formerly from Tushy)
@@ -87,4 +87,3 @@ These are all smart collections based off of the stars, which I store as writers
 
 * `03: Star: Anjelica`
 * `03: Star: Gina Gerson`
-

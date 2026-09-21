@@ -97,6 +97,36 @@ That installs:
 - `/usr/local/bin/plexadm`
 - `/usr/local/bin/plexadm-scripts/*.sh`
 - `/usr/local/share/plexadm/reference`
+- bash, zsh, and fish completion definitions in their system completion directories
+
+## Shell Completion
+
+`plexadm` supports command, subcommand, option, collection, studio, and writer
+name completion through `argcomplete`. A system install registers completion for
+bash, zsh, and fish automatically. For a development checkout, add the command
+for your shell to its startup file:
+
+```bash
+# zsh (~/.zshrc) or bash (~/.bashrc)
+eval "$(register-python-argcomplete plexadm)"
+```
+
+```fish
+# fish (~/.config/fish/config.fish)
+register-python-argcomplete --shell fish plexadm | source
+```
+
+Collection, studio, and writer suggestions come from a local cache so pressing
+Tab never waits for Plex or fails when Plex is unavailable. Seed or refresh it
+after library changes with:
+
+```bash
+plexadm completion refresh-cache
+```
+
+This writes `~/.plexadm/completion-cache.json`. Run the refresh command
+periodically (manually or with your system scheduler) if you want newly added
+names to appear in completion results.
 
 ## Docker
 
@@ -696,6 +726,28 @@ Override the collection used by top reports where applicable:
 plexadm top unrated-writers --collection "00C: Unrated"
 ```
 
+## Fix Downloaded Filenames
+
+`plexadm fixnames` renames a single downloaded video in place to the library's
+[standard naming scheme](docs/naming-scheme.md). Choose the source explicitly:
+
+```bash
+plexadm fixnames dlscenes "Scene 3 From Example Title - 1080p.mp4" --prefix "WRITER NAME"
+plexadm fixnames wowgirls "WriterOne_ExampleTitle_1920x1080_30fps.mp4"
+plexadm fixnames ultralove "example-title_writer-one_1920x1080.mp4"
+```
+
+Or let `auto` distinguish the three source formats from their scene, resolution,
+and frame-rate markers:
+
+```bash
+plexadm fixnames auto "WriterOne_ExampleTitle_1920x1080_30fps.mp4"
+```
+
+`auto` leaves a filename that already resembles `Writer - Title.mp4` unchanged
+and exits non-zero when it cannot recognize the source format. Its optional
+`--prefix` is used only when the detected format is `dlscenes`.
+
 ## Tools
 
 Find which Plex item references a file path:
@@ -732,19 +784,6 @@ manual review, never an automatic deletion:
 - durations match and a PPV file is the highest resolution -> delete the non-PPV file(s)
 - durations match and no file contains PPV -> delete the lowest-resolution/size file(s)
 - durations match and a PPV file exists but isn't the highest resolution -> needs manual review
-
-Generate a download scene name:
-
-```bash
-plexadm tools fix-dl-scene-name "original.mp4"
-plexadm tools fix-dl-scene-name "original.mp4" --prefix "Alice"
-```
-
-Generate an UltraFilms-style filename:
-
-```bash
-plexadm tools fix-ultrafilms-name "some_file_name.mp4"
-```
 
 Print OFDL name mappings from JSON:
 

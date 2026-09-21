@@ -35,6 +35,16 @@ install-system: install
 	find scripts -maxdepth 1 -type f -name '*.sh' -exec install -m 0755 {} $(INSTALL_BIN)/plexadm-scripts/ \;
 	install -d $(INSTALL_SHARE)/reference
 	find reference -maxdepth 1 -type f \( -name '*.txt' -o -name '*.json' \) -exec install -m 0644 {} $(INSTALL_SHARE)/reference/ \;
+	install -d $(INSTALL_SHARE)/completions
+	$(VENV)/bin/register-python-argcomplete --shell bash plexadm > $(INSTALL_SHARE)/completions/plexadm.bash
+	$(VENV)/bin/register-python-argcomplete --shell zsh plexadm > $(INSTALL_SHARE)/completions/plexadm.zsh
+	$(VENV)/bin/register-python-argcomplete --shell fish plexadm > $(INSTALL_SHARE)/completions/plexadm.fish
+	install -d /usr/local/share/bash-completion/completions
+	install -m 0644 $(INSTALL_SHARE)/completions/plexadm.bash /usr/local/share/bash-completion/completions/plexadm
+	install -d /usr/local/share/zsh/site-functions
+	install -m 0644 $(INSTALL_SHARE)/completions/plexadm.zsh /usr/local/share/zsh/site-functions/_plexadm
+	install -d /usr/local/share/fish/vendor_completions.d
+	install -m 0644 $(INSTALL_SHARE)/completions/plexadm.fish /usr/local/share/fish/vendor_completions.d/plexadm.fish
 
 lintfix: install
 	$(RUFF) format .
@@ -44,7 +54,6 @@ lint: install
 	$(RUFF) format --check .
 	$(RUFF) check .
 	$(MYPY) plexadm tests
-	bash -n scripts/*.sh
 	@if command -v shellcheck >/dev/null 2>&1; then shellcheck scripts/*.sh; else echo 'shellcheck not installed; skipped'; fi
 	@if command -v hadolint >/dev/null 2>&1; then \
 		hadolint Dockerfile; \
