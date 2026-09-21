@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
@@ -111,7 +112,7 @@ class TestCollectionHandlers:
     )
     def test_copy_handlers_build_filters_and_add_results(
         self,
-        handler: object,
+        handler: Callable[[argparse.Namespace], int],
         handler_args: argparse.Namespace,
         expected_filters: dict[str, object],
     ) -> None:
@@ -826,24 +827,136 @@ class TestToolsAndTop:
         assert "Title: Found" in output
         assert "No Plex item found for /media/missing.mp4" in output
 
-    def test_filename_formatters_and_mapping_output(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_filename_mapping_output(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         mapping = tmp_path / "map.json"
         mapping.write_text('{"b": "two", "a": "one"}', encoding="utf-8")
 
-        assert cli.fix_dl_scene_name(_args(filename="clip.mp4", prefix=None)) == 0
-        assert cli.fix_dl_scene_name(_args(filename="clip.mp4", prefix="Writer A")) == 0
-        assert cli.fix_ultrafilms_name(_args(filename="example_writer.mp4")) == 0
         assert cli.gen_ofdl_names(_args(map_file=str(mapping))) == 0
 
         output = capsys.readouterr().out.splitlines()
-        assert output == [
-            "TBD - clip.mp4",
-            "Writer A - clip.mp4",
-            "Example Writer.mp4",
-            "a: one",
-            "b: two",
-        ]
-        assert cli.ultrafilms_titleize("black_angel") == "Black Angel aka Kate Rose"
+        assert output == ["a: one", "b: two"]
+
+    @pytest.mark.parametrize(
+        ("filename", "prefix", "expected"),
+        [
+            (
+                "Scene 8 From Dinner Party The - 1080p.mp4",
+                "Writer A",
+                "Writer A - The Dinner Party (Scene #8).mp4",
+            ),
+            (
+                "Scene 1 From Example Vol4 - 720p.mp4",
+                None,
+                "TBD - Example #4 (Scene #1).mp4",
+            ),
+            (
+                "Scene 2 From Example Volume 3 - Low.mp4",
+                None,
+                "TBD - Example #3 (Scene #2).mp4",
+            ),
+        ],
+    )
+    def test_dlscenes_name(self, filename: str, prefix: str | None, expected: str) -> None:
+        assert cli.dlscenes_name(filename, prefix=prefix) == expected
+
+    def test_wowgirls_name(self) -> None:
+        assert (
+            cli.wowgirls_name("BlackAngel_SecondWriter_BreakfastByThePool_1920x1080_30fps.mp4")
+            == "Black Angel aka Kate Rose, Second Writer - Breakfast By The Pool.mp4"
+        )
+
+    def test_ultralove_name(self) -> None:
+        assert (
+            cli.ultralove_name("captivating-approach_kate-rose_second-writer_3840x2160.mp4")
+            == "Black Angel aka Kate Rose, Second Writer - Captivating Approach.mp4"
+        )
+
+    @pytest.mark.parametrize(
+        ("filename", "expected"),
+        [
+            ("Scene 8 From Example - 1080p.mp4", "dlscenes"),
+            ("WriterOne_ExampleTitle_1920x1080_30fps.mp4", "wowgirls"),
+            ("example-title_writer-one_1920x1080.mp4", "ultralove"),
+            ("Writer One - Example Title.mp4", None),
+        ],
+    )
+    def test_detect_naming_scheme(self, filename: str, expected: str | None) -> None:
+        assert cli.detect_naming_scheme(filename) == expected
+
+    @pytest.mark.parametrize(
+        ("handler", "filename", "expected_name"),
+        [
+            (
+                cli.fix_dlscenes_name,
+                "Scene 2 From Example V3 - 1080p.mp4",
+                "Writer A - Example #3 (Scene #2).mp4",
+            ),
+            (
+                cli.fix_wowgirls_name,
+                "WriterOne_ExampleTitle_1920x1080_30fps.mp4",
+                "Writer One - Example Title.mp4",
+            ),
+            (
+                cli.fix_ultralove_name,
+                "example-title_writer-one_1920x1080.mp4",
+                "Writer One - Example Title.mp4",
+            ),
+        ],
+    )
+    def test_fixnames_handlers_move_file(
+        self,
+        tmp_path: Path,
+        handler: Callable[[argparse.Namespace], int],
+        filename: str,
+        expected_name: str,
+    ) -> None:
+        source = tmp_path / filename
+        source.touch()
+        args = _args(filename=str(source), prefix="Writer A")
+
+        with patch.object(cli.shutil, "move") as move:
+            assert handler(args) == 0
+
+        move.assert_called_once_with(str(source), str(tmp_path / expected_name))
+
+    def test_fixnames_auto_routes_and_noops_target_format(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        source = tmp_path / "WriterOne_ExampleTitle_1920x1080_30fps.mp4"
+        source.touch()
+        with patch.object(cli.shutil, "move") as move:
+            assert cli.fix_name_auto(_args(filename=str(source), prefix=None)) == 0
+        move.assert_called_once_with(str(source), str(tmp_path / "Writer One - Example Title.mp4"))
+
+        target = tmp_path / "Writer One - Example Title.mp4"
+        target.touch()
+        assert cli.fix_name_auto(_args(filename=str(target), prefix=None)) == 0
+        assert "already looks like it's in the target format" in capsys.readouterr().out
+
+    def test_fixnames_auto_rejects_unknown_name(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        source = tmp_path / "unknown.mp4"
+        source.touch()
+        assert cli.fix_name_auto(_args(filename=str(source), prefix=None)) == 1
+        assert "Could not detect dlscenes, wowgirls, or ultralove" in capsys.readouterr().out
+
+    def test_fixnames_missing_file_is_reported(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        source = tmp_path / "WriterOne_ExampleTitle_1920x1080_30fps.mp4"
+        assert cli.fix_wowgirls_name(_args(filename=str(source))) == 1
+        assert f"File '{source}' does not exist" in capsys.readouterr().out
+
+    def test_fixnames_refuses_to_overwrite_existing_target(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        source = tmp_path / "WriterOne_ExampleTitle_1920x1080_30fps.mp4"
+        target = tmp_path / "Writer One - Example Title.mp4"
+        source.touch()
+        target.touch()
+
+        with patch.object(cli.shutil, "move") as move:
+            assert cli.fix_wowgirls_name(_args(filename=str(source))) == 1
+
+        move.assert_not_called()
+        assert f"Refusing to overwrite existing file '{target}'" in capsys.readouterr().out
 
     def test_ofdl_rsync_returns_subprocess_status(self, capsys: pytest.CaptureFixture[str]) -> None:
         with patch.object(cli.subprocess, "call", return_value=23) as subprocess_call:
@@ -967,7 +1080,10 @@ class TestArgumentDispatch:
             (["writers", "set-from-titles"], cli.set_writers_from_titles, "writers_command", "set-from-titles"),
             (["writers", "rename", "Unknown", "TBD"], cli.rename_writer, "new", "TBD"),
             (["smart-collections", "sync"], cli.sync_smart_collections, "smart_command", "sync"),
-            (["tools", "fix-dl-scene-name", "clip.mp4"], cli.fix_dl_scene_name, "filename", "clip.mp4"),
+            (["fixnames", "dlscenes", "clip.mp4"], cli.fix_dlscenes_name, "filename", "clip.mp4"),
+            (["fixnames", "wowgirls", "clip.mp4"], cli.fix_wowgirls_name, "filename", "clip.mp4"),
+            (["fixnames", "ultralove", "clip.mp4"], cli.fix_ultralove_name, "filename", "clip.mp4"),
+            (["fixnames", "auto", "clip.mp4"], cli.fix_name_auto, "filename", "clip.mp4"),
             (["top", "studios", "--limit", "3"], cli.print_top, "limit", 3),
             (["stash", "reconcile", "--limit", "2"], cli.stash_reconcile, "limit", 2),
             (
