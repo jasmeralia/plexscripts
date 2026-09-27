@@ -127,6 +127,12 @@ mutation MetadataScan($input: ScanMetadataInput!) {
 }
 """
 
+_METADATA_CLEAN = """
+mutation MetadataClean($input: CleanMetadataInput!) {
+  metadataClean(input: $input)
+}
+"""
+
 _FIND_JOB = """
 query FindJob($id: ID!) {
   findJob(input: {id: $id}) { id status error }
@@ -264,6 +270,15 @@ class StashClient:
         """
         scan_input: dict[str, Any] = {"paths": paths or [], "scanGeneratePhashes": generate_phashes}
         job_id = self._gql(_METADATA_SCAN, {"input": scan_input})["metadataScan"]
+        self._wait_for_job(job_id, timeout=timeout, poll_interval=poll_interval)
+
+    def clean(self, *, timeout: float = 3600.0, poll_interval: float = 3.0) -> None:
+        """Remove Stash scene records whose files are no longer present in configured paths.
+
+        Run after scanning so files moved within the library can be found and their existing
+        scene records updated before the clean task removes records for paths that are gone.
+        """
+        job_id = self._gql(_METADATA_CLEAN, {"input": {"dryRun": False}})["metadataClean"]
         self._wait_for_job(job_id, timeout=timeout, poll_interval=poll_interval)
 
     def _wait_for_job(self, job_id: str, *, timeout: float, poll_interval: float) -> None:

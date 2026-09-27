@@ -2725,9 +2725,10 @@ def _build_stash_commands(sub: Any) -> None:
             "no Plex match at all).\n"
             "\n"
             "By default, triggers a Stash library scan (with phash generation) first\n"
-            "and waits for it to finish, so newly-added Plex content is guaranteed to\n"
-            "already be visible in Stash before matching starts. Use --skip-scan if\n"
-            "you already scanned Stash yourself and want a faster run.\n"
+            "and waits for it to finish, then runs Stash Clean before matching. The\n"
+            "scan lets Stash update moved-file paths before Clean removes records for\n"
+            "files no longer present. Stash storage must be available. Use --skip-scan\n"
+            "if you already scanned Stash yourself; Clean still runs.\n"
             "\n"
             "Writes are applied immediately. Use --limit for a test run against a\n"
             "small subset before pointing this at the full library.\n"
@@ -2791,8 +2792,8 @@ def _build_stash_commands(sub: Any) -> None:
         "--skip-scan",
         action="store_true",
         dest="skip_scan",
-        help="Skip the automatic Stash library scan (with phash generation) that normally "
-        "runs before reconciling. Use if you already scanned Stash yourself.",
+        help="Skip the automatic Stash library scan (with phash generation). Stash Clean still "
+        "runs before reconciling.",
     )
     set_func(reconcile_parser, stash_reconcile)
 

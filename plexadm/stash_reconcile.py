@@ -81,6 +81,10 @@ def reconcile(args: Any) -> int:
         stash.scan()
         print(ok("Stash scan complete."))
 
+    print(info("Cleaning Stash records for files no longer present..."))
+    stash.clean()
+    print(ok("Stash clean complete."))
+
     print(info("Connecting to Stash and building scene index..."))
     stash_index = stash.all_scenes()  # path -> scene dict
     stash_scenes_by_id: dict[str, dict[str, Any]] = {s["id"]: s for s in stash_index.values()}

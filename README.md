@@ -4,6 +4,14 @@
 
 Most commands mutate Plex immediately. There is no global dry-run mode yet.
 
+### Stash Reconcile
+
+`plexadm stash reconcile` scans Stash (including phash generation), then runs Stash Clean before
+matching Plex items to Stash scenes by file path. Scanning first lets Stash update scene paths
+when files have moved inside the configured library; Clean then removes database records for
+files that are no longer present. The underlying media files are not deleted. Stash storage must
+be available for both operations. `--skip-scan` skips only the scan; Clean still runs.
+
 ## Configuration
 
 Create `~/.plexconfig.ini` with a `[default]` section:
