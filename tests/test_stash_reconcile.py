@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -160,12 +160,16 @@ class TestReconcileScanGating:
     def test_default_triggers_scan_before_indexing(self, tmp_path: Path) -> None:
         fake_stash = self._run(tmp_path)
         fake_stash.scan.assert_called_once_with()
+        fake_stash.clean.assert_called_once_with()
         fake_stash.all_scenes.assert_called_once_with()
+        assert fake_stash.method_calls[:3] == [call.scan(), call.clean(), call.all_scenes()]
 
     def test_skip_scan_flag_bypasses_scan(self, tmp_path: Path) -> None:
         fake_stash = self._run(tmp_path, skip_scan=True)
         fake_stash.scan.assert_not_called()
+        fake_stash.clean.assert_called_once_with()
         fake_stash.all_scenes.assert_called_once_with()
+        assert fake_stash.method_calls[:2] == [call.clean(), call.all_scenes()]
 
 
 class TestReconcileProgress:
