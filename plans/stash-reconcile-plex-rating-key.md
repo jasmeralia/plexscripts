@@ -1,0 +1,51 @@
+# Design: store the Plex rating key on Stash scenes during reconcile
+
+## Goal
+
+After `plexadm stash reconcile`, a Stash scene that matches a Plex video by file path should expose that video's Plex `ratingKey`. This makes a Stash-to-Plex lookup possible without rescanning and joining both libraries' file paths. A Plex merge should update the surviving Stash scene to the surviving Plex rating key on the next reconcile run.
+
+This document describes the implementation; it does not change reconcile behavior yet.
+
+## Current behavior and supported storage
+
+`plexadm/stash_reconcile.py` scans and cleans Stash, indexes scenes by each file path, then matches every Plex video's `locations` to that index. One matched scene receives `sceneUpdate`; multiple matched scenes are combined with `sceneMerge`, with the lowest numeric Stash scene ID as the destination. A Plex video with no usable descriptive metadata is recorded in the scope CSV and receives no Stash update. `plexadm/stash.py` currently requests no scene identifier field that could hold a Plex key.
+
+The running Stash instance reports version `v0.31.1`. Its GraphQL schema exposes `Scene.custom_fields: Map!` and `SceneUpdateInput.custom_fields: CustomFieldsInput`; `CustomFieldsInput.partial` updates only named keys, while `full` replaces the entire map. `SceneFilterType.custom_fields` accepts field criteria, so this field can support a direct Stash query. The [Stash scene schema](https://github.com/stashapp/stash/blob/develop/graphql/schema/types/scene.graphql) and [custom fields input](https://github.com/stashapp/stash/blob/develop/graphql/schema/types/metadata.graphql) describe the same API. Check schema support at startup or document `v0.31.1` as the minimum supported Stash version for this feature.
+
+Use a single namespaced custom field, `plex_rating_key`, containing the decimal `ratingKey` as a **string**. Plex IDs identify records within one Plex server, which matches this tool's configured single-server model. The key can change if Plex replaces an item; it is a lookup hint maintained by reconcile, not a permanent identity for the media file. If multiple Plex servers are supported later, add server identity before treating the key as globally unique.
+
+Do not use Stash `stash_ids`: those identify entities on Stash-box endpoints. `code`, `details`, and `urls` have user-facing scene metadata meanings and could overwrite unrelated values. The partial custom-field update preserves other custom fields.
+
+## Reconcile flow
+
+1. Add `custom_fields` to `_FIND_SCENES`, and index each scene's current `plex_rating_key` alongside its file paths. Normalize `video.ratingKey` to a nonempty decimal string before writing it. An absent or invalid Plex key is reported and skipped.
+2. After the Plex video list is loaded, build a map from matched Stash scene ID to the set of Plex rating keys seen through file paths. A scene matched to more than one Plex item is ambiguous. Report its ID and conflicting keys, skip all writes and merges involving that scene, and count it separately. This prevents the last item processed from silently winning.
+3. For an ordinary one-scene match, include `custom_fields: {partial: {plex_rating_key: key}}` in the existing `sceneUpdate` input. For a video with no usable descriptive metadata, issue a field-only `sceneUpdate` for **each** matched scene whose key is missing or different; keep those scenes in the existing `matched_no_data` scope count. Avoid an extra field-only call when the stored key already matches. This leaves the current no-metadata merge gate intact, so several Stash scenes can temporarily hold the same Plex key.
+4. For a multi-scene match that passes the existing metadata gate, retain the current scene merge. After `sceneMerge` succeeds, set the key on the surviving destination with a separate `sceneUpdate` using `partial`. Keeping this update separate avoids assuming how Stash combines source custom fields during a merge. If this final update fails, surface the error; the next reconcile can repair the destination using its merged file paths.
+5. On a successful **full** Plex scan, remove `plex_rating_key` from Stash scenes with no Plex path match using `custom_fields: {remove: ["plex_rating_key"]}`. Do not clear keys on runs limited by `--limit`, `--added-in-last-days`, or `--path`. For `--path`, treat the scan as partial in both scope reporting and key cleanup. Never clear unrelated custom fields. Clean already removes Stash records whose files are gone.
+6. Print counts for keys added, changed, already current, removed from unmatched scenes, and skipped as ambiguous or invalid. Preserve the existing scene update and merge counts. Include enough scene ID and Plex key information in warnings to investigate conflicts without depending on title matching.
+
+The matched-path join remains authoritative. A stored rating key must not cause reconcile to match a scene whose current files no longer belong to that Plex item. Thus a Plex merge, split, or replacement is corrected by a later full path-based run.
+
+## Lookup contract
+
+Read `custom_fields.plex_rating_key` from `findScene`/`findScenes` when starting from a Stash scene. To start with a Plex rating key, query `findScenes(scene_filter: {custom_fields: [{field: "plex_rating_key", value: ["12345"], modifier: EQUALS}]})`, or use a local index of scene custom fields if the deployed Stash version's custom-field filter behaves differently. More than one scene may legitimately carry the same key until reconcile can merge them; callers must accept a list. Resolve a returned key against the configured Plex server and handle a missing Plex record as stale data pending reconciliation.
+
+Example update input, retaining any other custom fields:
+
+```json
+{
+  "id": "456",
+  "custom_fields": {"partial": {"plex_rating_key": "12345"}}
+}
+```
+
+## Validation and rollout
+
+- Unit coverage: single-scene update, no-metadata match, multi-scene merge followed by key update, unchanged key, changed key after a Plex merge, invalid key, ambiguous scene, partial-run cleanup guard, and full-run stale-key removal. Assert that `partial` and `remove` never replace unrelated custom fields.
+- Integration check on a test scene: set an unrelated custom field, reconcile it, read both fields back, query by rating key, rerun to confirm idempotence, then test a key change and a full-run orphan cleanup. Verify the merge case with two Stash scenes that become one Plex item.
+- Roll out through the existing `plexadm stash reconcile` call in `scripts/mass_process.sh`; no new mass-process stage is needed. A full reconcile backfills all matched scenes. Update the README's Stash Reconcile section and CLI help when implementation lands. If schema support is missing, fail with a clear version/capability error before mutating scenes.
+
+## Boundaries
+
+The key is not a duplicate detector and does not replace phash or file-path comparison. It is not stable across Plex library rebuilds. Reconcile cannot map files absent from either library, and partial runs cannot establish that an unmatched scene has become orphaned. Custom-field writes are Stash mutations; they should follow existing reconcile error handling and be visible in its progress summary.
