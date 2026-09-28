@@ -24,6 +24,7 @@ from plexadm.stash_backfill_tags import (
     _tag_to_collection,
     _tagalong_targets,
     _with_tagalong,
+    _write_backfill_report,
     _write_review,
     apply_review,
     backfill_tags,
@@ -1856,6 +1857,30 @@ class TestBackfillIntegration:
             "| 42 | 01: Composition: MF Only | Stash composition tags ['Composition: Solo'] "
             "contradict Plex tag 'Composition: MF Only' |"
         ) in report
+
+    def test_removal_candidate_report_escapes_table_cells(self, tmp_path: Path) -> None:
+        report_path = tmp_path / "report.md"
+
+        _write_backfill_report(
+            report_path,
+            dry_run=False,
+            processed=1,
+            matched_count=1,
+            composition_additions={},
+            hair_additions={},
+            taxonomy_additions={},
+            new_collections=[],
+            composition_added_count=0,
+            hair_added_count=0,
+            taxonomy_added_count=0,
+            ambiguous_entries=[],
+            remove_candidate_entries=[("42|1", "01: Composition: Solo|Other", "reason | detail")],
+            review_path="review.json",
+            review_entry_count=1,
+        )
+
+        report = report_path.read_text(encoding="utf-8")
+        assert "| 42\\|1 | 01: Composition: Solo\\|Other | reason \\| detail |" in report
 
     def test_ambiguous_scene_is_in_markdown_report(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"

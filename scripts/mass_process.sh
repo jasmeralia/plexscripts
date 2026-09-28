@@ -2,7 +2,7 @@
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/plexadm-env.sh"
-REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-"${SCRIPT_DIR}/../reference"}
+REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-/usr/local/share/plexadm/reference}
 START_DATE=$(date)
 
 # First, set all the writers from the titles
