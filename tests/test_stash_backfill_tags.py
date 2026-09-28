@@ -1850,8 +1850,12 @@ class TestBackfillIntegration:
         assert "Mode: APPLIED" in report
         assert "## Composition additions by collection" not in report
         assert "## Hair additions by collection" not in report
+        assert "- Removal candidates staged for review: 1" in report
         assert "## Removal candidates (staged for review, not applied)" in report
-        assert "| 42 | 01: Composition: MF Only |" in report
+        assert (
+            "| 42 | 01: Composition: MF Only | Stash composition tags ['Composition: Solo'] "
+            "contradict Plex tag 'Composition: MF Only' |"
+        ) in report
 
     def test_ambiguous_scene_is_in_markdown_report(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"

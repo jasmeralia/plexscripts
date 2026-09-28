@@ -489,6 +489,17 @@ class TestSetStudioAddWriterRenameCreate:
 
         section.createCollection.assert_called_once_with(title="00D: Review: New", items=[unlocked])
 
+    def test_create_collection_skips_when_lock_guard_removes_every_item(self) -> None:
+        section = SimpleNamespace(createCollection=MagicMock())
+        locked = _video(title="Locked Video", ratingKey=1, collections=[LOCKED_COLLECTION])
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            added_count = create_collection(section, title="00D: Review: New", items=[locked])
+
+        assert added_count == 0
+        section.createCollection.assert_not_called()
+        mock_log.assert_not_called()
+
     def test_create_collection_bypasses_lock_for_format_collections(self) -> None:
         section = SimpleNamespace(createCollection=MagicMock())
         locked = _video(title="Locked Video", ratingKey=1, collections=[LOCKED_COLLECTION])

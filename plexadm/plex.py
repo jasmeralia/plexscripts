@@ -302,6 +302,8 @@ def create_collection(section: Any, *, title: str, items: Iterable[Any], dry_run
     item_list = list(items)
     if title not in _LOCK_GUARD_EXEMPT:
         item_list = _drop_locked(item_list)
+    if not item_list:
+        return 0
     if not dry_run:
         section.createCollection(title=title, items=item_list)
     level, details = _mutation_level_and_details(dry_run, {"item_count": len(item_list)})
