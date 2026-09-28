@@ -74,11 +74,14 @@ def reconcile(args: Any) -> int:
             "No Stash endpoint configured. Add stashEndpoint to your config file or pass --stash-endpoint."
         )
 
-    stash = StashClient(endpoint)
     limit: int | None = getattr(args, "limit", None)
     path_filter: str | None = getattr(args, "path", None)
+    if path_filter == "":
+        raise ValueError("--path must not be empty when supplied.")
+
     added_in_last_days: int | None = getattr(args, "added_in_last_days", None)
     partial_scan = limit is not None or path_filter is not None or added_in_last_days is not None
+    stash = StashClient(endpoint)
 
     if not getattr(args, "skip_scan", False):
         print(info("Scanning Stash library (with phash generation) before reconciling..."))

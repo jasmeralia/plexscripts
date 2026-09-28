@@ -191,6 +191,20 @@ class TestReconcileScanGating:
         assert "Skipping Stash Clean for a partial Plex scan" in output
         assert "run without --limit, --path, or --added-in-last-days for complete scope" in output
 
+    def test_empty_path_is_rejected_before_stash_operations(self, tmp_path: Path) -> None:
+        fake_stash = MagicMock()
+        args = self._fake_args(tmp_path, path="")
+
+        with (
+            patch.object(stash_reconcile, "load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch.object(stash_reconcile, "StashClient", return_value=fake_stash),
+            pytest.raises(ValueError, match="--path must not be empty"),
+        ):
+            reconcile(args)
+
+        fake_stash.scan.assert_not_called()
+        fake_stash.clean.assert_not_called()
+
 
 class TestReconcileProgress:
     def test_prints_progress_at_time_intervals(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

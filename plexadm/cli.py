@@ -2760,7 +2760,7 @@ def _build_stash_commands(sub: Any) -> None:
     reconcile_parser.add_argument(
         "--path",
         metavar="PREFIX",
-        help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/Studio Name).",
+        help="Only process Plex items whose file path starts with a non-empty PREFIX (e.g. /data/NSFW Scenes/Studio Name).",
     )
     reconcile_parser.add_argument(
         "--added-in-last-days",
