@@ -12,6 +12,7 @@ Mode: APPLIED
 - Taxonomy memberships added: 143
 - New collections created: 0
 - Ambiguous matches staged for review: 54
+- Removal candidates staged for review: 1
 - Review entries written: 55 -> reference/stash_backfill_review.json
 
 The summary counts reflect videos accepted after the `99: LOCKED` guard. The per-collection
@@ -123,7 +124,6 @@ candidate tables below show proposed videos before that guard is applied.
 | 159098 | cross-axis: ['Composition: TF Only'] + ['Composition: Lesbian'] |
 | 628143 | cross-axis: ['Composition: TF Only'] + ['Composition: Lesbian'] |
 | 152870 | multiple multi-female headcount tags: ['Composition: FFFM', 'Composition: FFM', 'Composition: Reverse Gangbang'] |
-| 126776 |  |
 | 132788 | multiple multi-female headcount tags: ['Composition: FFFM', 'Composition: FFM'] |
 | 154024 | cross-axis: ['Composition: TF Only'] + ['Composition: Lesbian'] |
 | 152833 | cross-axis: ['Composition: TF Only'] + ['Composition: Lesbian'] |
@@ -159,3 +159,9 @@ candidate tables below show proposed videos before that guard is applied.
 | 154003 | cross-axis: ['Composition: TF Only'] + ['Composition: Lesbian'] |
 | 133041 | cross-axis: ['Composition: MMF'] + ['Composition: FFM'] |
 | 131501 | cross-axis: ['Composition: MF Only'] + ['Composition: Lesbian'] |
+
+## Removal candidates (staged for review, not applied)
+
+| Rating key | Collection to remove | Reason |
+|---|---|---|
+| 126776 | 01: Composition: Solo | Stash composition tags ['Composition: Lesbian'] contradict Plex tag 'Composition: Solo' |
