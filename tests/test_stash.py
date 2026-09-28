@@ -48,6 +48,22 @@ class TestScan:
         assert scan_call.args[1]["input"]["paths"] == ["/data/NSFW Scenes"]
 
 
+class TestClean:
+    def test_clean_sends_mutation_and_waits_for_job(self) -> None:
+        client = StashClient("http://localhost:9999")
+        client._gql = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                {"metadataClean": "4"},
+                {"findJob": {"id": "4", "status": "FINISHED", "error": None}},
+            ]
+        )
+
+        client.clean(poll_interval=0)
+
+        assert client._gql.call_args_list[0].args[1] == {"input": {"dryRun": False}}
+        assert client._gql.call_args_list[1].args[1] == {"id": "4"}
+
+
 class TestWaitForJob:
     def test_polls_until_finished(self) -> None:
         client = StashClient("http://localhost:9999")

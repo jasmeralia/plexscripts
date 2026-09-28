@@ -74,6 +74,13 @@ def reconcile(args: Any) -> int:
             "No Stash endpoint configured. Add stashEndpoint to your config file or pass --stash-endpoint."
         )
 
+    limit: int | None = getattr(args, "limit", None)
+    path_filter: str | None = getattr(args, "path", None)
+    if path_filter == "":
+        raise ValueError("--path must not be empty when supplied.")
+
+    added_in_last_days: int | None = getattr(args, "added_in_last_days", None)
+    partial_scan = limit is not None or path_filter is not None or added_in_last_days is not None
     stash = StashClient(endpoint)
 
     if not getattr(args, "skip_scan", False):
@@ -81,16 +88,19 @@ def reconcile(args: Any) -> int:
         stash.scan()
         print(ok("Stash scan complete."))
 
+    if partial_scan:
+        print(info("Skipping Stash Clean for a partial Plex scan; Clean affects the entire Stash library."))
+    else:
+        print(info("Cleaning Stash records for files no longer present..."))
+        stash.clean()
+        print(ok("Stash clean complete."))
+
     print(info("Connecting to Stash and building scene index..."))
     stash_index = stash.all_scenes()  # path -> scene dict
     stash_scenes_by_id: dict[str, dict[str, Any]] = {s["id"]: s for s in stash_index.values()}
     print(info(f"Stash: {len(stash_scenes_by_id)} scenes across {len(stash_index)} paths"))
 
     plex_ctx = PlexContext(cfg)
-    limit: int | None = getattr(args, "limit", None)
-    path_filter: str | None = getattr(args, "path", None)
-    added_in_last_days: int | None = getattr(args, "added_in_last_days", None)
-    partial_scan = limit is not None or added_in_last_days is not None
     stats = _Stats()
     matched_stash_ids: set[str] = set()
     processed = 0
@@ -219,8 +229,8 @@ def reconcile(args: Any) -> int:
     if partial_scan:
         print(
             info(
-                "(Stash scenes with no Plex match: skipped — run without --limit/--added-in-last-days "
-                "for complete scope)"
+                "(Stash scenes with no Plex match: skipped — run without --limit, --path, or "
+                "--added-in-last-days for complete scope)"
             )
         )
     else:

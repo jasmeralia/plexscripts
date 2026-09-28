@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -160,12 +160,50 @@ class TestReconcileScanGating:
     def test_default_triggers_scan_before_indexing(self, tmp_path: Path) -> None:
         fake_stash = self._run(tmp_path)
         fake_stash.scan.assert_called_once_with()
+        fake_stash.clean.assert_called_once_with()
         fake_stash.all_scenes.assert_called_once_with()
+        assert fake_stash.method_calls[:3] == [call.scan(), call.clean(), call.all_scenes()]
 
     def test_skip_scan_flag_bypasses_scan(self, tmp_path: Path) -> None:
         fake_stash = self._run(tmp_path, skip_scan=True)
         fake_stash.scan.assert_not_called()
+        fake_stash.clean.assert_called_once_with()
         fake_stash.all_scenes.assert_called_once_with()
+        assert fake_stash.method_calls[:2] == [call.clean(), call.all_scenes()]
+
+    @pytest.mark.parametrize(
+        "partial_scope",
+        [
+            {"limit": 1},
+            {"path": "/data/selected"},
+            {"added_in_last_days": 7},
+        ],
+    )
+    def test_partial_scan_skips_global_clean(self, tmp_path: Path, partial_scope: dict[str, object]) -> None:
+        fake_stash = self._run(tmp_path, skip_scan=True, **partial_scope)
+        fake_stash.scan.assert_not_called()
+        fake_stash.clean.assert_not_called()
+        fake_stash.all_scenes.assert_called_once_with()
+
+    def test_path_filter_is_a_partial_scan(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        self._run(tmp_path, path="/data/selected")
+        output = capsys.readouterr().out
+        assert "Skipping Stash Clean for a partial Plex scan" in output
+        assert "run without --limit, --path, or --added-in-last-days for complete scope" in output
+
+    def test_empty_path_is_rejected_before_stash_operations(self, tmp_path: Path) -> None:
+        fake_stash = MagicMock()
+        args = self._fake_args(tmp_path, path="")
+
+        with (
+            patch.object(stash_reconcile, "load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch.object(stash_reconcile, "StashClient", return_value=fake_stash),
+            pytest.raises(ValueError, match="--path must not be empty"),
+        ):
+            reconcile(args)
+
+        fake_stash.scan.assert_not_called()
+        fake_stash.clean.assert_not_called()
 
 
 class TestReconcileProgress:

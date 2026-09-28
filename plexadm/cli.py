@@ -2725,18 +2725,22 @@ def _build_stash_commands(sub: Any) -> None:
             "no Plex match at all).\n"
             "\n"
             "By default, triggers a Stash library scan (with phash generation) first\n"
-            "and waits for it to finish, so newly-added Plex content is guaranteed to\n"
-            "already be visible in Stash before matching starts. Use --skip-scan if\n"
-            "you already scanned Stash yourself and want a faster run.\n"
+            "and waits for it to finish, then runs Stash Clean before matching on a\n"
+            "full-library reconcile. The scan lets Stash update moved-file paths\n"
+            "before Clean removes records for files no longer present. Stash storage\n"
+            "must be available. Use --skip-scan if you already scanned Stash yourself;\n"
+            "Clean still runs for a full-library reconcile.\n"
             "\n"
             "Writes are applied immediately. Use --limit for a test run against a\n"
-            "small subset before pointing this at the full library.\n"
+            "small subset before pointing this at the full library. Stash Clean is\n"
+            "skipped for --limit, --path, and --added-in-last-days runs because it\n"
+            "removes stale records across the entire Stash library.\n"
             "\n"
             "--added-in-last-days N filters to Plex items added in the last N days\n"
             "(a server-side Plex query, not a full-library walk) - use this for routine\n"
             "runs that only need to catch up on recently-added content. Because it's a\n"
-            "partial scan like --limit, the 'Stash scenes with no Plex match' scope is\n"
-            "skipped in this mode too."
+            "partial scan like --limit and --path, the 'Stash scenes with no Plex match'\n"
+            "scope is skipped in these modes too."
         ),
         epilog=(
             "Examples:\n"
@@ -2756,7 +2760,7 @@ def _build_stash_commands(sub: Any) -> None:
     reconcile_parser.add_argument(
         "--path",
         metavar="PREFIX",
-        help="Only process Plex items whose file path starts with PREFIX (e.g. /data/NSFW Scenes/Studio Name).",
+        help="Only process Plex items whose file path starts with a non-empty PREFIX (e.g. /data/NSFW Scenes/Studio Name).",
     )
     reconcile_parser.add_argument(
         "--added-in-last-days",
@@ -2791,8 +2795,8 @@ def _build_stash_commands(sub: Any) -> None:
         "--skip-scan",
         action="store_true",
         dest="skip_scan",
-        help="Skip the automatic Stash library scan (with phash generation) that normally "
-        "runs before reconciling. Use if you already scanned Stash yourself.",
+        help="Skip the automatic Stash library scan (with phash generation). Stash Clean still "
+        "runs for a full-library reconcile; it is skipped for partial scopes.",
     )
     set_func(reconcile_parser, stash_reconcile)
 
