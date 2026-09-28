@@ -187,18 +187,23 @@ Mode: DRY RUN (no Plex changes made)
 
 ## Ambiguous scenes (staged for review, not applied)
 
-| Title | Reason |
+| Rating key | Reason |
 |---|---|
-| Example Writer - Post - 2023-01-16... | cross-axis: ['Category: Solo'] + ['Category: Lesbian'] |
+| 12345 | cross-axis: ['Category: Solo'] + ['Category: Lesbian'] |
 ```
 
-`Mode:` line reads `Mode: DRY RUN (no Plex changes made)` when `args.dry_run` else `Mode: APPLIED`. Omit the "Composition additions by collection" / "Hair additions by collection" tables entirely (not an empty table) when their respective dict is empty; same for the ambiguous-scenes table when there are zero ambiguous entries — print a plain `_No ambiguous scenes this run._` line instead of an empty table, matching how the review file already treats zero-entries as a legitimate outcome. Escape `|` in titles and reasons the same way as the unmapped-tags report.
+Include a separate `Removal candidates (staged for review, not applied)` section with rating key,
+collection to remove, and reason. The summary reports removal-candidate count separately from
+ambiguous scenes. Count totals reflect additions accepted after the `99: LOCKED` guard; per-
+collection tables are labeled as candidates before that guard.
 
-This reuses the same per-video loop already iterating in `backfill_tags()` — no second pass over the library. Accumulate `ambiguous_entries: list[tuple[str, str]]` (title, ambiguous_reason) inline where `ambiguous_count` is already incremented, rather than a separate collection pass.
+`Mode:` line reads `Mode: DRY RUN (no Plex changes made)` when `args.dry_run` else `Mode: APPLIED`. Omit the "Composition additions by collection" / "Hair additions by collection" tables entirely (not an empty table) when their respective dict is empty; same for ambiguous-scene and removal-candidate tables when they have no entries — print a plain explanatory line instead of an empty table. Escape `|` in report cells.
+
+This reuses the same per-video loop already iterating in `backfill_tags()` — no second pass over the library. Accumulate `ambiguous_entries: list[tuple[str, str]]` (rating key, ambiguous reason) inline where `ambiguous_count` is already incremented, rather than a separate collection pass. Do not write video titles or file paths into generated review data or reports.
 
 ### Tests to add
 
-Extend `TestBackfillIntegration`: assert the markdown report file (via `tmp_path`, new `report_output` arg on the fake `args`) contains the right `Mode:` line for both a `dry_run=True` and a `dry_run=False` case, and that an ambiguous-producing scenario produces the ambiguous-scenes table with the expected title/reason.
+Extend `TestBackfillIntegration`: assert the markdown report file (via `tmp_path`, new `report_output` arg on the fake `args`) contains the right `Mode:` line for both a `dry_run=True` and a `dry_run=False` case, that ambiguous and removal-candidate sections use rating keys, and that removal rows are escaped and counted separately.
 
 ## Non-goals (explicitly out of scope for this task)
 

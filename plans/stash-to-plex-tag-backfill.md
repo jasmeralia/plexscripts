@@ -63,8 +63,6 @@ Per scene, let `S` = Stash tags on the matched scene(s) ∩ `COMPOSITION_TAGS`, 
 @dataclass
 class SceneDecision:
     rating_key: str
-    title: str
-    file_paths: list[str]
     adds: list[str] = field(default_factory=list)  # tag names to add to Plex (safe)
     remove_candidates: list[str] = field(default_factory=list)  # tag names to flag for removal (review)
     ambiguous_reason: str | None = None  # set => stash itself is unreliable here
@@ -131,15 +129,13 @@ Concretely:
 2. A human inspects/edits the review file (spot-checks a sample, deletes entries they disagree with — same manual workflow already used this session).
 3. `plexadm stash apply-review reference/stash_backfill_review.json [--include-ambiguous]` — a second small subcommand that reads the (possibly human-edited) file and calls `remove_items` for each surviving `remove_candidate` entry (skipping `ambiguous` entries by default). Respects `--dry-run`.
 
-Review file schema (reuse the field names from `reference/lesbian_collection_corrections.json` for continuity/tooling reuse, generalized to be pre-application rather than a post-hoc audit log):
+Review file schema (a minimal, machine-consumable record for explicit review and later application):
 
 ```json
 {
   "generated_at": "2026-07-12T10:30:44Z",
   "action": "remove_candidate | ambiguous",
   "rating_key": "126146",
-  "title": "Example Writer - AVNSocial Events #1",
-  "file_paths": ["/data/NSFW Scenes/Example Writer/Example Writer - AVNSocial Events #1.mp4"],
   "stash_tags": ["Category: Solo"],
   "plex_tags": ["01: Category: Solo", "01: Category: Lesbian"],
   "collection_to_remove": "01: Category: Lesbian",
@@ -148,6 +144,8 @@ Review file schema (reuse the field names from `reference/lesbian_collection_cor
 }
 ```
 (`ambiguous` entries omit `collection_to_remove` and instead carry `ambiguous_reason`.)
+Generated review data contains rating keys and taxonomy details only; it omits Plex titles and
+file paths.
 
 ## 4. Where this lives
 
