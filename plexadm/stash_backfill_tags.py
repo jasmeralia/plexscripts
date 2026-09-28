@@ -67,8 +67,6 @@ _COMPATIBLE_HEADCOUNT_COMBOS = frozenset({frozenset({"Composition: FFFM", "Compo
 @dataclass
 class SceneDecision:
     rating_key: str
-    title: str
-    file_paths: list[str]
     adds: list[str] = field(default_factory=list)
     remove_candidates: list[str] = field(default_factory=list)
     ambiguous_reason: str | None = None
@@ -102,7 +100,7 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
         conflicts.append(f"multiple exclusive-pairing tags: {sorted(exclusive_pairing)}")
 
     if conflicts:
-        return SceneDecision(rating_key="", title="", file_paths=[], ambiguous_reason="; ".join(conflicts))
+        return SceneDecision(rating_key="", ambiguous_reason="; ".join(conflicts))
 
     adds = sorted(s - p)
 
@@ -124,7 +122,7 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
     if not adds and not remove_candidates:
         return None
 
-    return SceneDecision(rating_key="", title="", file_paths=[], adds=adds, remove_candidates=remove_candidates)
+    return SceneDecision(rating_key="", adds=adds, remove_candidates=remove_candidates)
 
 
 def _stash_tags_in_scope(scene: dict[str, Any], scope: frozenset[str]) -> set[str]:
@@ -2382,10 +2380,10 @@ def _write_backfill_report(
 
     lines.extend(["", "## Ambiguous scenes (staged for review, not applied)", ""])
     if ambiguous_entries:
-        lines.extend(["| Title | Reason |", "|---|---|"])
+        lines.extend(["| Rating key | Reason |", "|---|---|"])
         lines.extend(
-            f"| {_escape_markdown_table_cell(title)} | {_escape_markdown_table_cell(reason)} |"
-            for title, reason in ambiguous_entries
+            f"| {_escape_markdown_table_cell(rating_key)} | {_escape_markdown_table_cell(reason)} |"
+            for rating_key, reason in ambiguous_entries
         )
     else:
         lines.append("_No ambiguous scenes this run._")
@@ -2419,8 +2417,6 @@ def _decision_entries(
 ) -> list[dict[str, Any]]:
     common = {
         "rating_key": decision.rating_key,
-        "title": decision.title,
-        "file_paths": decision.file_paths,
         "stash_tags": sorted(stash_tags),
         "plex_tags": sorted(_tag_to_collection(tag) for tag in plex_tags),
         "status": "proposed",
@@ -2522,12 +2518,10 @@ def backfill_tags(args: Any) -> int:
         decision = classify_scene(stash_tags, plex_tags)
         if decision is not None:
             decision.rating_key = str(video.ratingKey)
-            decision.title = str(video.title)
-            decision.file_paths = locations
 
             if decision.ambiguous_reason:
                 ambiguous_count += 1
-                ambiguous_entries.append((decision.title, decision.ambiguous_reason))
+                ambiguous_entries.append((decision.rating_key, decision.ambiguous_reason))
             else:
                 for tag in decision.adds:
                     additions[tag].append(video)

@@ -1844,10 +1844,14 @@ class TestBackfillIntegration:
         assert len(review) == 1
         assert review[0]["action"] == "remove_candidate"
         assert review[0]["collection_to_remove"] == "01: Composition: MF Only"
+        assert "title" not in review[0]
+        assert "file_paths" not in review[0]
         report = args.report_output.read_text(encoding="utf-8")
         assert "Mode: APPLIED" in report
         assert "## Composition additions by collection" not in report
         assert "## Hair additions by collection" not in report
+        assert "## Removal candidates (staged for review, not applied)" in report
+        assert "| 42 | 01: Composition: MF Only |" in report
 
     def test_ambiguous_scene_is_in_markdown_report(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
@@ -1886,9 +1890,14 @@ class TestBackfillIntegration:
 
         add_items.assert_not_called()
         report = args.report_output.read_text(encoding="utf-8")
-        assert "| Title | Reason |" in report
-        assert "| Scene \\| One | cross-axis: ['Composition: Solo'] + ['Composition: FFM'] |" in report
+        assert "| Rating key | Reason |" in report
+        assert "| 42 | cross-axis: ['Composition: Solo'] + ['Composition: FFM'] |" in report
+        assert "Scene \\| One" not in report
         assert "Ambiguous matches staged for review: 1" in report
+        review = _load_review(args.review_output)
+        assert review[0]["rating_key"] == "42"
+        assert "title" not in review[0]
+        assert "file_paths" not in review[0]
 
     def test_taxonomy_merge_adds_to_existing_collection_with_dry_run(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
