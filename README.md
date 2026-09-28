@@ -19,6 +19,8 @@ operations that run.
 `plexadm stash backfill-tags` against the refreshed Stash tags before updating review
 collections. Stash storage must be available whenever the full mass-processing script runs. If
 either Stash command fails, the script stops before subsequent backfill or review updates.
+The backfill review JSON and markdown report are written under `PLEXADM_REFERENCE_DIR`; if that
+variable is unset, the checkout's `reference/` directory is used.
 
 ## Configuration
 

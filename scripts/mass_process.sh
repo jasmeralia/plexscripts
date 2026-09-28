@@ -2,6 +2,7 @@
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/plexadm-env.sh"
+REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-"${SCRIPT_DIR}/../reference"}
 START_DATE=$(date)
 
 # First, set all the writers from the titles
@@ -41,7 +42,9 @@ time "$PLEXADM" stash reconcile || {
   exit 1
 }
 date
-time "$PLEXADM" stash backfill-tags || {
+time "$PLEXADM" stash backfill-tags \
+  --review-output "${REFERENCE_DIR}/stash_backfill_review.json" \
+  --report-output "${REFERENCE_DIR}/stash_backfill_report.md" || {
   echo "Stash backfill-tags failed; stopping mass processing before review updates." >&2
   exit 1
 }

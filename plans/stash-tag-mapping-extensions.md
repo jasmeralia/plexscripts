@@ -206,7 +206,6 @@ Extend `TestBackfillIntegration`: assert the markdown report file (via `tmp_path
 - Do not add conflict/removal detection for hair colors, or any cross-checking between composition and hair scope (e.g. "single performer + 2 hair tags = contradiction") — deliberately out of scope per §1's reasoning; this tool has no per-performer data to make that call safely.
 - Do not touch `classify_scene`, its dataclass, or its existing tests — hair is additive-only and doesn't need the conflict-group machinery at all.
 - Do not add a min-count/limit flag to `unmapped-tags` — sort order alone is sufficient per the design above.
-- Do not wire any of this into `scripts/mass_process.sh` — matches the existing non-goal already established for `backfill-tags` itself in `plans/stash-to-plex-tag-backfill.md`.
 
 ## Acceptance criteria
 

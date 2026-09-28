@@ -14,25 +14,28 @@ Mode: APPLIED
 - Ambiguous matches staged for review: 54
 - Review entries written: 55 -> reference/stash_backfill_review.json
 
-## Composition additions by collection
+The summary counts reflect videos accepted after the `99: LOCKED` guard. The per-collection
+candidate tables below show proposed videos before that guard is applied.
 
-| Collection | Videos added |
+## Composition candidates by collection (before the `99: LOCKED` guard)
+
+| Collection | Videos proposed |
 |---|---:|
 | 01: Composition: FFM | 3 |
 | 01: Composition: Lesbian | 2 |
 | 01: Composition: MF Only | 7 |
 | 01: Composition: Solo | 2 |
 
-## Hair additions by collection
+## Hair candidates by collection (before the `99: LOCKED` guard)
 
-| Collection | Videos added |
+| Collection | Videos proposed |
 |---|---:|
 | 01: Hair: Blonde | 3 |
 | 01: Hair: Brunette | 3 |
 
-## Taxonomy additions by collection
+## Taxonomy candidates by collection (before the `99: LOCKED` guard)
 
-| Collection | Videos added |
+| Collection | Videos proposed |
 |---|---:|
 | 01: Activity: Anal Fingering | 2 |
 | 01: Activity: Blowjob | 2 |
