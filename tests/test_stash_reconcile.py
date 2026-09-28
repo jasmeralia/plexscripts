@@ -187,7 +187,9 @@ class TestReconcileScanGating:
 
     def test_path_filter_is_a_partial_scan(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         self._run(tmp_path, path="/data/selected")
-        assert "Skipping Stash Clean for a partial Plex scan" in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert "Skipping Stash Clean for a partial Plex scan" in output
+        assert "run without --limit, --path, or --added-in-last-days for complete scope" in output
 
 
 class TestReconcileProgress:

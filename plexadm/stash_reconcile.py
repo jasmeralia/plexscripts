@@ -226,8 +226,8 @@ def reconcile(args: Any) -> int:
     if partial_scan:
         print(
             info(
-                "(Stash scenes with no Plex match: skipped — run without --limit/--added-in-last-days "
-                "for complete scope)"
+                "(Stash scenes with no Plex match: skipped — run without --limit, --path, or "
+                "--added-in-last-days for complete scope)"
             )
         )
     else:

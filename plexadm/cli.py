@@ -2739,8 +2739,8 @@ def _build_stash_commands(sub: Any) -> None:
             "--added-in-last-days N filters to Plex items added in the last N days\n"
             "(a server-side Plex query, not a full-library walk) - use this for routine\n"
             "runs that only need to catch up on recently-added content. Because it's a\n"
-            "partial scan like --limit, the 'Stash scenes with no Plex match' scope is\n"
-            "skipped in this mode too."
+            "partial scan like --limit and --path, the 'Stash scenes with no Plex match'\n"
+            "scope is skipped in these modes too."
         ),
         epilog=(
             "Examples:\n"
