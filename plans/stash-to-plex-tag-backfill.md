@@ -161,13 +161,16 @@ Review file schema (reuse the field names from `reference/lesbian_collection_cor
 
 ## 5. Ongoing operation
 
-**Recommend: stay a manually-invoked audit tool, not wired into `scripts/mass_process.sh`.**
+**Current behavior:** `scripts/mass_process.sh` runs `plexadm stash reconcile` after its Plex
+tagging steps, then runs `plexadm stash backfill-tags` before updating review collections and
+recording the final inventory snapshot. Reconcile performs its default full Stash scan and Clean,
+so Stash storage must be available for a mass-process run. If either Stash command fails, the
+script stops before later sync or review steps.
 
-Reasoning:
-- `mass_process.sh` currently contains no Stash-touching steps at all — Stash sync is already a separate, manually-run concern, and this preserves that boundary.
-- The additive half (`backfill-tags` adds) is low-risk and could arguably run unattended, but it still depends on Stash tag data quality, which this session showed can regress or be internally inconsistent — an automated regular run would keep re-adding whatever a careless bulk Stash edit introduces, with no human checkpoint. Because `mass_process.sh` is unattended and its output isn't reviewed line-by-line each run, silently accumulating a growing correction backlog there is worse than running the backfill deliberately.
-- The removal half is explicitly designed to require a human step (`apply-review`) — that's incompatible with unattended automation by construction.
-- Recommend instead: document it in `AGENTS.md`/README as a periodic manual audit (e.g. "run monthly or after a Stash bulk-tagging pass"), run standalone (`plexadm stash backfill-tags`), with its own log, and leave `mass_process.sh` untouched. If in the future the additive-only, no-conflict-groups Phase 2 (full `01: Category:` namespace) is built and proves reliable over several manual runs, promoting *only that additive path* into `mass_process.sh` could be reconsidered then — but not as part of this plan.
+Backfill additions are applied immediately. Potential removals and ambiguous conflicts remain in
+the review output and are never automatically removed; the human-reviewed `apply-review` step is
+still separate. The earlier recommendation to keep backfill as a manual-only audit step was
+superseded when the user requested that both Stash commands be wired into the mass process.
 
 ## 6. Testing
 

@@ -15,6 +15,11 @@ Stash Clean is skipped for partial Plex scopes selected with `--limit`, `--path`
 the scan; Clean still runs on a full-library reconcile. Stash storage must be available for the
 operations that run.
 
+`scripts/mass_process.sh` runs a full reconcile after its Plex tagging steps, then runs
+`plexadm stash backfill-tags` against the refreshed Stash tags before updating review
+collections. Stash storage must be available whenever the full mass-processing script runs. If
+either Stash command fails, the script stops before subsequent backfill or review updates.
+
 ## Configuration
 
 Create `~/.plexconfig.ini` with a `[default]` section:
@@ -82,6 +87,9 @@ verify_tls = true
 plexadm inventory snapshot
 plexadm inventory diff
 ```
+
+`scripts/mass_process.sh` records an inventory snapshot at the end of each run, after its
+Plex and Stash synchronization steps.
 
 ## Install
 
