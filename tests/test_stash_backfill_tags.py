@@ -2028,6 +2028,49 @@ class TestBackfillIntegration:
         assert "- New collections created: 1" in report
         assert "| 01: Activity: Missionary (new) | 1 |" in report
 
+    def test_taxonomy_collection_is_not_reported_created_when_all_videos_locked(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(collections=["99: LOCKED"], locations=[path])
+        tag = {
+            "id": "10",
+            "name": "Missionary",
+            "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "abc"}],
+        }
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [{"id": tag["id"], "name": tag["name"]}],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = [tag]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = []
+        plex_ctx.all_videos.return_value = [video]
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=False,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert backfill_tags(args) == 0
+
+        plex_ctx.section.createCollection.assert_not_called()
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "- Taxonomy memberships added: 0" in report
+        assert "- New collections created: 0" in report
+        assert "| 01: Activity: Missionary | 1 |" in report
+
     def test_taxonomy_skips_excluded_and_unaccepted_tags(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
         video = _mock_video(locations=[path])

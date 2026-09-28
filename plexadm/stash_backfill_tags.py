@@ -2564,10 +2564,10 @@ def backfill_tags(args: Any) -> int:
             collection = plex_ctx.collection(target)
             taxonomy_added_count += add_items(collection, videos, dry_run=args.dry_run)
         else:
-            new_collections.append(target)
-            taxonomy_added_count += create_collection(
-                plex_ctx.section, title=target, items=videos, dry_run=args.dry_run
-            )
+            added_count = create_collection(plex_ctx.section, title=target, items=videos, dry_run=args.dry_run)
+            taxonomy_added_count += added_count
+            if added_count:
+                new_collections.append(target)
 
     report_path = Path(getattr(args, "report_output", "reference/stash_backfill_report.md"))
     _write_backfill_report(

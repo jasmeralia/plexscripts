@@ -22,6 +22,8 @@ either Stash command fails, the script stops before subsequent backfill or revie
 The backfill review JSON and markdown report are written under `PLEXADM_REFERENCE_DIR`. In a
 checkout, `scripts/plexadm-env.sh` points it at the checkout's `reference/`; installed scripts
 fall back to `/usr/local/share/plexadm/reference`, matching the other helper scripts.
+Generated backfill reports and review data are ignored by Git and remain local to that reference
+directory.
 
 ## Configuration
 
