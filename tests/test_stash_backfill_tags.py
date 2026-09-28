@@ -1867,8 +1867,11 @@ class TestBackfillIntegration:
             processed=1,
             matched_count=1,
             composition_additions={},
+            composition_added_by_collection={},
             hair_additions={},
+            hair_added_by_collection={},
             taxonomy_additions={},
+            taxonomy_added_by_collection={},
             new_collections=[],
             composition_added_count=0,
             hair_added_count=0,
@@ -2069,7 +2072,7 @@ class TestBackfillIntegration:
         report = args.report_output.read_text(encoding="utf-8")
         assert "- Taxonomy memberships added: 0" in report
         assert "- New collections created: 0" in report
-        assert "| 01: Activity: Missionary | 1 |" in report
+        assert "| 01: Activity: Missionary | 0 |" in report
 
     def test_taxonomy_skips_excluded_and_unaccepted_tags(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"

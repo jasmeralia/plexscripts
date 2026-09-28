@@ -2299,8 +2299,11 @@ def _write_backfill_report(
     processed: int,
     matched_count: int,
     composition_additions: dict[str, list[Any]],
+    composition_added_by_collection: dict[str, int],
     hair_additions: dict[str, list[Any]],
+    hair_added_by_collection: dict[str, int],
     taxonomy_additions: dict[str, list[Any]],
+    taxonomy_added_by_collection: dict[str, int],
     new_collections: list[str],
     composition_added_count: int,
     hair_added_count: int,
@@ -2344,8 +2347,8 @@ def _write_backfill_report(
             ]
         )
         lines.extend(
-            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {len(videos)} |"
-            for tag, videos in sorted(composition_additions.items())
+            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {count} |"
+            for tag, count in sorted(composition_added_by_collection.items())
         )
 
     if hair_additions:
@@ -2359,8 +2362,8 @@ def _write_backfill_report(
             ]
         )
         lines.extend(
-            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {len(videos)} |"
-            for tag, videos in sorted(hair_additions.items())
+            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {count} |"
+            for tag, count in sorted(hair_added_by_collection.items())
         )
 
     if taxonomy_additions:
@@ -2374,8 +2377,8 @@ def _write_backfill_report(
             ]
         )
         lines.extend(
-            f"| {_escape_markdown_table_cell(target + (' (new)' if target in new_collections else ''))} | {len(videos)} |"
-            for target, videos in sorted(taxonomy_additions.items())
+            f"| {_escape_markdown_table_cell(target + (' (new)' if target in new_collections else ''))} | {count} |"
+            for target, count in sorted(taxonomy_added_by_collection.items())
         )
 
     lines.extend(["", "## Ambiguous scenes (staged for review, not applied)", ""])
@@ -2548,26 +2551,34 @@ def backfill_tags(args: Any) -> int:
     _write_review(review_path, review_entries)
 
     composition_added_count = 0
+    composition_added_by_collection: dict[str, int] = {}
     for tag, videos in sorted(additions.items()):
         collection = plex_ctx.collection(_tag_to_collection(tag))
-        composition_added_count += add_items(collection, videos, dry_run=args.dry_run)
+        added_count = add_items(collection, videos, dry_run=args.dry_run)
+        composition_added_by_collection[tag] = added_count
+        composition_added_count += added_count
 
     hair_added_count = 0
+    hair_added_by_collection: dict[str, int] = {}
     for tag, videos in sorted(hair_additions.items()):
         collection = plex_ctx.collection(_tag_to_collection(tag))
-        hair_added_count += add_items(collection, videos, dry_run=args.dry_run)
+        added_count = add_items(collection, videos, dry_run=args.dry_run)
+        hair_added_by_collection[tag] = added_count
+        hair_added_count += added_count
 
     new_collections: list[str] = []
     taxonomy_added_count = 0
+    taxonomy_added_by_collection: dict[str, int] = {}
     for target, videos in sorted(taxonomy_additions.items()):
         if target in existing_titles:
             collection = plex_ctx.collection(target)
-            taxonomy_added_count += add_items(collection, videos, dry_run=args.dry_run)
+            added_count = add_items(collection, videos, dry_run=args.dry_run)
         else:
             added_count = create_collection(plex_ctx.section, title=target, items=videos, dry_run=args.dry_run)
-            taxonomy_added_count += added_count
             if added_count:
                 new_collections.append(target)
+        taxonomy_added_by_collection[target] = added_count
+        taxonomy_added_count += added_count
 
     report_path = Path(getattr(args, "report_output", "reference/stash_backfill_report.md"))
     _write_backfill_report(
@@ -2576,8 +2587,11 @@ def backfill_tags(args: Any) -> int:
         processed=processed,
         matched_count=matched_count,
         composition_additions=additions,
+        composition_added_by_collection=composition_added_by_collection,
         hair_additions=hair_additions,
+        hair_added_by_collection=hair_added_by_collection,
         taxonomy_additions=taxonomy_additions,
+        taxonomy_added_by_collection=taxonomy_added_by_collection,
         new_collections=new_collections,
         composition_added_count=composition_added_count,
         hair_added_count=hair_added_count,

@@ -151,11 +151,11 @@ plexadm stash unmapped-tags [--output PATH] [--stash-endpoint URL] [--log-level 
 
 ## 3. Markdown report for `backfill-tags`
 
-Applies in **both** dry-run and real-apply modes — the report reflects "what happened" (or "what would have happened" in dry-run), not just "what got written to Plex". Written unconditionally at the end of `backfill_tags()`, alongside the existing JSON review file (which is unchanged — this is an additional output, not a replacement).
+Applies in **both** dry-run and real-apply modes — the report reflects "what happened" (or "what would have happened" in dry-run), not just "what got written to Plex". Written unconditionally at the end of `backfill_tags()`, alongside the JSON review file. Both outputs omit titles and media paths, using rating keys to identify items.
 
 New CLI flag on `backfill-tags`: `--report-output` (default `reference/stash_backfill_report.md`).
 
-New function `_write_backfill_report(path, *, dry_run, processed, matched_count, composition_additions, hair_additions, composition_added_count, hair_added_count, ambiguous_entries, review_path, review_entry_count)` writing:
+New function `_write_backfill_report(path, *, dry_run, processed, matched_count, composition_additions, composition_added_by_collection, hair_additions, hair_added_by_collection, taxonomy_additions, taxonomy_added_by_collection, new_collections, composition_added_count, hair_added_count, taxonomy_added_count, ambiguous_entries, remove_candidate_entries, review_path, review_entry_count)` writing. Per-collection counts come from lock-aware mutation helpers, so they agree with each summary total.
 
 ```markdown
 # Stash -> Plex Backfill Report
@@ -194,8 +194,8 @@ Mode: DRY RUN (no Plex changes made)
 
 Include a separate `Removal candidates (staged for review, not applied)` section with rating key,
 collection to remove, and reason. The summary reports removal-candidate count separately from
-ambiguous scenes. Count totals reflect additions accepted after the `99: LOCKED` guard; per-
-collection tables are labeled as candidates before that guard.
+ambiguous scenes. Summary totals and per-collection tables reflect additions accepted after the
+`99: LOCKED` guard.
 
 `Mode:` line reads `Mode: DRY RUN (no Plex changes made)` when `args.dry_run` else `Mode: APPLIED`. Omit the "Composition additions by collection" / "Hair additions by collection" tables entirely (not an empty table) when their respective dict is empty; same for ambiguous-scene and removal-candidate tables when they have no entries — print a plain explanatory line instead of an empty table. Escape `|` in report cells.
 
