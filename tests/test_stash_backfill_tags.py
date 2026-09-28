@@ -1983,7 +1983,7 @@ class TestBackfillIntegration:
             patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
             patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
             patch("plexadm.stash_backfill_tags.add_items") as add_items,
-            patch("plexadm.stash_backfill_tags.create_collection") as create_collection,
+            patch("plexadm.stash_backfill_tags.create_collection", return_value=1) as create_collection,
         ):
             assert backfill_tags(args) == 0
 
