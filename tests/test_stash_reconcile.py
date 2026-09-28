@@ -171,6 +171,24 @@ class TestReconcileScanGating:
         fake_stash.all_scenes.assert_called_once_with()
         assert fake_stash.method_calls[:2] == [call.clean(), call.all_scenes()]
 
+    @pytest.mark.parametrize(
+        "partial_scope",
+        [
+            {"limit": 1},
+            {"path": "/data/selected"},
+            {"added_in_last_days": 7},
+        ],
+    )
+    def test_partial_scan_skips_global_clean(self, tmp_path: Path, partial_scope: dict[str, object]) -> None:
+        fake_stash = self._run(tmp_path, skip_scan=True, **partial_scope)
+        fake_stash.scan.assert_not_called()
+        fake_stash.clean.assert_not_called()
+        fake_stash.all_scenes.assert_called_once_with()
+
+    def test_path_filter_is_a_partial_scan(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        self._run(tmp_path, path="/data/selected")
+        assert "Skipping Stash Clean for a partial Plex scan" in capsys.readouterr().out
+
 
 class TestReconcileProgress:
     def test_prints_progress_at_time_intervals(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

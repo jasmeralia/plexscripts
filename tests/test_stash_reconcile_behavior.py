@@ -189,6 +189,7 @@ def test_reconcile_path_filter_and_limit_stop_processing_and_skip_unmatched_scop
         assert stash_reconcile.reconcile(_args(tmp_path, path="/wanted", limit=1)) == 0
 
     stash.update_scene.assert_called_once_with("1", {"title": "Wanted", "director": "Director"})
+    stash.clean.assert_not_called()
     assert "skipped" in capsys.readouterr().out
     assert (tmp_path / "scope.csv").read_text(encoding="utf-8").splitlines() == ["bucket,stash_scene_id,path"]
 
@@ -216,6 +217,7 @@ def test_reconcile_added_in_last_days_uses_server_side_filter_and_skips_unmatche
 
     plex.search.assert_called_once_with(filters={"addedAt>>": "7d"})
     plex.all_videos.assert_not_called()
+    stash.clean.assert_not_called()
     stash.update_scene.assert_called_once_with("1", {"title": "Recent", "director": "Director"})
     output = capsys.readouterr().out
     assert "added in the last 7 day(s)" in output

@@ -75,15 +75,22 @@ def reconcile(args: Any) -> int:
         )
 
     stash = StashClient(endpoint)
+    limit: int | None = getattr(args, "limit", None)
+    path_filter: str | None = getattr(args, "path", None)
+    added_in_last_days: int | None = getattr(args, "added_in_last_days", None)
+    partial_scan = limit is not None or path_filter is not None or added_in_last_days is not None
 
     if not getattr(args, "skip_scan", False):
         print(info("Scanning Stash library (with phash generation) before reconciling..."))
         stash.scan()
         print(ok("Stash scan complete."))
 
-    print(info("Cleaning Stash records for files no longer present..."))
-    stash.clean()
-    print(ok("Stash clean complete."))
+    if partial_scan:
+        print(info("Skipping Stash Clean for a partial Plex scan; Clean affects the entire Stash library."))
+    else:
+        print(info("Cleaning Stash records for files no longer present..."))
+        stash.clean()
+        print(ok("Stash clean complete."))
 
     print(info("Connecting to Stash and building scene index..."))
     stash_index = stash.all_scenes()  # path -> scene dict
@@ -91,10 +98,6 @@ def reconcile(args: Any) -> int:
     print(info(f"Stash: {len(stash_scenes_by_id)} scenes across {len(stash_index)} paths"))
 
     plex_ctx = PlexContext(cfg)
-    limit: int | None = getattr(args, "limit", None)
-    path_filter: str | None = getattr(args, "path", None)
-    added_in_last_days: int | None = getattr(args, "added_in_last_days", None)
-    partial_scan = limit is not None or added_in_last_days is not None
     stats = _Stats()
     matched_stash_ids: set[str] = set()
     processed = 0

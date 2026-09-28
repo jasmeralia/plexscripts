@@ -2725,13 +2725,16 @@ def _build_stash_commands(sub: Any) -> None:
             "no Plex match at all).\n"
             "\n"
             "By default, triggers a Stash library scan (with phash generation) first\n"
-            "and waits for it to finish, then runs Stash Clean before matching. The\n"
-            "scan lets Stash update moved-file paths before Clean removes records for\n"
-            "files no longer present. Stash storage must be available. Use --skip-scan\n"
-            "if you already scanned Stash yourself; Clean still runs.\n"
+            "and waits for it to finish, then runs Stash Clean before matching on a\n"
+            "full-library reconcile. The scan lets Stash update moved-file paths\n"
+            "before Clean removes records for files no longer present. Stash storage\n"
+            "must be available. Use --skip-scan if you already scanned Stash yourself;\n"
+            "Clean still runs for a full-library reconcile.\n"
             "\n"
             "Writes are applied immediately. Use --limit for a test run against a\n"
-            "small subset before pointing this at the full library.\n"
+            "small subset before pointing this at the full library. Stash Clean is\n"
+            "skipped for --limit, --path, and --added-in-last-days runs because it\n"
+            "removes stale records across the entire Stash library.\n"
             "\n"
             "--added-in-last-days N filters to Plex items added in the last N days\n"
             "(a server-side Plex query, not a full-library walk) - use this for routine\n"
@@ -2793,7 +2796,7 @@ def _build_stash_commands(sub: Any) -> None:
         action="store_true",
         dest="skip_scan",
         help="Skip the automatic Stash library scan (with phash generation). Stash Clean still "
-        "runs before reconciling.",
+        "runs for a full-library reconcile; it is skipped for partial scopes.",
     )
     set_func(reconcile_parser, stash_reconcile)
 
