@@ -34,7 +34,23 @@ When a merge is withheld for ambiguity, conflicting custom fields, missing metad
 
 ## Lookup and reporting
 
-A Stash-to-Plex lookup reads `Scene.custom_fields.plex_rating_key`, then resolves that key on the configured Plex server. A Plex-to-Stash lookup may use the deployed Stash custom-field scene filter and must accept multiple returned scenes. Warn when Plex no longer has the referenced item.
+A Stash-to-Plex lookup reads `Scene.custom_fields.plex_rating_key`, then resolves that key on the configured Plex server. A Plex-to-Stash lookup uses the deployed Stash custom-field scene filter with the decimal key passed as a **string**:
+
+```graphql
+query ScenesByPlexRatingKey($key: Any!, $page: Int!) {
+  findScenes(
+    scene_filter: {
+      custom_fields: [{field: "plex_rating_key", value: [$key], modifier: EQUALS}]
+    }
+    filter: {page: $page, per_page: 200}
+  ) {
+    count
+    scenes { id custom_fields }
+  }
+}
+```
+
+Page through all results; a key may match multiple scenes. Warn when Plex no longer has the referenced item. A live read/write/lookup spike against the configured Stash instance on 2026-09-28 stored a synthetic decimal string in this field, found exactly that scene with `EQUALS`, found no scenes for a different string, then removed the field and confirmed zero scenes retained it. The numeric-value probe also matched the string field, but callers should use the documented string representation.
 
 Report counts for keys added, changed, already current, and skipped for missing keys, ambiguous matches, or custom-field conflicts. Preserve the existing reconcile scope CSV and scene update/merge counts. Log scene IDs and rating keys for investigation without adding media titles or paths to committed reports.
 
@@ -42,5 +58,5 @@ Report counts for keys added, changed, already current, and skipped for missing 
 
 - Add the reconcile-specific Stash query and partial custom-field input support in `plexadm.stash`. Keep other Stash callers' query contract intact.
 - Add the read-only match plan and key writes within `plexadm.stash_reconcile`. Retain current Scan/Clean ordering and the existing `scripts/mass_process.sh` reconcile stage; no new environment variable or stage is required.
-- Cover unchanged, missing, and changed rating keys; one Plex item matching several paths or scenes; two Plex items sharing a path or matching one scene; no-metadata items; an invalid-key item matching several scenes with different stored keys; conflicting and compatible source custom fields; a lost merge response; partial-run ambiguity; and incomplete inventory aborting before all per-video mutations. For withheld merges, cover an ambiguous scene left untouched while a non-ambiguous scene gets its own update, and separate scenes retaining their own performers/tags while receiving the appropriate metadata, key, and play history. An integration test on Stash v0.31.1 must verify that custom fields supplied with `sceneMerge` survive and that source deletion and destination field update share a transaction.
+- Cover unchanged, missing, and changed rating keys; one Plex item matching several paths or scenes; two Plex items sharing a path or matching one scene; no-metadata items; an invalid-key item matching several scenes with different stored keys; conflicting and compatible source custom fields; a lost merge response; partial-run ambiguity; and incomplete inventory aborting before all per-video mutations. For withheld merges, cover an ambiguous scene left untouched while a non-ambiguous scene gets its own update, and separate scenes retaining their own performers/tags while receiving the appropriate metadata, key, and play history. An integration test on Stash v0.31.1 must verify that a stored string key is returned by the custom-field `EQUALS` filter, that custom fields supplied with `sceneMerge` survive, and that source deletion and destination field update share a transaction.
 - Update CLI help and the README's Stash Reconcile section with the new field, lookup method, partial-run read cost, and the absence of global stale-key cleanup.
