@@ -291,7 +291,7 @@ def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False)
     log_event(AuditEvent(action="rename_collection", level=level, title=new_title, details=details))
 
 
-def create_collection(section: Any, *, title: str, items: Iterable[Any], dry_run: bool = False) -> None:
+def create_collection(section: Any, *, title: str, items: Iterable[Any], dry_run: bool = False) -> int:
     """Create a regular (non-smart) collection seeded with items.
 
     Plex requires at least one item to create a manual collection at all - there's no "create
@@ -302,10 +302,13 @@ def create_collection(section: Any, *, title: str, items: Iterable[Any], dry_run
     item_list = list(items)
     if title not in _LOCK_GUARD_EXEMPT:
         item_list = _drop_locked(item_list)
+    if not item_list:
+        return 0
     if not dry_run:
         section.createCollection(title=title, items=item_list)
     level, details = _mutation_level_and_details(dry_run, {"item_count": len(item_list)})
     log_event(AuditEvent(action="create_manual_collection", level=level, title=title, details=details))
+    return len(item_list)
 
 
 def delete_collection(collection: Any, *, dry_run: bool = False) -> None:

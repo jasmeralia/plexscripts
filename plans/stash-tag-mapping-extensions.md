@@ -151,11 +151,11 @@ plexadm stash unmapped-tags [--output PATH] [--stash-endpoint URL] [--log-level 
 
 ## 3. Markdown report for `backfill-tags`
 
-Applies in **both** dry-run and real-apply modes — the report reflects "what happened" (or "what would have happened" in dry-run), not just "what got written to Plex". Written unconditionally at the end of `backfill_tags()`, alongside the existing JSON review file (which is unchanged — this is an additional output, not a replacement).
+Applies in **both** dry-run and real-apply modes — the report reflects "what happened" (or "what would have happened" in dry-run), not just "what got written to Plex". Written unconditionally at the end of `backfill_tags()`, alongside the JSON review file. Both outputs omit titles and media paths, using rating keys to identify items.
 
 New CLI flag on `backfill-tags`: `--report-output` (default `reference/stash_backfill_report.md`).
 
-New function `_write_backfill_report(path, *, dry_run, processed, matched_count, composition_additions, hair_additions, composition_added_count, hair_added_count, ambiguous_entries, review_path, review_entry_count)` writing:
+New function `_write_backfill_report(path, *, dry_run, processed, matched_count, composition_additions, composition_added_by_collection, hair_additions, hair_added_by_collection, taxonomy_additions, taxonomy_added_by_collection, new_collections, composition_added_count, hair_added_count, taxonomy_added_count, ambiguous_entries, remove_candidate_entries, review_path, review_entry_count)` writing. Per-collection counts come from lock-aware mutation helpers, so they agree with each summary total.
 
 ```markdown
 # Stash -> Plex Backfill Report
@@ -187,18 +187,23 @@ Mode: DRY RUN (no Plex changes made)
 
 ## Ambiguous scenes (staged for review, not applied)
 
-| Title | Reason |
+| Rating key | Reason |
 |---|---|
-| Example Writer - Post - 2023-01-16... | cross-axis: ['Category: Solo'] + ['Category: Lesbian'] |
+| 12345 | cross-axis: ['Category: Solo'] + ['Category: Lesbian'] |
 ```
 
-`Mode:` line reads `Mode: DRY RUN (no Plex changes made)` when `args.dry_run` else `Mode: APPLIED`. Omit the "Composition additions by collection" / "Hair additions by collection" tables entirely (not an empty table) when their respective dict is empty; same for the ambiguous-scenes table when there are zero ambiguous entries — print a plain `_No ambiguous scenes this run._` line instead of an empty table, matching how the review file already treats zero-entries as a legitimate outcome. Escape `|` in titles and reasons the same way as the unmapped-tags report.
+Include a separate `Removal candidates (staged for review, not applied)` section with rating key,
+collection to remove, and reason. The summary reports removal-candidate count separately from
+ambiguous scenes. Summary totals and per-collection tables reflect additions accepted after the
+`99: LOCKED` guard.
 
-This reuses the same per-video loop already iterating in `backfill_tags()` — no second pass over the library. Accumulate `ambiguous_entries: list[tuple[str, str]]` (title, ambiguous_reason) inline where `ambiguous_count` is already incremented, rather than a separate collection pass.
+`Mode:` line reads `Mode: DRY RUN (no Plex changes made)` when `args.dry_run` else `Mode: APPLIED`. Omit the "Composition additions by collection" / "Hair additions by collection" tables entirely (not an empty table) when their respective dict is empty; same for ambiguous-scene and removal-candidate tables when they have no entries — print a plain explanatory line instead of an empty table. Escape `|` in report cells.
+
+This reuses the same per-video loop already iterating in `backfill_tags()` — no second pass over the library. Accumulate `ambiguous_entries: list[tuple[str, str]]` (rating key, ambiguous reason) inline where `ambiguous_count` is already incremented, rather than a separate collection pass. Do not write video titles or file paths into generated review data or reports.
 
 ### Tests to add
 
-Extend `TestBackfillIntegration`: assert the markdown report file (via `tmp_path`, new `report_output` arg on the fake `args`) contains the right `Mode:` line for both a `dry_run=True` and a `dry_run=False` case, and that an ambiguous-producing scenario produces the ambiguous-scenes table with the expected title/reason.
+Extend `TestBackfillIntegration`: assert the markdown report file (via `tmp_path`, new `report_output` arg on the fake `args`) contains the right `Mode:` line for both a `dry_run=True` and a `dry_run=False` case, that ambiguous and removal-candidate sections use rating keys, and that removal rows are escaped and counted separately.
 
 ## Non-goals (explicitly out of scope for this task)
 
@@ -206,7 +211,6 @@ Extend `TestBackfillIntegration`: assert the markdown report file (via `tmp_path
 - Do not add conflict/removal detection for hair colors, or any cross-checking between composition and hair scope (e.g. "single performer + 2 hair tags = contradiction") — deliberately out of scope per §1's reasoning; this tool has no per-performer data to make that call safely.
 - Do not touch `classify_scene`, its dataclass, or its existing tests — hair is additive-only and doesn't need the conflict-group machinery at all.
 - Do not add a min-count/limit flag to `unmapped-tags` — sort order alone is sufficient per the design above.
-- Do not wire any of this into `scripts/mass_process.sh` — matches the existing non-goal already established for `backfill-tags` itself in `plans/stash-to-plex-tag-backfill.md`.
 
 ## Acceptance criteria
 

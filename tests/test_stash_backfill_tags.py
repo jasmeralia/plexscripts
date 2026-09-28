@@ -24,6 +24,7 @@ from plexadm.stash_backfill_tags import (
     _tag_to_collection,
     _tagalong_targets,
     _with_tagalong,
+    _write_backfill_report,
     _write_review,
     apply_review,
     backfill_tags,
@@ -1844,10 +1845,45 @@ class TestBackfillIntegration:
         assert len(review) == 1
         assert review[0]["action"] == "remove_candidate"
         assert review[0]["collection_to_remove"] == "01: Composition: MF Only"
+        assert "title" not in review[0]
+        assert "file_paths" not in review[0]
         report = args.report_output.read_text(encoding="utf-8")
         assert "Mode: APPLIED" in report
         assert "## Composition additions by collection" not in report
         assert "## Hair additions by collection" not in report
+        assert "- Removal candidates staged for review: 1" in report
+        assert "## Removal candidates (staged for review, not applied)" in report
+        assert (
+            "| 42 | 01: Composition: MF Only | Stash composition tags ['Composition: Solo'] "
+            "contradict Plex tag 'Composition: MF Only' |"
+        ) in report
+
+    def test_removal_candidate_report_escapes_table_cells(self, tmp_path: Path) -> None:
+        report_path = tmp_path / "report.md"
+
+        _write_backfill_report(
+            report_path,
+            dry_run=False,
+            processed=1,
+            matched_count=1,
+            composition_additions={},
+            composition_added_by_collection={},
+            hair_additions={},
+            hair_added_by_collection={},
+            taxonomy_additions={},
+            taxonomy_added_by_collection={},
+            new_collections=[],
+            composition_added_count=0,
+            hair_added_count=0,
+            taxonomy_added_count=0,
+            ambiguous_entries=[],
+            remove_candidate_entries=[("42|1", "01: Composition: Solo|Other", "reason | detail")],
+            review_path="review.json",
+            review_entry_count=1,
+        )
+
+        report = report_path.read_text(encoding="utf-8")
+        assert "| 42\\|1 | 01: Composition: Solo\\|Other | reason \\| detail |" in report
 
     def test_ambiguous_scene_is_in_markdown_report(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
@@ -1886,9 +1922,14 @@ class TestBackfillIntegration:
 
         add_items.assert_not_called()
         report = args.report_output.read_text(encoding="utf-8")
-        assert "| Title | Reason |" in report
-        assert "| Scene \\| One | cross-axis: ['Composition: Solo'] + ['Composition: FFM'] |" in report
+        assert "| Rating key | Reason |" in report
+        assert "| 42 | cross-axis: ['Composition: Solo'] + ['Composition: FFM'] |" in report
+        assert "Scene \\| One" not in report
         assert "Ambiguous matches staged for review: 1" in report
+        review = _load_review(args.review_output)
+        assert review[0]["rating_key"] == "42"
+        assert "title" not in review[0]
+        assert "file_paths" not in review[0]
 
     def test_taxonomy_merge_adds_to_existing_collection_with_dry_run(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"
@@ -1974,7 +2015,7 @@ class TestBackfillIntegration:
             patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
             patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
             patch("plexadm.stash_backfill_tags.add_items") as add_items,
-            patch("plexadm.stash_backfill_tags.create_collection") as create_collection,
+            patch("plexadm.stash_backfill_tags.create_collection", return_value=1) as create_collection,
         ):
             assert backfill_tags(args) == 0
 
@@ -1989,6 +2030,49 @@ class TestBackfillIntegration:
         assert "- Taxonomy memberships added: 1" in report
         assert "- New collections created: 1" in report
         assert "| 01: Activity: Missionary (new) | 1 |" in report
+
+    def test_taxonomy_collection_is_not_reported_created_when_all_videos_locked(self, tmp_path: Path) -> None:
+        path = "/data/NSFW Scenes/Test/test.mp4"
+        video = _mock_video(collections=["99: LOCKED"], locations=[path])
+        tag = {
+            "id": "10",
+            "name": "Missionary",
+            "stash_ids": [{"endpoint": "https://stashdb.org/graphql", "stash_id": "abc"}],
+        }
+        scene = {
+            "id": "7",
+            "files": [{"path": path}],
+            "tags": [{"id": tag["id"], "name": tag["name"]}],
+        }
+        stash = MagicMock()
+        stash.all_scenes.return_value = {path: scene}
+        stash.all_tags.return_value = [tag]
+        plex_ctx = MagicMock()
+        plex_ctx.section.collections.return_value = []
+        plex_ctx.all_videos.return_value = [video]
+        args = SimpleNamespace(
+            config="config.ini",
+            dry_run=False,
+            limit=None,
+            path=None,
+            log_level="WARNING",
+            report_output=tmp_path / "report.md",
+            review_output=tmp_path / "review.json",
+            stash_endpoint="http://stash:9999",
+        )
+
+        with (
+            patch("plexadm.stash_backfill_tags.load_config", return_value=SimpleNamespace(stash_endpoint=None)),
+            patch("plexadm.stash_backfill_tags.StashClient", return_value=stash),
+            patch("plexadm.stash_backfill_tags.PlexContext", return_value=plex_ctx),
+        ):
+            assert backfill_tags(args) == 0
+
+        plex_ctx.section.createCollection.assert_not_called()
+        report = args.report_output.read_text(encoding="utf-8")
+        assert "- Taxonomy memberships added: 0" in report
+        assert "- New collections created: 0" in report
+        assert "| 01: Activity: Missionary | 0 |" in report
 
     def test_taxonomy_skips_excluded_and_unaccepted_tags(self, tmp_path: Path) -> None:
         path = "/data/NSFW Scenes/Test/test.mp4"

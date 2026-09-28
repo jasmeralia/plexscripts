@@ -2,6 +2,7 @@
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck disable=SC1091
 . "${SCRIPT_DIR}/plexadm-env.sh"
+REFERENCE_DIR=${PLEXADM_REFERENCE_DIR:-/usr/local/share/plexadm/reference}
 START_DATE=$(date)
 
 # First, set all the writers from the titles
@@ -32,6 +33,21 @@ date; time "${SCRIPT_DIR}/set_unrated.sh"
 date; time "${SCRIPT_DIR}/set_ppv.sh"
 
 date; time "$PLEXADM" collection sync-no-studio "00A: NO STUDIO"
+
+# Reconcile Plex metadata into Stash, then backfill Plex taxonomy from the refreshed Stash tags.
+# Reconcile's full scan and Clean require Stash storage to be available.
+date
+time "$PLEXADM" stash reconcile || {
+  echo "Stash reconcile failed; stopping mass processing before backfill and review updates." >&2
+  exit 1
+}
+date
+time "$PLEXADM" stash backfill-tags \
+  --review-output "${REFERENCE_DIR}/stash_backfill_review.json" \
+  --report-output "${REFERENCE_DIR}/stash_backfill_report.md" || {
+  echo "Stash backfill-tags failed; stopping mass processing before review updates." >&2
+  exit 1
+}
 
 # Flag likely-mistagged '01: Composition: Lesbian' members for review
 date; time "$PLEXADM" collection sync-lesbian-single-writer

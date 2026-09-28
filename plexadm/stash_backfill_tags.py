@@ -67,8 +67,6 @@ _COMPATIBLE_HEADCOUNT_COMBOS = frozenset({frozenset({"Composition: FFFM", "Compo
 @dataclass
 class SceneDecision:
     rating_key: str
-    title: str
-    file_paths: list[str]
     adds: list[str] = field(default_factory=list)
     remove_candidates: list[str] = field(default_factory=list)
     ambiguous_reason: str | None = None
@@ -102,7 +100,7 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
         conflicts.append(f"multiple exclusive-pairing tags: {sorted(exclusive_pairing)}")
 
     if conflicts:
-        return SceneDecision(rating_key="", title="", file_paths=[], ambiguous_reason="; ".join(conflicts))
+        return SceneDecision(rating_key="", ambiguous_reason="; ".join(conflicts))
 
     adds = sorted(s - p)
 
@@ -124,7 +122,7 @@ def classify_scene(stash_tags: set[str], plex_tags: set[str]) -> SceneDecision |
     if not adds and not remove_candidates:
         return None
 
-    return SceneDecision(rating_key="", title="", file_paths=[], adds=adds, remove_candidates=remove_candidates)
+    return SceneDecision(rating_key="", adds=adds, remove_candidates=remove_candidates)
 
 
 def _stash_tags_in_scope(scene: dict[str, Any], scope: frozenset[str]) -> set[str]:
@@ -2301,13 +2299,17 @@ def _write_backfill_report(
     processed: int,
     matched_count: int,
     composition_additions: dict[str, list[Any]],
+    composition_added_by_collection: dict[str, int],
     hair_additions: dict[str, list[Any]],
+    hair_added_by_collection: dict[str, int],
     taxonomy_additions: dict[str, list[Any]],
+    taxonomy_added_by_collection: dict[str, int],
     new_collections: list[str],
     composition_added_count: int,
     hair_added_count: int,
     taxonomy_added_count: int,
     ambiguous_entries: list[tuple[str, str]],
+    remove_candidate_entries: list[tuple[str, str, str]],
     review_path: str | Path,
     review_entry_count: int,
 ) -> None:
@@ -2330,6 +2332,7 @@ def _write_backfill_report(
         f"- Taxonomy memberships added: {taxonomy_added_count}",
         f"- New collections created: {len(new_collections)}",
         f"- Ambiguous matches staged for review: {len(ambiguous_entries)}",
+        f"- Removal candidates staged for review: {len(remove_candidate_entries)}",
         f"- Review entries written: {review_entry_count} -> {review_path}",
     ]
 
@@ -2344,8 +2347,8 @@ def _write_backfill_report(
             ]
         )
         lines.extend(
-            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {len(videos)} |"
-            for tag, videos in sorted(composition_additions.items())
+            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {count} |"
+            for tag, count in sorted(composition_added_by_collection.items())
         )
 
     if hair_additions:
@@ -2359,8 +2362,8 @@ def _write_backfill_report(
             ]
         )
         lines.extend(
-            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {len(videos)} |"
-            for tag, videos in sorted(hair_additions.items())
+            f"| {_escape_markdown_table_cell(_tag_to_collection(tag))} | {count} |"
+            for tag, count in sorted(hair_added_by_collection.items())
         )
 
     if taxonomy_additions:
@@ -2374,19 +2377,30 @@ def _write_backfill_report(
             ]
         )
         lines.extend(
-            f"| {_escape_markdown_table_cell(target + (' (new)' if target in new_collections else ''))} | {len(videos)} |"
-            for target, videos in sorted(taxonomy_additions.items())
+            f"| {_escape_markdown_table_cell(target + (' (new)' if target in new_collections else ''))} | {count} |"
+            for target, count in sorted(taxonomy_added_by_collection.items())
         )
 
     lines.extend(["", "## Ambiguous scenes (staged for review, not applied)", ""])
     if ambiguous_entries:
-        lines.extend(["| Title | Reason |", "|---|---|"])
+        lines.extend(["| Rating key | Reason |", "|---|---|"])
         lines.extend(
-            f"| {_escape_markdown_table_cell(title)} | {_escape_markdown_table_cell(reason)} |"
-            for title, reason in ambiguous_entries
+            f"| {_escape_markdown_table_cell(rating_key)} | {_escape_markdown_table_cell(reason)} |"
+            for rating_key, reason in ambiguous_entries
         )
     else:
         lines.append("_No ambiguous scenes this run._")
+
+    lines.extend(["", "## Removal candidates (staged for review, not applied)", ""])
+    if remove_candidate_entries:
+        lines.extend(["| Rating key | Collection to remove | Reason |", "|---|---|---|"])
+        lines.extend(
+            f"| {_escape_markdown_table_cell(rating_key)} | "
+            f"{_escape_markdown_table_cell(collection)} | {_escape_markdown_table_cell(reason)} |"
+            for rating_key, collection, reason in remove_candidate_entries
+        )
+    else:
+        lines.append("_No removal candidates this run._")
 
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -2406,8 +2420,6 @@ def _decision_entries(
 ) -> list[dict[str, Any]]:
     common = {
         "rating_key": decision.rating_key,
-        "title": decision.title,
-        "file_paths": decision.file_paths,
         "stash_tags": sorted(stash_tags),
         "plex_tags": sorted(_tag_to_collection(tag) for tag in plex_tags),
         "status": "proposed",
@@ -2471,6 +2483,7 @@ def backfill_tags(args: Any) -> int:
     taxonomy_additions: dict[str, list[Any]] = defaultdict(list)
     review_entries: list[dict[str, Any]] = []
     ambiguous_entries: list[tuple[str, str]] = []
+    remove_candidate_entries: list[tuple[str, str, str]] = []
     processed = 0
     matched_count = 0
     ambiguous_count = 0
@@ -2508,15 +2521,21 @@ def backfill_tags(args: Any) -> int:
         decision = classify_scene(stash_tags, plex_tags)
         if decision is not None:
             decision.rating_key = str(video.ratingKey)
-            decision.title = str(video.title)
-            decision.file_paths = locations
 
             if decision.ambiguous_reason:
                 ambiguous_count += 1
-                ambiguous_entries.append((decision.title, decision.ambiguous_reason))
+                ambiguous_entries.append((decision.rating_key, decision.ambiguous_reason))
             else:
                 for tag in decision.adds:
                     additions[tag].append(video)
+                remove_candidate_entries.extend(
+                    (
+                        decision.rating_key,
+                        _tag_to_collection(tag),
+                        f"Stash composition tags {sorted(stash_tags)} contradict Plex tag {tag!r}",
+                    )
+                    for tag in decision.remove_candidates
+                )
             review_entries.extend(_decision_entries(decision, stash_tags, plex_tags))
 
         video_stash_tags = {
@@ -2532,25 +2551,34 @@ def backfill_tags(args: Any) -> int:
     _write_review(review_path, review_entries)
 
     composition_added_count = 0
+    composition_added_by_collection: dict[str, int] = {}
     for tag, videos in sorted(additions.items()):
         collection = plex_ctx.collection(_tag_to_collection(tag))
-        composition_added_count += add_items(collection, videos, dry_run=args.dry_run)
+        added_count = add_items(collection, videos, dry_run=args.dry_run)
+        composition_added_by_collection[tag] = added_count
+        composition_added_count += added_count
 
     hair_added_count = 0
+    hair_added_by_collection: dict[str, int] = {}
     for tag, videos in sorted(hair_additions.items()):
         collection = plex_ctx.collection(_tag_to_collection(tag))
-        hair_added_count += add_items(collection, videos, dry_run=args.dry_run)
+        added_count = add_items(collection, videos, dry_run=args.dry_run)
+        hair_added_by_collection[tag] = added_count
+        hair_added_count += added_count
 
     new_collections: list[str] = []
     taxonomy_added_count = 0
+    taxonomy_added_by_collection: dict[str, int] = {}
     for target, videos in sorted(taxonomy_additions.items()):
         if target in existing_titles:
             collection = plex_ctx.collection(target)
-            taxonomy_added_count += add_items(collection, videos, dry_run=args.dry_run)
+            added_count = add_items(collection, videos, dry_run=args.dry_run)
         else:
-            new_collections.append(target)
-            create_collection(plex_ctx.section, title=target, items=videos, dry_run=args.dry_run)
-            taxonomy_added_count += len(videos)
+            added_count = create_collection(plex_ctx.section, title=target, items=videos, dry_run=args.dry_run)
+            if added_count:
+                new_collections.append(target)
+        taxonomy_added_by_collection[target] = added_count
+        taxonomy_added_count += added_count
 
     report_path = Path(getattr(args, "report_output", "reference/stash_backfill_report.md"))
     _write_backfill_report(
@@ -2559,13 +2587,17 @@ def backfill_tags(args: Any) -> int:
         processed=processed,
         matched_count=matched_count,
         composition_additions=additions,
+        composition_added_by_collection=composition_added_by_collection,
         hair_additions=hair_additions,
+        hair_added_by_collection=hair_added_by_collection,
         taxonomy_additions=taxonomy_additions,
+        taxonomy_added_by_collection=taxonomy_added_by_collection,
         new_collections=new_collections,
         composition_added_count=composition_added_count,
         hair_added_count=hair_added_count,
         taxonomy_added_count=taxonomy_added_count,
         ambiguous_entries=ambiguous_entries,
+        remove_candidate_entries=remove_candidate_entries,
         review_path=review_path,
         review_entry_count=len(review_entries),
     )
