@@ -284,6 +284,7 @@ def reconcile(args: Any) -> int:
         if key is None:
             stats.missing_key += 1
             blockers = sorted({str(scene["id"]) for path in locations for scene in path_scenes.get(path, [])}, key=int)
+            matched_stash_ids.update(blockers)
             log.warning("Skipping Plex item with no usable ratingKey; matching Stash scene IDs=%s", blockers)
             continue
         matched = {scene_id: stash_scenes_by_id[scene_id] for scene_id in key_to_scene_ids.get(key, set())}
