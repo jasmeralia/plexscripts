@@ -224,6 +224,21 @@ def test_reconcile_merges_updates_preserves_existing_metadata_and_exports_scope(
     assert "Stash scenes with no Plex match: 1" in output
 
 
+def test_reconcile_does_not_report_keyless_path_match_as_unmatched(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    scene = {"id": "15", "files": [{"path": "/keyless-match.mp4"}], "performers": [], "tags": []}
+    stash = MagicMock()
+    stash.reconcile_scenes.return_value = [scene]
+    keyless_video = _video(ratingKey=None, locations=["/keyless-match.mp4"])
+
+    result, _ = _execute_reconcile(stash, [keyless_video], tmp_path)
+
+    assert result == 0
+    assert "Stash scenes with no Plex match: 0" in capsys.readouterr().out
+    assert "unmatched,15,/keyless-match.mp4" not in (tmp_path / "scope.csv").read_text(encoding="utf-8")
+
+
 def test_reconcile_path_filter_and_limit_stop_processing_and_skip_unmatched_scope(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
