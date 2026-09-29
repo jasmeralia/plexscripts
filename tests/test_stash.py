@@ -64,6 +64,83 @@ class TestClean:
         assert client._gql.call_args_list[1].args[1] == {"id": "4"}
 
 
+class TestReconcileSupport:
+    def test_reconcile_scenes_uses_sorted_pages_and_keeps_custom_fields(self) -> None:
+        client = StashClient("http://localhost:9999")
+        client._gql = MagicMock(  # type: ignore[method-assign]
+            return_value={
+                "findScenes": {
+                    "count": 1,
+                    "scenes": [{"id": "7", "files": [{"path": "/a.mp4"}], "custom_fields": {"plex_rating_key": "4"}}],
+                }
+            }
+        )
+        scenes = client.reconcile_scenes()
+
+        assert scenes[0]["custom_fields"] == {"plex_rating_key": "4"}
+        query, variables = client._gql.call_args.args
+        assert 'sort: "id", direction: ASC' in query
+        assert variables == {"page": 1, "per_page": 200}
+
+    def test_reconcile_scenes_rejects_incomplete_page(self) -> None:
+        client = StashClient("http://localhost:9999")
+        client._gql = MagicMock(  # type: ignore[method-assign]
+            return_value={"findScenes": {"count": 2, "scenes": [{"id": "1", "files": []}]}}
+        )
+        with pytest.raises(RuntimeError, match="ended early"):
+            client.reconcile_scenes()
+
+    def test_reconcile_capability_check_requires_custom_fields_and_merge(self) -> None:
+        client = StashClient("http://localhost:9999")
+        client._gql = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                {
+                    "scene": {"fields": [{"name": "custom_fields"}]},
+                    "update": {
+                        "inputFields": [
+                            {"name": "custom_fields", "type": {"name": "CustomFieldsInput"}},
+                        ]
+                    },
+                    "merge": {"inputFields": [{"name": "source"}, {"name": "destination"}, {"name": "values"}]},
+                    "mergeValues": {"inputFields": [{"name": "custom_fields"}]},
+                    "query": {
+                        "fields": [
+                            {
+                                "name": "findScenes",
+                                "args": [{"name": "scene_filter", "type": {"name": "SceneFilterType"}}],
+                            }
+                        ]
+                    },
+                },
+                {"input": {"kind": "INPUT_OBJECT", "inputFields": [{"name": "partial"}]}},
+                {
+                    "input": {
+                        "kind": "INPUT_OBJECT",
+                        "inputFields": [{"name": "custom_fields", "type": {"name": "SceneCustomFieldFilter"}}],
+                    }
+                },
+                {
+                    "input": {
+                        "kind": "INPUT_OBJECT",
+                        "inputFields": [{"name": "field"}, {"name": "value"}, {"name": "modifier"}],
+                    }
+                },
+            ]
+        )
+        client.check_reconcile_capabilities()
+        assert client._gql.call_count == 4
+
+    def test_scene_key_update_uses_partial_custom_fields(self) -> None:
+        client = StashClient("http://localhost:9999")
+        client._gql = MagicMock(return_value={"sceneUpdate": {"id": "7"}})  # type: ignore[method-assign]
+
+        client.update_scene("7", {"custom_fields": {"partial": {"plex_rating_key": "42"}}})
+
+        assert client._gql.call_args.args[1] == {
+            "input": {"id": "7", "custom_fields": {"partial": {"plex_rating_key": "42"}}}
+        }
+
+
 class TestWaitForJob:
     def test_polls_until_finished(self) -> None:
         client = StashClient("http://localhost:9999")

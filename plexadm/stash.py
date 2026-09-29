@@ -28,6 +28,49 @@ query FindScenes($page: Int!, $per_page: Int!) {
 }
 """
 
+_RECONCILE_SCENES = """
+query ReconcileScenes($page: Int!, $per_page: Int!) {
+  findScenes(filter: { page: $page, per_page: $per_page }, sort: "id", direction: ASC) {
+    count
+    scenes {
+      id
+      files { path }
+      custom_fields
+      performers { id name }
+      tags { id name }
+    }
+  }
+}
+"""
+
+_SCENE_BY_ID = """
+query ReconcileSceneByID($id: ID!) {
+  findScene(id: $id) {
+    id
+    files { path }
+    custom_fields
+    performers { id name }
+    tags { id name }
+  }
+}
+"""
+
+_RECONCILE_SCHEMA = """
+query ReconcileSchema {
+  scene: __type(name: "Scene") { fields { name } }
+  update: __type(name: "SceneUpdateInput") { inputFields { name type { name ofType { name ofType { name } } } } }
+  merge: __type(name: "SceneMergeInput") { inputFields { name type { name ofType { name ofType { name } } } } }
+  mergeValues: __type(name: "SceneMergeInputValues") { inputFields { name type { name ofType { name ofType { name } } } } }
+  query: __type(name: "Query") { fields { name args { name type { name ofType { name ofType { name } } } } } }
+}
+"""
+
+_INPUT_SCHEMA = """
+query ReconcileInputSchema($name: String!) {
+  input: __type(name: $name) { kind inputFields { name type { name ofType { name ofType { name } } } } }
+}
+"""
+
 _ALL_TAGS = """
 query AllTags {
   allTags { id name scene_count stash_ids { endpoint stash_id } }
@@ -142,6 +185,14 @@ query FindJob($id: ID!) {
 _FAILED_JOB_STATUSES = {"CANCELLED", "FAILED"}
 
 
+def _named_type(type_ref: dict[str, Any] | None) -> str | None:
+    while type_ref:
+        if type_ref.get("name"):
+            return str(type_ref["name"])
+        type_ref = type_ref.get("ofType")
+    return None
+
+
 class StashClient:
     def __init__(self, endpoint: str) -> None:
         self.endpoint = endpoint.rstrip("/") + "/graphql"
@@ -183,6 +234,108 @@ class StashClient:
                 break
             page += 1
         return index
+
+    def check_reconcile_capabilities(self) -> None:
+        """Fail before reconcile mutations unless Stash supports scene custom fields and merges."""
+        schema = self._gql(_RECONCILE_SCHEMA)
+        scene_fields = {field["name"] for field in (schema.get("scene") or {}).get("fields") or []}
+        update_fields = {field["name"] for field in (schema.get("update") or {}).get("inputFields") or []}
+        custom_fields_type = next(
+            (
+                _named_type(field.get("type"))
+                for field in (schema.get("update") or {}).get("inputFields") or []
+                if field["name"] == "custom_fields"
+            ),
+            None,
+        )
+        merge_fields = {field["name"] for field in (schema.get("merge") or {}).get("inputFields") or []}
+        values_type = next(
+            (
+                _named_type(field.get("type"))
+                for field in (schema.get("merge") or {}).get("inputFields") or []
+                if field["name"] == "values"
+            ),
+            None,
+        )
+        value_fields = {field["name"] for field in (schema.get("mergeValues") or {}).get("inputFields") or []}
+        missing = []
+        if "custom_fields" not in scene_fields:
+            missing.append("Scene.custom_fields")
+        if "custom_fields" not in update_fields:
+            missing.append("SceneUpdateInput.custom_fields")
+        elif custom_fields_type:
+            custom_fields_schema = self._gql(_INPUT_SCHEMA, {"name": custom_fields_type}).get("input") or {}
+            custom_fields_input_fields = {field["name"] for field in custom_fields_schema.get("inputFields") or []}
+            if custom_fields_schema.get("kind") != "INPUT_OBJECT" or "partial" not in custom_fields_input_fields:
+                missing.append(f"{custom_fields_type}.partial")
+        if not {"source", "destination", "values"}.issubset(merge_fields):
+            missing.append("SceneMergeInput source/destination/values")
+        if values_type and values_type != "SceneUpdateInput" and "custom_fields" not in value_fields:
+            missing.append(f"{values_type}.custom_fields")
+        query_fields = (schema.get("query") or {}).get("fields") or []
+        find_scenes: dict[str, Any] = next((field for field in query_fields if field["name"] == "findScenes"), {})
+        scene_filter_type = next(
+            (_named_type(arg.get("type")) for arg in find_scenes.get("args") or [] if arg["name"] == "scene_filter"),
+            None,
+        )
+        scene_filter_schema = (
+            self._gql(_INPUT_SCHEMA, {"name": scene_filter_type}).get("input") or {} if scene_filter_type else {}
+        )
+        scene_filter_fields = scene_filter_schema.get("inputFields") or []
+        custom_filter_type = next(
+            (_named_type(field.get("type")) for field in scene_filter_fields if field["name"] == "custom_fields"),
+            None,
+        )
+        custom_filter_schema = (
+            self._gql(_INPUT_SCHEMA, {"name": custom_filter_type}).get("input") or {} if custom_filter_type else {}
+        )
+        custom_filter_fields = {field["name"] for field in custom_filter_schema.get("inputFields") or []}
+        if not {"field", "value", "modifier"}.issubset(custom_filter_fields):
+            missing.append("findScenes scene_filter.custom_fields EQUALS")
+        if missing:
+            raise RuntimeError("Stash does not support safe Plex rating key reconciliation: " + ", ".join(missing))
+
+    def reconcile_scenes(self) -> list[dict[str, Any]]:
+        """Read a stable, ID-ordered scene inventory for reconcile, retaining path collisions."""
+        scenes_by_id: dict[str, dict[str, Any]] = {}
+        expected_count: int | None = None
+        previous_id: int | None = None
+        page = 1
+        while True:
+            result = self._gql(_RECONCILE_SCENES, {"page": page, "per_page": PAGE_SIZE})["findScenes"]
+            count = int(result["count"])
+            scenes = result["scenes"]
+            if expected_count is None:
+                expected_count = count
+            elif count != expected_count:
+                raise RuntimeError(f"Stash scene count changed during reconcile inventory ({expected_count} → {count})")
+            expected_page_size = min(PAGE_SIZE, max(count - len(scenes_by_id), 0))
+            if len(scenes) != expected_page_size:
+                raise RuntimeError(f"Stash scene inventory ended early on page {page}")
+            for scene in scenes:
+                scene_id = str(scene["id"])
+                try:
+                    numeric_id = int(scene_id)
+                except ValueError as exc:
+                    raise RuntimeError(f"Stash returned a non-numeric scene ID: {scene_id}") from exc
+                if scene_id in scenes_by_id or (previous_id is not None and numeric_id <= previous_id):
+                    raise RuntimeError(f"Stash scene pagination was not strictly ID-ordered at scene {scene_id}")
+                previous_id = numeric_id
+                scenes_by_id[scene_id] = scene
+            if len(scenes_by_id) == count:
+                break
+            if not scenes:
+                raise RuntimeError(f"Stash scene inventory ended at {len(scenes_by_id)} of {count} scenes")
+            page += 1
+        if len(scenes_by_id) != (expected_count or 0):
+            raise RuntimeError(
+                f"Stash scene inventory count mismatch: collected {len(scenes_by_id)} of {expected_count}"
+            )
+        return list(scenes_by_id.values())
+
+    def reconcile_scene_by_id(self, scene_id: str) -> dict[str, Any] | None:
+        """Read the current merge participant immediately before a scene merge."""
+        return self._gql(_SCENE_BY_ID, {"id": scene_id}).get("findScene")
 
     def all_tags(self) -> list[dict[str, Any]]:
         """Return every Stash tag with its id, name, scene_count, and stash_ids (external stash-box links)."""

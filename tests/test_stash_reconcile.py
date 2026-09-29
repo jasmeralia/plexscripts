@@ -143,9 +143,10 @@ class TestReconcileScanGating:
 
     def _run(self, tmp_path: Path, **arg_overrides: object) -> MagicMock:
         fake_stash = MagicMock()
-        fake_stash.all_scenes.return_value = {}
+        fake_stash.reconcile_scenes.return_value = []
         fake_plex_ctx = MagicMock()
         fake_plex_ctx.all_videos.return_value = []
+        fake_plex_ctx.section.totalSize = 0
 
         with (
             patch.object(stash_reconcile, "load_config", return_value=SimpleNamespace(stash_endpoint=None)),
@@ -161,15 +162,15 @@ class TestReconcileScanGating:
         fake_stash = self._run(tmp_path)
         fake_stash.scan.assert_called_once_with()
         fake_stash.clean.assert_called_once_with()
-        fake_stash.all_scenes.assert_called_once_with()
-        assert fake_stash.method_calls[:3] == [call.scan(), call.clean(), call.all_scenes()]
+        fake_stash.reconcile_scenes.assert_called_once_with()
+        assert fake_stash.method_calls[:3] == [call.check_reconcile_capabilities(), call.scan(), call.clean()]
 
     def test_skip_scan_flag_bypasses_scan(self, tmp_path: Path) -> None:
         fake_stash = self._run(tmp_path, skip_scan=True)
         fake_stash.scan.assert_not_called()
         fake_stash.clean.assert_called_once_with()
-        fake_stash.all_scenes.assert_called_once_with()
-        assert fake_stash.method_calls[:2] == [call.clean(), call.all_scenes()]
+        fake_stash.reconcile_scenes.assert_called_once_with()
+        assert fake_stash.method_calls[:2] == [call.check_reconcile_capabilities(), call.clean()]
 
     @pytest.mark.parametrize(
         "partial_scope",
@@ -183,7 +184,7 @@ class TestReconcileScanGating:
         fake_stash = self._run(tmp_path, skip_scan=True, **partial_scope)
         fake_stash.scan.assert_not_called()
         fake_stash.clean.assert_not_called()
-        fake_stash.all_scenes.assert_called_once_with()
+        fake_stash.reconcile_scenes.assert_called_once_with()
 
     def test_path_filter_is_a_partial_scan(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         self._run(tmp_path, path="/data/selected")
@@ -209,9 +210,12 @@ class TestReconcileScanGating:
 class TestReconcileProgress:
     def test_prints_progress_at_time_intervals(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
         fake_stash = MagicMock()
-        fake_stash.all_scenes.return_value = {}
+        fake_stash.reconcile_scenes.return_value = []
         fake_plex_ctx = MagicMock()
-        fake_plex_ctx.all_videos.return_value = [SimpleNamespace(title=f"Video {i}", locations=[]) for i in range(1, 4)]
+        fake_plex_ctx.all_videos.return_value = [
+            SimpleNamespace(title=f"Video {i}", ratingKey=str(i), locations=[f"/progress/{i}.mp4"]) for i in range(1, 4)
+        ]
+        fake_plex_ctx.section.totalSize = 3
         args = SimpleNamespace(
             config=None,
             stash_endpoint="http://stash.example.com",
