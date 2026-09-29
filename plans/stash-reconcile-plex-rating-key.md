@@ -2,7 +2,7 @@
 
 ## Goal and scope
 
-Odoo task 575 asks `plexadm stash reconcile` to record the matched Plex video's `ratingKey` in a supported, queryable Stash field. Reconcile must update a changed key, handle a Plex item that matches multiple Stash scenes, preserve unrelated Stash metadata, and document the behavior. This is a design for that feature; this PR does not change runtime behavior.
+Odoo task 575 asks `plexadm stash reconcile` to record the matched Plex video's `ratingKey` in a supported, queryable Stash field. Reconcile must update a changed key, handle a Plex item that matches multiple Stash scenes, preserve unrelated Stash metadata, and document the behavior. The feature is implemented in `plexadm/stash.py` and `plexadm/stash_reconcile.py`; this note describes its runtime behavior and safety constraints.
 
 Use the Stash scene custom field `plex_rating_key`, storing the decimal Plex rating key as a string. The key belongs to the configured Plex server and is a lookup hint, not a global media identity. Matching remains based on current file paths; a stored key must never be used to decide that a scene matches a Plex item. A lookup by key may return more than one scene.
 

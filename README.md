@@ -15,6 +15,40 @@ Stash Clean is skipped for partial Plex scopes selected with `--limit`, `--path`
 the scan; Clean still runs on a full-library reconcile. Stash storage must be available for the
 operations that run.
 
+For each unambiguous path match, reconcile stores the configured Plex server's `ratingKey` in
+the Stash scene custom field `plex_rating_key` as a decimal string. The key is a lookup hint;
+path matching remains authoritative. A later reconcile replaces a changed key, while a scene
+without a current Plex path match keeps its existing value. There is no global stale-key cleanup.
+To find a scene from Plex, use Stash's custom-field filter and pass the key as a string:
+
+```graphql
+query ScenesByPlexRatingKey($key: Any!, $page: Int!) {
+  findScenes(
+    scene_filter: {
+      custom_fields: [{field: "plex_rating_key", value: [$key], modifier: EQUALS}]
+    }
+    filter: {page: $page, per_page: 200}
+  ) {
+    count
+    scenes { id custom_fields }
+  }
+}
+```
+
+Page through all results because a key can identify more than one Stash scene. The key belongs to
+one Plex server and may become stale if Plex removes an item while its file remains in Stash;
+resolve the key on the configured server and verify the path when correctness matters.
+
+Keep the Plex library unchanged until reconcile completes. Reconcile checks the library item
+count and unique rating keys, but the APIs do not provide a transactional Plex snapshot. Partial
+scopes (`--limit`, `--path`, or `--added-in-last-days`) read the full Plex listing once to detect
+shared paths, adding one library-wide read. Items without usable rating keys are skipped, and
+their paths block updates to other items. If more than one Plex item can own a matched Stash
+scene, all affected items are skipped. A Plex item with no descriptive metadata still updates
+the key only. When several Stash scenes match one Plex item, reconcile merges them only if their
+non-plexadm custom fields can be combined without conflicting values; on conflict it leaves the
+scenes separate and writes the key to each scene.
+
 `scripts/mass_process.sh` runs a full reconcile after its Plex tagging steps, then runs
 `plexadm stash backfill-tags` against the refreshed Stash tags before updating review
 collections. Stash storage must be available whenever the full mass-processing script runs. If
