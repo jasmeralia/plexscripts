@@ -92,9 +92,16 @@ def test_fetch_plex_cover_handles_missing_success_and_request_failure(caplog: py
     mock_get.assert_called_once_with("http://plex:32400/thumb/1?X-Plex-Token=token", timeout=15)
     response.raise_for_status.assert_called_once_with()
 
-    with patch.object(stash_reconcile.requests, "get", side_effect=requests.RequestException("offline")):
+    error_response = requests.Response()
+    error_response.status_code = 404
+    error_response.url = f"http://plex:32400/thumb/2?X-Plex-Token={cfg.token}"
+    http_error = requests.HTTPError(
+        f"404 Client Error: Not Found for url: {error_response.url}", response=error_response
+    )
+    with patch.object(stash_reconcile.requests, "get", side_effect=http_error):
         assert stash_reconcile._fetch_plex_cover(SimpleNamespace(title="Broken Cover", thumb="/thumb/2"), cfg) is None
-    assert "Failed to fetch Plex cover for 'Broken Cover'" in caplog.text
+    assert "Failed to fetch Plex cover for 'Broken Cover' (HTTP 404)" in caplog.text
+    assert "X-Plex-Token" not in caplog.text
 
 
 @pytest.mark.parametrize("stored", [42, 42.0, "42", "042"])

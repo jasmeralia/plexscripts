@@ -79,7 +79,7 @@ class TestReconcileSupport:
 
         assert scenes[0]["custom_fields"] == {"plex_rating_key": "4"}
         query, variables = client._gql.call_args.args
-        assert 'sort: "id", direction: ASC' in query
+        assert 'filter: { page: $page, per_page: $per_page, sort: "id", direction: ASC }' in query
         assert variables == {"page": 1, "per_page": 200}
 
     def test_reconcile_scenes_rejects_incomplete_page(self) -> None:
@@ -107,12 +107,26 @@ class TestReconcileSupport:
                         "fields": [
                             {
                                 "name": "findScenes",
-                                "args": [{"name": "scene_filter", "type": {"name": "SceneFilterType"}}],
+                                "args": [
+                                    {"name": "filter", "type": {"name": "FindFilterType"}},
+                                    {"name": "scene_filter", "type": {"name": "SceneFilterType"}},
+                                ],
                             }
                         ]
                     },
                 },
                 {"input": {"kind": "INPUT_OBJECT", "inputFields": [{"name": "partial"}]}},
+                {
+                    "input": {
+                        "kind": "INPUT_OBJECT",
+                        "inputFields": [
+                            {"name": "page"},
+                            {"name": "per_page"},
+                            {"name": "sort"},
+                            {"name": "direction"},
+                        ],
+                    }
+                },
                 {
                     "input": {
                         "kind": "INPUT_OBJECT",
@@ -128,7 +142,7 @@ class TestReconcileSupport:
             ]
         )
         client.check_reconcile_capabilities()
-        assert client._gql.call_count == 4
+        assert client._gql.call_count == 5
 
     def test_scene_key_update_uses_partial_custom_fields(self) -> None:
         client = StashClient("http://localhost:9999")
