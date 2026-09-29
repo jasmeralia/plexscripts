@@ -57,7 +57,9 @@ def _fetch_plex_cover(video: Any, cfg: PlexConfig) -> str | None:
         data = base64.b64encode(resp.content).decode("ascii")
         return f"data:{content_type};base64,{data}"
     except Exception as exc:
-        log.warning("Failed to fetch Plex cover for '%s': %s", video.title, exc)
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        error = f"HTTP {status_code}" if status_code is not None else type(exc).__name__
+        log.warning("Failed to fetch Plex cover for '%s' (%s)", video.title, error)
         return None
 
 

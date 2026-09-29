@@ -30,7 +30,7 @@ query FindScenes($page: Int!, $per_page: Int!) {
 
 _RECONCILE_SCENES = """
 query ReconcileScenes($page: Int!, $per_page: Int!) {
-  findScenes(filter: { page: $page, per_page: $per_page }, sort: "id", direction: ASC) {
+  findScenes(filter: { page: $page, per_page: $per_page, sort: "id", direction: ASC }) {
     count
     scenes {
       id
@@ -274,6 +274,16 @@ class StashClient:
             missing.append(f"{values_type}.custom_fields")
         query_fields = (schema.get("query") or {}).get("fields") or []
         find_scenes: dict[str, Any] = next((field for field in query_fields if field["name"] == "findScenes"), {})
+        find_filter_type = next(
+            (_named_type(arg.get("type")) for arg in find_scenes.get("args") or [] if arg["name"] == "filter"),
+            None,
+        )
+        find_filter_schema = (
+            self._gql(_INPUT_SCHEMA, {"name": find_filter_type}).get("input") or {} if find_filter_type else {}
+        )
+        find_filter_fields = {field["name"] for field in find_filter_schema.get("inputFields") or []}
+        if not {"page", "per_page", "sort", "direction"}.issubset(find_filter_fields):
+            missing.append("findScenes.filter page/per_page/sort/direction")
         scene_filter_type = next(
             (_named_type(arg.get("type")) for arg in find_scenes.get("args") or [] if arg["name"] == "scene_filter"),
             None,

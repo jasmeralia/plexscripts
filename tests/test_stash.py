@@ -79,7 +79,7 @@ class TestReconcileSupport:
 
         assert scenes[0]["custom_fields"] == {"plex_rating_key": "4"}
         query, variables = client._gql.call_args.args
-        assert 'sort: "id", direction: ASC' in query
+        assert 'filter: { page: $page, per_page: $per_page, sort: "id", direction: ASC }' in query
         assert variables == {"page": 1, "per_page": 200}
 
     def test_reconcile_scenes_rejects_incomplete_page(self) -> None:
@@ -107,12 +107,26 @@ class TestReconcileSupport:
                         "fields": [
                             {
                                 "name": "findScenes",
-                                "args": [{"name": "scene_filter", "type": {"name": "SceneFilterType"}}],
+                                "args": [
+                                    {"name": "filter", "type": {"name": "FindFilterType"}},
+                                    {"name": "scene_filter", "type": {"name": "SceneFilterType"}},
+                                ],
                             }
                         ]
                     },
                 },
                 {"input": {"kind": "INPUT_OBJECT", "inputFields": [{"name": "partial"}]}},
+                {
+                    "input": {
+                        "kind": "INPUT_OBJECT",
+                        "inputFields": [
+                            {"name": "page"},
+                            {"name": "per_page"},
+                            {"name": "sort"},
+                            {"name": "direction"},
+                        ],
+                    }
+                },
                 {
                     "input": {
                         "kind": "INPUT_OBJECT",
@@ -128,7 +142,57 @@ class TestReconcileSupport:
             ]
         )
         client.check_reconcile_capabilities()
-        assert client._gql.call_count == 4
+        assert client._gql.call_count == 5
+
+    def test_reconcile_capability_check_rejects_incomplete_find_filter(self) -> None:
+        client = StashClient("http://localhost:9999")
+        client._gql = MagicMock(  # type: ignore[method-assign]
+            side_effect=[
+                {
+                    "scene": {"fields": [{"name": "custom_fields"}]},
+                    "update": {
+                        "inputFields": [
+                            {"name": "custom_fields", "type": {"name": "CustomFieldsInput"}},
+                        ]
+                    },
+                    "merge": {"inputFields": [{"name": "source"}, {"name": "destination"}, {"name": "values"}]},
+                    "mergeValues": {"inputFields": [{"name": "custom_fields"}]},
+                    "query": {
+                        "fields": [
+                            {
+                                "name": "findScenes",
+                                "args": [
+                                    {"name": "filter", "type": {"name": "FindFilterType"}},
+                                    {"name": "scene_filter", "type": {"name": "SceneFilterType"}},
+                                ],
+                            }
+                        ]
+                    },
+                },
+                {"input": {"kind": "INPUT_OBJECT", "inputFields": [{"name": "partial"}]}},
+                {
+                    "input": {
+                        "kind": "INPUT_OBJECT",
+                        "inputFields": [{"name": "page"}, {"name": "per_page"}, {"name": "sort"}],
+                    }
+                },
+                {
+                    "input": {
+                        "kind": "INPUT_OBJECT",
+                        "inputFields": [{"name": "custom_fields", "type": {"name": "SceneCustomFieldFilter"}}],
+                    }
+                },
+                {
+                    "input": {
+                        "kind": "INPUT_OBJECT",
+                        "inputFields": [{"name": "field"}, {"name": "value"}, {"name": "modifier"}],
+                    }
+                },
+            ]
+        )
+
+        with pytest.raises(RuntimeError, match="findScenes.filter page/per_page/sort/direction"):
+            client.check_reconcile_capabilities()
 
     def test_scene_key_update_uses_partial_custom_fields(self) -> None:
         client = StashClient("http://localhost:9999")
