@@ -166,7 +166,7 @@ def test_reconcile_merges_updates_preserves_existing_metadata_and_exports_scope(
     no_data_video = _video(title="No Data", locations=["/no-data.mp4"])
     plex = MagicMock()
     videos = [
-        _video(title="No File"),
+        _video(title="No Stash Match Without Data", locations=["/no-file.mp4"]),
         _video(title="No Stash Match", locations=["/missing.mp4"]),
         merge_video,
         single_video,

@@ -213,7 +213,8 @@ class TestReconcileProgress:
         fake_stash.reconcile_scenes.return_value = []
         fake_plex_ctx = MagicMock()
         fake_plex_ctx.all_videos.return_value = [
-            SimpleNamespace(title=f"Video {i}", ratingKey=str(i), locations=[]) for i in range(1, 4)
+            SimpleNamespace(title=f"Video {i}", ratingKey=str(i), locations=[f"/progress/{i}.mp4"])
+            for i in range(1, 4)
         ]
         fake_plex_ctx.section.totalSize = 3
         args = SimpleNamespace(
