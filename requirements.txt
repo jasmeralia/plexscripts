@@ -4,4 +4,4 @@ opensearch-py
 python-dotenv
 argcomplete
 
-pydantic-settings>=2.16.0
+pydantic-settings>=2.16.1
