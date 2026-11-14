@@ -37,6 +37,7 @@ from plexadm.plex import (
     create_smart_collection,
     has_collection,
     lock_title_and_sort_title,
+    mark_watched,
     reload_if_partial,
     remove_items,
     remove_writer,
@@ -659,6 +660,45 @@ def list_writers(args: argparse.Namespace) -> int:
     for writer, count in sorted(counts.items()):
         print(f"{count:4}: {writer}")
     return 0
+
+
+def _mark_watched_videos(videos: list[Any], args: argparse.Namespace, *, description: str) -> int:
+    matched = len(videos)
+    already_watched = 0
+    changed = 0
+    for video in videos:
+        reload_if_partial(video)
+        if getattr(video, "viewCount", 0):
+            already_watched += 1
+            continue
+        mark_watched(video, dry_run=args.dry_run)
+        changed += 1
+        print_title(video)
+    action = "would mark" if args.dry_run else "marked"
+    print(
+        info(f"{action.title()} {changed} of {matched} {description} as watched ({already_watched} already watched).")
+    )
+    return 0
+
+
+def mark_watched_for_writers(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    wanted = {name.casefold() for name in args.writers}
+    matches = []
+    for video in ctx.all_videos():
+        reload_if_partial(video, force=True)
+        video_writers = {str(writer).strip().casefold() for writer in getattr(video, "writers", []) or []}
+        if wanted.intersection(video_writers):
+            matches.append(video)
+    return _mark_watched_videos(matches, args, description="matching videos")
+
+
+def mark_watched_for_collection(args: argparse.Namespace) -> int:
+    ctx = build_context(args)
+    collection = ctx.collection(args.collection)
+    return _mark_watched_videos(
+        list(collection.items()), args, description=f"videos in collection '{collection.title}'"
+    )
 
 
 def list_studio_writers(args: argparse.Namespace) -> int:
@@ -1519,6 +1559,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = _add_subparsers(parser, dest="command", title="commands")
 
     _build_list_commands(sub)
+    _build_watch_commands(sub)
     _build_collection_commands(sub)
     _build_studio_commands(sub)
     _build_writers_commands(sub)
@@ -1532,6 +1573,41 @@ def build_parser() -> argparse.ArgumentParser:
 
     _attach_dynamic_completers(parser)
     return parser
+
+
+def _build_watch_commands(sub: Any) -> None:
+    watchall = _make_sub(
+        sub,
+        "watchall",
+        help="Mark videos as watched.",
+        description="Update Plex watched status for videos selected by their metadata.",
+    )
+    watch_sub = _add_subparsers(watchall, dest="watchall_command", title="watchall subcommands")
+    writers = _make_sub(
+        watch_sub,
+        "writers",
+        help="Mark videos with any exact writer match as watched.",
+        description=(
+            "Mark every video whose Plex writer field exactly matches any supplied name as watched. "
+            "Already watched videos are skipped. Matching is case-insensitive."
+        ),
+        epilog="Example:\n  plexadm watchall writers '00 Rin' Rolyat",
+    )
+    writers.add_argument("writers", nargs="+", metavar="WRITER", help="Exact writer name(s) to match.")
+    set_func(writers, mark_watched_for_writers)
+
+    collection = _make_sub(
+        watch_sub,
+        "collection",
+        help="Mark all videos in a regular or smart collection as watched.",
+        description=(
+            "Mark every video currently in the named regular or smart collection as watched. "
+            "Already watched videos are skipped."
+        ),
+        epilog="Example:\n  plexadm watchall collection '01: Composition: Solo'",
+    )
+    collection.add_argument("collection", metavar="COLLECTION", help="Exact collection name.")
+    set_func(collection, mark_watched_for_collection)
 
 
 def _build_list_commands(sub: Any) -> None:

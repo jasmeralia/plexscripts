@@ -49,6 +49,51 @@ class TestSmallHelpers:
         assert cli.video_has_exact_writer(video, "Writer") is False
 
 
+class TestWatchAllHandlers:
+    def test_writer_handler_matches_exact_names_and_marks_only_unwatched(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        match = _video("Writer A - Match", writers=["WRITER A"], viewCount=0)
+        already_watched = _video("Writer B - Watched", writers=["Writer B"], viewCount=1)
+        unrelated = _video("Writer A - Partial", writers=["Writer Alpha"], viewCount=0)
+        ctx = MagicMock()
+        ctx.all_videos.return_value = [match, already_watched, unrelated]
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "mark_watched") as mark_watched,
+        ):
+            assert cli.mark_watched_for_writers(_args(writers=["writer a", "Writer B"])) == 0
+
+        mark_watched.assert_called_once_with(match, dry_run=False)
+        assert match.reload.call_count == 1
+        output = capsys.readouterr().out
+        assert "Title: Writer A - Match" in output
+        assert "Marked 1 of 2 matching videos as watched (1 already watched)" in output
+
+    @pytest.mark.parametrize("kind", ["regular", "smart"])
+    def test_collection_handler_marks_current_members(self, kind: str, capsys: pytest.CaptureFixture[str]) -> None:
+        unwatched = _video("Unwatched", viewCount=0)
+        watched = _video("Watched", viewCount=1)
+        collection = SimpleNamespace(title=f"{kind} collection", items=MagicMock(return_value=[unwatched, watched]))
+        ctx = MagicMock()
+        ctx.collection.return_value = collection
+
+        with (
+            patch.object(cli, "build_context", return_value=ctx),
+            patch.object(cli, "mark_watched") as mark_watched,
+        ):
+            assert cli.mark_watched_for_collection(_args(collection=collection.title)) == 0
+
+        ctx.collection.assert_called_once_with(collection.title)
+        collection.items.assert_called_once_with()
+        mark_watched.assert_called_once_with(unwatched, dry_run=False)
+        assert (
+            f"Marked 1 of 2 videos in collection '{kind} collection' as watched (1 already watched)"
+            in capsys.readouterr().out
+        )
+
+
 class TestCollectionHandlers:
     def test_add_matching_titles_skips_scenes_and_existing_members(self, capsys: pytest.CaptureFixture[str]) -> None:
         collection = SimpleNamespace(title="Target")

@@ -54,10 +54,14 @@ def test_parser_attaches_dynamic_completers_by_metavar() -> None:
     collection = _find_action(parser, ("collection", "add-title"), "collection")
     studio = _find_action(parser, ("studio", "set-title"), "studio")
     writer = _find_action(parser, ("collection", "add-writer"), "pattern")
+    watchall_collection = _find_action(parser, ("watchall", "collection"), "collection")
+    watchall_writer = _find_action(parser, ("watchall", "writers"), "writers")
 
     assert collection.completer is completion.complete_collections  # type: ignore[attr-defined]
     assert studio.completer is completion.complete_studios  # type: ignore[attr-defined]
     assert writer.completer is completion.complete_writers  # type: ignore[attr-defined]
+    assert watchall_collection.completer is completion.complete_collections  # type: ignore[attr-defined]
+    assert watchall_writer.completer is completion.complete_writers  # type: ignore[attr-defined]
 
 
 def test_refresh_completion_cache_writes_distinct_sorted_names(tmp_path: Path) -> None:

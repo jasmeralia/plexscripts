@@ -14,6 +14,7 @@ from plexadm.plex import (
     create_smart_collection,
     delete_collection,
     lock_title_and_sort_title,
+    mark_watched,
     remove_items,
     remove_writer,
     rename_collection,
@@ -51,6 +52,34 @@ def _collection(title: str = "01: Category: Test") -> SimpleNamespace:
         editSortTitle=MagicMock(),
         delete=MagicMock(),
     )
+
+
+class TestMarkWatched:
+    def test_mark_watched_calls_plex_and_logs_afterwards(self) -> None:
+        video = _video(title="Watch Me", ratingKey=7, markPlayed=MagicMock())
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert mark_watched(video) is True
+
+        video.markPlayed.assert_called_once_with()
+        mock_log.assert_called_once_with(AuditEvent(action="mark_watched", title="Watch Me", rating_key=7, details={}))
+
+    def test_mark_watched_dry_run_does_not_call_plex(self) -> None:
+        video = _video(title="Watch Me", ratingKey=7, markPlayed=MagicMock())
+
+        with patch("plexadm.plex.log_event") as mock_log:
+            assert mark_watched(video, dry_run=True) is True
+
+        video.markPlayed.assert_not_called()
+        mock_log.assert_called_once_with(
+            AuditEvent(
+                action="mark_watched",
+                level="DEBUG",
+                title="Watch Me",
+                rating_key=7,
+                details={"dry_run": True},
+            )
+        )
 
 
 class TestAddRemoveItems:
