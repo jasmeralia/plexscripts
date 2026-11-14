@@ -274,6 +274,23 @@ def remove_writer(video: Any, writer_names: list[str], *, dry_run: bool = False)
     return True
 
 
+def mark_watched(video: Any, *, dry_run: bool = False) -> bool:
+    """Mark a video as watched and record the successful mutation in the audit log."""
+    if not dry_run:
+        video.markPlayed()
+    level, details = _mutation_level_and_details(dry_run, {})
+    log_event(
+        AuditEvent(
+            action="mark_watched",
+            level=level,
+            title=video.title,
+            rating_key=getattr(video, "ratingKey", None),
+            details=details,
+        )
+    )
+    return True
+
+
 def rename_collection(collection: Any, new_title: str, *, dry_run: bool = False) -> None:
     """Rename a collection's title AND sort title together.
 

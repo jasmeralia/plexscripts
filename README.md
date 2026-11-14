@@ -350,6 +350,22 @@ List writers appearing under a studio:
 plexadm list studio-writers "Studio Name"
 ```
 
+Mark every video with an exact matching writer tag as watched (case-insensitive):
+
+```bash
+plexadm watchall writers "00 Rin" Rolyat
+```
+
+Already watched videos are skipped. Add `--dry-run` to preview the videos that would be marked.
+
+Mark every video currently in a regular or smart collection as watched:
+
+```bash
+plexadm watchall collection "01: Composition: Solo"
+```
+
+Already watched collection members are skipped; `--dry-run` previews the changes.
+
 ### Special Lists
 
 Special list kinds:
